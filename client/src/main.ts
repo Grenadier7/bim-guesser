@@ -1,0 +1,159 @@
+import './style.css';
+import { fmtDuration } from '../../shared/rules.ts';
+import { api } from './api.ts';
+import { GameMap } from './map.ts';
+import { NetIndex } from './net.ts';
+import { finalScreen } from './screens/final.ts';
+import { homeScreen } from './screens/home.ts';
+import { hostActions, hostBar } from './screens/host.ts';
+import { learnScreen } from './screens/learn.ts';
+import { lobbyScreen } from './screens/lobby.ts';
+import { quizFinalScreen, quizLobbyScreen, quizQuestionScreen, quizRevealScreen } from './screens/quiz.ts';
+import { revealScreen } from './screens/reveal.ts';
+import { roundScreen } from './screens/round.ts';
+import { loadingHtml, type Screen } from './screens/screen.ts';
+import { trainingScreen } from './screens/training.ts';
+import { app, currentRound, inviteLink, isHost, me, openTimer, restoreSession, serverNow, setMapBig, setMobileMap } from './store.ts';
+import { esc, toast } from './ui.ts';
+
+const panel = document.getElementById('panel')!;
+const topinfo = document.getElementById('topinfo')!;
+const pauseOverlay = document.createElement('div');
+pauseOverlay.className = 'pause-overlay';
+pauseOverlay.hidden = true;
+document.querySelector('.layout')!.append(pauseOverlay);
+
+// Handy: Karte vergrößern/verkleinern
+const mapToggle = document.createElement('button');
+mapToggle.className = 'map-toggle';
+mapToggle.title = 'Karte größer/kleiner';
+mapToggle.textContent = '⤢';
+mapToggle.addEventListener('click', () => setMapBig(!document.body.classList.contains('map-big')));
+document.querySelector('.layout')!.append(mapToggle);
+
+let screen: Screen | null = null;
+let screenKey = '';
+
+/** Welcher Bildschirm gehört zum aktuellen Zustand? */
+function keyFor(): string {
+  const s = app.state;
+  if (!app.session || !s) return app.view;
+  if (s.mode === 'quiz') {
+    if (s.phase === 'lobby') return 'qlobby';
+    if (s.phase === 'finished') return 'qfinal';
+    return `q:${s.current}:${s.status}`;
+  }
+  if (s.phase === 'lobby') return 'lobby';
+  if (s.phase === 'finished') return 'final';
+  const r = currentRound();
+  if (!r || r.status === 'preparing') return `prep:${s.currentRound}`;
+  if (r.status === 'open') return `open:${r.index}`;
+  return `reveal:${r.index}`;
+}
+
+function mount(key: string): Screen {
+  // Startseite: großer Auswahlbildschirm ohne Karte
+  document.body.classList.toggle('panel-full', key === 'home');
+  // Handy: Karte nur, wo sie gebraucht wird – Bildschirme können das selbst ändern
+  setMobileMap(!['home', 'lobby', 'final', 'qlobby', 'qfinal'].includes(key));
+  setTimeout(() => app.map.invalidate(), 50);
+  const back = () => {
+    app.view = 'home';
+    render();
+  };
+  if (key === 'home') return homeScreen(panel);
+  if (key === 'learn') return learnScreen(panel, back);
+  if (key === 'training') return trainingScreen(panel, back);
+  if (key === 'lobby') return lobbyScreen(panel);
+  if (key === 'final') return finalScreen(panel);
+  if (key === 'qlobby') return quizLobbyScreen(panel);
+  if (key === 'qfinal') return quizFinalScreen(panel);
+  if (key.startsWith('q:')) return key.endsWith(':open') ? quizQuestionScreen(panel) : quizRevealScreen(panel);
+  if (key.startsWith('open:')) return roundScreen(panel);
+  if (key.startsWith('reveal:')) return revealScreen(panel);
+  app.map.clear();
+  const s = app.state;
+  const n = (s?.mode === 'route' ? s.currentRound : 0) + 1;
+  panel.innerHTML = loadingHtml(`Runde ${n} wird vorbereitet …`, 'Die Wiener-Linien-API wird für mehrere Abfahrtszeiten abgefragt.');
+  panel.prepend(hostBar());
+  return {};
+}
+
+function render() {
+  const key = keyFor();
+  if (key !== screenKey) {
+    screen?.destroy?.();
+    screenKey = key;
+    screen = mount(key);
+  } else {
+    screen?.update?.();
+  }
+  renderTop();
+  renderPause();
+}
+
+/** Pausierte Runde/Frage: alles abdecken, Host kann fortsetzen */
+function renderPause() {
+  const paused = !!app.session && !!openTimer()?.pausedAt;
+  pauseOverlay.hidden = !paused;
+  if (!paused) return;
+  pauseOverlay.innerHTML = `<div class="pause-box"><div class="pause-icon">⏸</div><h2>Pausiert</h2>
+    <p>${isHost() ? 'Du hast die Zeit angehalten.' : 'Der Host hat die Zeit angehalten.'}</p>
+    ${isHost() ? '<button class="btn btn-primary" id="resume">▶ Fortsetzen</button>' : ''}</div>`;
+  pauseOverlay.querySelector('#resume')?.addEventListener('click', () => hostActions.resume());
+}
+
+function renderTop() {
+  const s = app.state;
+  if (!s || !app.session) {
+    topinfo.innerHTML = '';
+    return;
+  }
+  const parts = [`<button class="code-badge" id="code-badge" title="Einladungslink kopieren">${s.mode === 'quiz' ? '🧠' : '🏁'} <b>${esc(s.id)}</b></button>`];
+  if (s.phase !== 'lobby') {
+    if (s.mode === 'quiz') parts.push(`<span>Frage <b>${Math.min(s.current + 1, s.total)}</b>/${s.total}</span>`);
+    else parts.push(`<span>Runde <b>${Math.min(s.currentRound + 1, s.settings.rounds)}</b>/${s.settings.rounds}</span>`);
+    if (openTimer()?.deadline) parts.push('<span class="timer" id="timer"></span>');
+    parts.push(`<span class="score"><b>${(me()?.score ?? 0).toLocaleString('de-AT')}</b> Pkt.</span>`);
+  }
+  topinfo.innerHTML = parts.join('');
+  topinfo.querySelector('#code-badge')!.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(inviteLink(s.id));
+      toast('Einladungslink kopiert', 'info');
+    } catch {
+      toast(`Code: ${s.id}`, 'info');
+    }
+  });
+  tick();
+}
+
+function tick() {
+  const t = openTimer();
+  const el = document.getElementById('timer');
+  if (el && t?.deadline) {
+    const now = t.pausedAt ?? serverNow();
+    const left = Math.max(0, (t.deadline - now) / 1000);
+    el.textContent = `⏱ ${fmtDuration(Math.ceil(left))}`;
+    el.classList.toggle('urgent', left <= (app.state?.mode === 'quiz' ? 5 : 15) && !t.pausedAt);
+    el.classList.toggle('paused', !!t.pausedAt);
+  }
+  screen?.tick?.();
+}
+
+async function init() {
+  app.map = new GameMap(document.getElementById('map')!);
+  app.onChange = render;
+  panel.innerHTML = loadingHtml('Lade Netzdaten …');
+  try {
+    app.net = new NetIndex(await api.network());
+  } catch (e) {
+    panel.innerHTML = `<div class="loading"><p class="err">Server nicht erreichbar: ${esc((e as Error).message)}</p></div>`;
+    return;
+  }
+  if (!(await restoreSession())) render();
+  setInterval(tick, 250);
+  window.addEventListener('resize', () => app.map.invalidate());
+}
+
+init();

@@ -1,0 +1,34 @@
+{
+  "name": "verbindungs-guesser",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Quiz: Errate die schnellste Öffi-Verbindung in Wien",
+  "type": "module",
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "node --watch server/index.ts",
+    "dev:client": "vite",
+    "start": "node scripts/host.ts",
+    "serve": "node server/index.ts",
+    "build": "vite build",
+    "build:data": "node scripts/build-network.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "leaflet": "^1.9.4",
+    "yauzl": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/leaflet": "^1.9.22",
+    "@types/node": "^26.6.5",
+    "@types/yauzl": "^3.4.0",
+    "concurrently": "^10.0.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4"
+  }
+}

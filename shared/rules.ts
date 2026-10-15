@@ -1,0 +1,400 @@
+import type {
+  DayType,
+  Difficulty,
+  DistanceRange,
+  StationKind,
+  GameSettings,
+  Line,
+  Mode,
+  NetMode,
+  Restriction,
+  RestrictionFrequency,
+  RouteGoal,
+  RouteOption,
+  ScoreBreakdown,
+  SlotId,
+  TimeSlot,
+  TipInfo,
+  TipKind,
+} from './types.ts';
+import { DEFAULT_SETTINGS } from './defaults.ts';
+
+// ---------------------------------------------------------------- Einstellungen
+
+export const TIME_SLOTS: TimeSlot[] = [
+  { id: 'wd12', label: 'Wochentag 12:00', short: 'Mo–Fr 12 Uhr' },
+  { id: 'wd17', label: 'Wochentag 17:00', short: 'Mo–Fr 17 Uhr' },
+  { id: 'sa02', label: 'Samstag 02:00 (Nacht)', short: 'Sa 2 Uhr' },
+  { id: 'su12', label: 'Sonntag 12:00', short: 'So 12 Uhr' },
+];
+
+export const NET_MODES: { id: NetMode; label: string; hint: string }[] = [
+  { id: 'regular', label: 'Regulär', hint: 'Fahrplan eines Referenztags ohne Baustellen' },
+  { id: 'current', label: 'Aktuell', hint: 'Nächster echter Tag – inkl. Sperren & Ersatzverkehr' },
+];
+
+export const SLOT_DAYTYPE: Record<SlotId, DayType> = { wd12: 'wd', wd17: 'wd', sa02: 'sa', su12: 'su' };
+
+// ---------------------------------------------------------------- Schwierigkeit
+// Drei Regler (Haltestellen, Entfernung, Umstieg); die Stufen Leicht…Profi sind nur Schnellwahlen.
+// Der Punkte-Multiplikator ergibt sich aus den Reglern.
+
+/**
+ * Haltestellen: Schiene frei kombinierbar, Bus als Stufe (Knoten ⊂ 2+ Linien ⊂ alle).
+ * Der Multiplikator richtet sich nach der schwierigsten gewählten Art.
+ */
+export const RAIL_KINDS: { id: StationKind; icon: string; label: string; hint: string; factor: number }[] = [
+  { id: 'U', icon: '🚇', label: 'U-Bahn', hint: 'U-Bahn-Stationen', factor: 0.9 },
+  { id: 'S', icon: '🚆', label: 'S-Bahn', hint: 'S-Bahn-Stationen', factor: 1 },
+  { id: 'T', icon: '🚋', label: 'Bim', hint: 'Straßenbahn-Haltestellen', factor: 1.15 },
+];
+export const BUS_LEVELS: { id: StationKind; icon: string; label: string; short: string; hint: string; factor: number }[] = [
+  { id: 'hub', icon: '🔀', label: 'Bus-Knoten', short: 'Knoten', hint: 'Bus-Haltestellen, an denen 3+ Linien halten', factor: 1.3 },
+  { id: 'bus', icon: '🚌', label: 'Bus (2+ Linien)', short: '2+ Linien', hint: 'Bus-Haltestellen mit mindestens 2 Linien', factor: 1.35 },
+  { id: 'all', icon: '★', label: 'alle Bus-Haltestellen', short: 'Alle', hint: 'jede Bus-Haltestelle, auch mit nur einer Linie', factor: 1.4 },
+];
+export const STATION_KINDS = [...RAIL_KINDS, ...BUS_LEVELS];
+
+/** gültige Arten in fester Reihenfolge, Bus nur die höchste Stufe */
+export function cleanStationKinds(v: unknown): StationKind[] | null {
+  if (!Array.isArray(v)) return null;
+  const rail = RAIL_KINDS.map((k) => k.id).filter((id) => v.includes(id));
+  const bus = [...BUS_LEVELS].reverse().find((k) => v.includes(k.id));
+  const out = bus ? [...rail, bus.id] : rail;
+  return out.length ? out : null;
+}
+
+/** alte Einstellung (Stufe 1–6) in Arten umrechnen */
+export function stationKindsFromPool(pool: unknown): StationKind[] | null {
+  const n = Number(pool);
+  if (!Number.isInteger(n) || n < 1 || n > 6) return null;
+  return cleanStationKinds(STATION_KINDS.slice(0, n).map((k) => k.id));
+}
+
+export const DISTANCES: { id: DistanceRange; label: string; range: [number, number]; factor: number }[] = [
+  { id: 'short', label: '2–7 km', range: [2000, 7000], factor: 0.9 },
+  { id: 'medium', label: '3–12 km', range: [3000, 12000], factor: 1 },
+  { id: 'long', label: '6–16 km', range: [6000, 16000], factor: 1.1 },
+];
+
+export const TRANSFER_FACTOR = 1.05;
+
+export interface DifficultyPreset {
+  id: Exclude<Difficulty, 'custom'>;
+  label: string;
+  stations: StationKind[];
+  distance: DistanceRange;
+  needTransfer: boolean;
+}
+
+export const DIFFICULTY_PRESETS: DifficultyPreset[] = [
+  { id: 'easy', label: 'Leicht', stations: ['U', 'S'], distance: 'medium', needTransfer: false },
+  { id: 'medium', label: 'Mittel', stations: ['U', 'S', 'T'], distance: 'medium', needTransfer: false },
+  { id: 'hard', label: 'Schwer', stations: ['U', 'S', 'T', 'hub'], distance: 'medium', needTransfer: false },
+  { id: 'expert', label: 'Profi', stations: ['U', 'S', 'T', 'all'], distance: 'long', needTransfer: true },
+];
+
+/** Passt die Regler-Stellung zu einer Schnellwahl? Sonst "custom". */
+export function matchPreset(s: Pick<GameSettings, 'stations' | 'distance' | 'needTransfer'>): Difficulty {
+  const p = DIFFICULTY_PRESETS.find(
+    (x) => x.stations.join() === s.stations.join() && x.distance === s.distance && x.needTransfer === s.needTransfer,
+  );
+  return p?.id ?? 'custom';
+}
+
+export function distanceRange(d: DistanceRange): [number, number] {
+  return DISTANCES.find((x) => x.id === d)!.range;
+}
+
+export function difficultyMultiplier(s: Pick<GameSettings, 'stations' | 'distance' | 'needTransfer'>): number {
+  const pool = Math.max(...STATION_KINDS.filter((k) => s.stations.includes(k.id)).map((k) => k.factor), 0.9);
+  const dist = DISTANCES.find((x) => x.id === s.distance)!.factor;
+  return Math.round(pool * dist * (s.needTransfer ? TRANSFER_FACTOR : 1) * 100) / 100;
+}
+
+/** Fokus-Kreis: erlaubte Radien und Anteile */
+export const FOCUS_RADII = [1500, 2500, 4000, 6000];
+/** Anteil der Stationen aus dem Kreis: 10–90 % in 10-%-Schritten */
+export const FOCUS_SHARE_MIN = 0.1;
+export const FOCUS_SHARE_MAX = 0.9;
+
+export function cleanFocusShare(v: unknown): number | null {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(FOCUS_SHARE_MAX, Math.max(FOCUS_SHARE_MIN, Math.round(n * 10) / 10));
+}
+
+export const TIME_LIMITS = [60, 120, 180, 240, 300, 600];
+
+// Standardwerte: shared/defaults.ts
+export { DEFAULT_SETTINGS } from './defaults.ts';
+
+/** Haltefolgen einer Linie, die im gewählten Netz existieren */
+export function linePatterns(line: Line, net: NetMode): string[][] {
+  const flag = net === 'current' ? 'c' : 'r';
+  return line.patterns.filter((_, i) => line.nets[i].includes(flag));
+}
+
+export function isSlotId(v: unknown): v is SlotId {
+  return TIME_SLOTS.some((s) => s.id === v);
+}
+
+// ---------------------------------------------------------------- Wertung: schnellste oder beste Route
+
+export const ROUTE_GOALS: { id: RouteGoal; label: string; hint: string }[] = [
+  { id: 'best', label: '🏅 Beste Route', hint: 'Reisezeit + Aufschlag je Umstieg – bequemere Wege zählen mit' },
+  { id: 'fastest', label: '⚡ Schnellste Route', hint: 'nur die Reisezeit zählt' },
+];
+
+/**
+ * Aufschlag je Umstieg bei "beste Route". Mit Ø-Wartezeiten ist das Warten schon eingerechnet –
+ * dann steht der Aufschlag nur noch für Aufwand/Risiko (2 min). Mit echtem Fahrplan 4 min.
+ */
+export const TRANSFER_PENALTY_AVG_MIN = 2;
+export const TRANSFER_PENALTY_FIXED_MIN = 4;
+
+export type RouteScoring = Pick<GameSettings, 'goal' | 'avgWait'>;
+
+export function transferPenalty(s: RouteScoring): number {
+  if (s.goal !== 'best') return 0;
+  return s.avgWait ? TRANSFER_PENALTY_AVG_MIN : TRANSFER_PENALTY_FIXED_MIN;
+}
+
+export function transfersOf(route: Pick<RouteOption, 'legs'>): number {
+  return Math.max(0, route.legs.filter((l) => l.mode !== 'W').length - 1);
+}
+
+/** Gewertete Minuten einer Route */
+export function routeCost(minutes: number, transfers: number, s: RouteScoring): number {
+  return minutes + transferPenalty(s) * transfers;
+}
+
+export function routeCostOf(route: RouteOption, s: RouteScoring): number {
+  return routeCost(route.medianMin, transfersOf(route), s);
+}
+
+/** Top-Verbindungen nach Wertung sortieren (stabil: bei Gleichstand bleibt die schnellere vorne) */
+export function sortRoutes(routes: RouteOption[], s: RouteScoring): RouteOption[] {
+  return routes
+    .map((r, i) => ({ r, i, c: routeCostOf(r, s) }))
+    .sort((a, b) => a.c - b.c || a.i - b.i)
+    .map((x) => x.r);
+}
+
+// ---------------------------------------------------------------- Einschränkungen
+
+export const RESTRICTIONS: Record<Restriction, { label: string; hint: string; icon: string }> = {
+  noU: { label: 'Ohne U-Bahn', hint: 'Diese Runde darfst du keine U-Bahn verwenden.', icon: '🚫🚇' },
+  noBus: { label: 'Ohne Bus', hint: 'Diese Runde darfst du keinen Bus verwenden.', icon: '🚫🚌' },
+  oneTransfer: { label: 'Max. 1 Umstieg', hint: 'Höchstens zwei Linien – also maximal ein Umstieg.', icon: '1️⃣' },
+  banLines: { label: 'Linie gesperrt', hint: 'Eine Linie der schnellsten Verbindung ist gesperrt – finde eine Alternative.', icon: '⛔' },
+};
+
+export const RESTRICTION_FREQUENCIES: { id: RestrictionFrequency; label: string }[] = [
+  { id: 'never', label: 'Nie' },
+  { id: 'sometimes', label: 'Manchmal' },
+  { id: 'always', label: 'Immer' },
+];
+
+/** "Manchmal": Anteil der Runden mit Einschränkung – mindestens eine pro Spiel */
+export const RESTRICTION_CHANCE = 0.3;
+/** Einschränkungs-Runden haben doppelte Zeit, aber höchstens 2:30 mehr … */
+export const RESTRICTION_EXTRA_MAX_SEC = 150;
+/** … schwere Einschränkungen (ohne U-Bahn) bekommen fix 4 Minuten mehr */
+export const HARD_RESTRICTIONS: Restriction[] = ['noU'];
+export const HARD_RESTRICTION_EXTRA_SEC = 240;
+
+export function roundLimitSec(base: number | null, restriction: Restriction | null): number | null {
+  if (!base) return null;
+  if (!restriction) return base;
+  if (HARD_RESTRICTIONS.includes(restriction)) return base + HARD_RESTRICTION_EXTRA_SEC;
+  return base + Math.min(base, RESTRICTION_EXTRA_MAX_SEC);
+}
+
+/** Text für eine Einschränkung, z.B. "Ohne Linie U6" */
+export function restrictionLabel(r: Restriction, banned: string[]): string {
+  if (r === 'banLines') return `Ohne ${banned.length > 1 ? 'Linien' : 'Linie'} ${banned.join(', ')}`;
+  return RESTRICTIONS[r].label;
+}
+
+export function restrictionAllowsLine(r: Restriction | null, banned: string[], line: { id: string; mode: Mode }): boolean {
+  if (r === 'banLines' && banned.includes(line.id)) return false;
+  return restrictionAllowsMode(r, line.mode);
+}
+
+export function restrictionAllowsMode(r: Restriction | null, mode: Mode): boolean {
+  if (r === 'noU') return mode !== 'U';
+  if (r === 'noBus') return mode !== 'B' && mode !== 'N';
+  return true;
+}
+
+export function restrictionMaxLegs(r: Restriction | null): number {
+  return r === 'oneTransfer' ? 2 : 8;
+}
+
+// ---------------------------------------------------------------- Tipps
+// Tipps kosten einen Anteil der Routenpunkte statt fixer Punkte:
+// so kostet ein Tipp nie mehr, als er einbringt.
+
+export const TIPS: Record<TipKind, TipInfo> = {
+  startLines: { kind: 'startLines', label: 'Linien am Start', share: 0.45 },
+  endLines: { kind: 'endLines', label: 'Linien am Ziel', share: 0.45 },
+  modeChain: { kind: 'modeChain', label: 'Verkehrsmittel der schnellsten Route', share: 0.45 },
+  transfers: { kind: 'transfers', label: 'Umstiegsorte auf der Karte', share: 0.55 },
+};
+
+// ---------------------------------------------------------------- Punkte
+//
+// Pro Runde (vor Multiplikator):
+//   Route        0–1000  relativ zur schnellsten Verbindung
+//   − Tipps      Anteil der Routenpunkte (45/45/45/55 %). Mehrere Tipps verrechnen sich multiplikativ
+//                (Start + Ziel: 55 % von 55 % ≈ 30 % bleiben), mindestens 10 % bleiben immer.
+//                Bei 30 min optimal entspricht das ungefähr: Start ≈ 38 min ohne Tipp, Start+Ziel ≈ 43,
+//                Umstiegsorte ≈ 40, Start+Ziel+Verkehrsmittel ≈ 46, alle Tipps = 10 %
+//   + Zeitbonus  bis +10 % der Routenpunkte, linear mit Restzeit (ohne Limit: an 3:00 gemessen)
+//   + Ortung     bis 150 (75 je Station) bei "Wo liegt das?"
+//   × Schwierigkeit  aus den Reglern (Haltestellen × Entfernung × Umstieg), ca. 0,8–1,5
+
+export const MAX_ROUTE_POINTS = 1000;
+export const TIME_BONUS_SHARE = 0.1;
+/** Referenzzeit für den Zeitbonus, wenn kein Zeitlimit gesetzt ist */
+export const TIME_BONUS_REF_SEC = 180;
+export const LOCATE_POINTS_PER_STATION = 75;
+const LOCATE_FULL_M = 250;
+const LOCATE_ZERO_M = 3000;
+
+/** Ab diesem relativen Umweg gibt es 0 Punkte */
+export const ROUTE_ZERO_REL = 0.7;
+/** Besser als die beste gefundene Route: je 1 % besser +2 % Punkte … */
+export const BEAT_BONUS_FACTOR = 2;
+/** … höchstens so viele Extrapunkte */
+export const BEAT_BONUS_MAX = 300;
+
+/**
+ * Routenpunkte. Toleranz: max(1 min, 4 %) – danach fällt es ab,
+ * bei +70 % Reisezeit gibt's nichts mehr.
+ *   30 vs 38 min -> ~560,  30 vs 45 min -> ~200,  40 vs 60 min -> ~200
+ * Besser als die beste Route der Auskunft → über 1000:
+ *   30 vs 29 min -> ~1067,  30 vs 27 min -> 1200,  30 vs 24 min -> 1300 (Maximum)
+ */
+export function scoreRoute(userMin: number, bestMin: number): number {
+  if (userMin < bestMin) {
+    const better = (bestMin - userMin) / Math.max(bestMin, 10);
+    return Math.round(MAX_ROUTE_POINTS + Math.min(BEAT_BONUS_MAX, MAX_ROUTE_POINTS * better * BEAT_BONUS_FACTOR));
+  }
+  const grace = Math.max(1, bestMin * 0.04);
+  const delta = Math.max(0, userMin - bestMin - grace);
+  const rel = delta / Math.max(bestMin, 10);
+  const f = Math.max(0, 1 - rel / ROUTE_ZERO_REL);
+  return Math.round(MAX_ROUTE_POINTS * f ** 1.5);
+}
+
+export function locatePoints(distM: number | null): number {
+  if (distM == null) return 0;
+  const f = Math.min(1, Math.max(0, (LOCATE_ZERO_M - distM) / (LOCATE_ZERO_M - LOCATE_FULL_M)));
+  return Math.round(LOCATE_POINTS_PER_STATION * f);
+}
+
+export function timeBonus(routeAfterTips: number, elapsedSec: number | null, limitSec: number | null): number {
+  if (elapsedSec == null) return 0;
+  const ref = limitSec ?? TIME_BONUS_REF_SEC;
+  const f = Math.max(0, 1 - elapsedSec / ref);
+  return Math.round(routeAfterTips * TIME_BONUS_SHARE * f);
+}
+
+/** Mindestens so viel der Routenpunkte bleibt auch mit allen Tipps */
+export const TIP_MIN_KEEP = 0.1;
+
+/** Gesamtabzug der Tipps: multiplikativ, damit sich Tipps nicht auf über 100 % summieren */
+export function tipShareOf(tips: TipKind[]): number {
+  const keep = tips.reduce((k, t) => k * (1 - TIPS[t].share), 1);
+  return Math.round((1 - Math.max(TIP_MIN_KEEP, keep)) * 1000) / 1000;
+}
+
+export function computeScore(o: {
+  routePoints: number;
+  tips: TipKind[];
+  elapsedSec: number | null;
+  limitSec: number | null;
+  locateDist: { from: number | null; to: number | null } | null;
+  multiplier: number;
+}): ScoreBreakdown {
+  const tipShare = tipShareOf(o.tips);
+  const routeAfterTips = Math.round(o.routePoints * (1 - tipShare));
+  const tb = timeBonus(routeAfterTips, o.elapsedSec, o.limitSec);
+  const locate = o.locateDist ? locatePoints(o.locateDist.from) + locatePoints(o.locateDist.to) : 0;
+  const multiplier = o.multiplier;
+  return {
+    route: o.routePoints,
+    tipShare,
+    routeAfterTips,
+    timeBonus: tb,
+    locate,
+    multiplier,
+    total: Math.round((routeAfterTips + tb + locate) * multiplier),
+  };
+}
+
+export function maxRoundPoints(s: GameSettings): number {
+  const base = MAX_ROUTE_POINTS * (1 + TIME_BONUS_SHARE) + (s.locate ? 2 * LOCATE_POINTS_PER_STATION : 0);
+  return Math.round(base * difficultyMultiplier(s));
+}
+
+// ---------------------------------------------------------------- Darstellung
+
+export const MODE_LABEL: Record<Mode, string> = {
+  U: 'U-Bahn',
+  S: 'S-Bahn',
+  T: 'Straßenbahn',
+  B: 'Bus',
+  N: 'Nachtbus',
+  W: 'Fußweg',
+};
+
+export const MODE_ICON: Record<Mode, string> = {
+  U: '🚇',
+  S: '🚆',
+  T: '🚋',
+  B: '🚌',
+  N: '🌙',
+  W: '🚶',
+};
+
+const U_COLORS: Record<string, string> = {
+  U1: '#e3000f',
+  U2: '#a762a3',
+  U3: '#ee7d00',
+  U4: '#319f49',
+  U5: '#2cb1b1',
+  U6: '#9d6930',
+};
+
+export const MODE_COLOR: Record<Mode, string> = {
+  U: '#555555',
+  S: '#1e6fbf',
+  T: '#c8102e',
+  B: '#0a295d',
+  N: '#3b2a7a',
+  W: '#7a7a7a',
+};
+
+export function lineColor(mode: Mode, line: string | null): string {
+  if (mode === 'U' && line) return U_COLORS[line.slice(0, 2)] ?? MODE_COLOR.U;
+  return MODE_COLOR[mode];
+}
+
+/**
+ * Linien, die im Spiel als gleichwertig gelten: auf demselben Abschnitt (gleiche Ein- und
+ * Ausstiegsstation) zählt jede S-Bahn, jede Bim bzw. jeder Bus gleich – z.B. S1/S2/S3 auf der
+ * Stammstrecke oder 30/31 zwischen Brünner Straße und Floridsdorf. U-Bahn-Linien bleiben getrennt.
+ */
+export function lineKey(mode: Mode, line: string): string {
+  if (mode === 'U') return line;
+  if (mode === 'N') return 'B';
+  return mode;
+}
+
+export function fmtDuration(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
