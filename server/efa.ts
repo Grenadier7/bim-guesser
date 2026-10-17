@@ -3,10 +3,11 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { STATE_DIR } from './paths.ts';
 import type { LatLon, Mode } from '../shared/types.ts';
 
 const BASE = 'https://www.wienerlinien.at/ogd_routing';
-const CACHE_DIR = path.resolve(import.meta.dirname, '../data/cache');
+const CACHE_DIR = path.join(STATE_DIR, 'cache');
 const CACHE_TTL_MS = 3 * 24 * 3600 * 1000;
 const MAX_PARALLEL = 4;
 

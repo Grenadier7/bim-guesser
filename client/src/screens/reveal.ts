@@ -30,7 +30,12 @@ export function breakdown(ev: Evaluation): string {
   return `<table class="breakdown">${rows.join('')}</table>`;
 }
 
+/** so viele Verbindungen sind sofort sichtbar – der Rest hinter "weitere zeigen" */
+const SHOWN_ROUTES = 3;
+
 export function revealScreen(panel: HTMLElement): Screen {
+  /** angetippte Route bleibt auf der Karte hervorgehoben */
+  let pinned: string | null = null;
   const idx = currentRound()!.index;
   let reveal: RoundReveal | null = null;
   panel.innerHTML = loadingHtml('Lade Auflösung …');
@@ -54,7 +59,9 @@ export function revealScreen(panel: HTMLElement): Screen {
     const playerRoutes: PlayerRoute[] = reveal.evaluations
       .filter((e) => e.route)
       .map((e) => ({ key: `p:${e.playerId}`, name: e.playerId === myId ? 'Du' : e.playerName, route: e.route!, isMe: e.playerId === myId }));
-    app.map.showReveal(reveal.routes, playerRoutes);
+    // kräftig: beste Route + eigene – alle anderen blass, bis man sie antippt
+    app.map.showReveal(reveal.routes, playerRoutes, [best.key, ...(mine?.route ? [`p:${myId}`] : [])]);
+    pinned = null;
     if (s.settings.locate) {
       app.map.showEndpoints(round.from!, round.to!, false);
       if (mine?.guesses) app.map.showGuesses(mine.guesses, { from: round.from!, to: round.to! });
@@ -73,15 +80,17 @@ export function revealScreen(panel: HTMLElement): Screen {
 
     if (multi) {
       const table = h('div', { class: 'ranking' });
-      table.innerHTML = `<h3>Runde</h3><ol>${reveal.evaluations
+      table.innerHTML = `<h3>Runde <small>– antippen für Details</small></h3><ol>${reveal.evaluations
         .map(
-          (e) => `<li data-key="p:${e.playerId}" class="${e.playerId === myId ? 'is-me' : ''}">
+          (e) => `<li data-key="p:${e.playerId}" class="expandable ${e.playerId === myId ? 'is-me' : ''}">
             <span class="pname">${esc(e.playerName)}</span>
             <span class="pchain">${e.route ? chain(e.route.legs) : `<small>${esc(e.error ?? '–')}</small>`}</span>
             <span class="pmin">${e.durationMin != null ? `${e.durationMin} min` : ''}${isBest && e.costMin != null && e.costMin !== e.durationMin ? ` <small>→ ${e.costMin}</small>` : ''}<small>${e.elapsedSec != null ? `⏱ ${fmtDuration(e.elapsedSec)}` : 'keine Abgabe'}</small></span>
-            <b class="ppts">+${fmt(e.score.total)}</b></li>`,
+            <b class="ppts">+${fmt(e.score.total)} <span class="chev">▾</span></b>
+            <div class="rdetail">${e.route ? routeDetails(e.route) : ''}${breakdown(e)}</div></li>`,
         )
         .join('')}</ol>`;
+      makeExpandable(table);
       hoverable(table);
       panel.append(table);
     }
@@ -90,24 +99,38 @@ export function revealScreen(panel: HTMLElement): Screen {
     list.innerHTML = reveal.routes
       .slice(0, 5)
       .map(
-        (r, i) => `<li data-key="${esc(r.key)}" class="expandable ${mine?.route?.key === r.key ? 'is-mine' : ''}">
+        (r, i) => `<li data-key="${esc(r.key)}" class="expandable ${mine?.route?.key === r.key ? 'is-mine' : ''} ${i >= SHOWN_ROUTES ? 'more' : ''}">
           <div class="rrow"><span class="rank">${i + 1}</span>
           <div class="rmain"><div class="chainline">${chain(r.legs)}</div><small>${viaText(r)}</small></div>
           <div class="rtime"><b>${r.medianMin} min</b><small>${
             isBest && transfersOf(r) ? `${transfersOf(r)} Umstieg${transfersOf(r) > 1 ? 'e' : ''} → <b>${routeCostOf(r, s.settings)}</b> · ` : ''
-          }${s.settings.countWait && r.medianMin !== r.rideMin ? `Fahrt ${r.rideMin} · ` : ''}${r.samples}×</small></div>
+          }${s.settings.countWait && r.medianMin !== r.rideMin ? `Fahrt ${r.rideMin}` : ''}${s.settings.avgWait ? '' : ` · ${r.samples}×`}</small></div>
           <span class="chev">▾</span></div>
           <div class="rdetail">${routeDetails(r)}</div>
         </li>`,
       )
       .join('');
-    hoverable(list);
     makeExpandable(list);
-    const sub = s.settings.countWait ? 'Tür-zu-Tür ab Abfragezeit, Median über 6 Abfahrtszeiten' : 'reine Reisezeit, Median der Stichprobe';
+    hoverable(list);
+    const sub = s.settings.avgWait
+      ? `berechnet mit Ø-Wartezeit + Umsteigezeit${s.settings.countWait ? ', ab Abfragezeit' : ''}`
+      : s.settings.countWait
+        ? 'Tür-zu-Tür ab Abfragezeit, Median über 6 Abfahrtszeiten'
+        : 'reine Reisezeit, Median der Stichprobe';
     panel.append(
       h('h3', {}, isBest ? `Beste Verbindungen <small>(Zeit + ${penalty} min je Umstieg · ${sub})</small>` : `Schnellste Verbindungen <small>(${sub})</small>`),
       list,
     );
+    // nicht mit allen Varianten erschlagen: erst die besten, Rest auf Wunsch
+    const extra = list.querySelectorAll('li.more').length;
+    if (extra) {
+      const more = h('button', { class: 'link more-routes' }, `▸ ${extra} weitere Verbindung${extra > 1 ? 'en' : ''} zeigen`);
+      more.addEventListener('click', () => {
+        list.classList.add('show-more');
+        more.remove();
+      });
+      panel.append(more);
+    }
 
     panel.insertAdjacentHTML(
       'beforeend',
@@ -162,13 +185,20 @@ export function revealScreen(panel: HTMLElement): Screen {
        </div>`,
     );
     card.addEventListener('mouseenter', () => ev.route && app.map.highlight(ev.matchedRank != null ? ev.route.key : `p:${ev.playerId}`));
-    card.addEventListener('mouseleave', () => app.map.highlight(null));
+    card.addEventListener('mouseleave', () => app.map.highlight(pinned));
     return card;
   }
 
   function hoverable(el: HTMLElement) {
-    el.addEventListener('mouseover', (e) => app.map.highlight((e.target as HTMLElement).closest<HTMLElement>('li[data-key]')?.dataset.key ?? null));
-    el.addEventListener('mouseleave', () => app.map.highlight(null));
+    el.addEventListener('mouseover', (e) => app.map.highlight((e.target as HTMLElement).closest<HTMLElement>('li[data-key]')?.dataset.key ?? pinned));
+    el.addEventListener('mouseleave', () => app.map.highlight(pinned));
+    // Antippen (auch am Handy): aufgeklappte Route bleibt auf der Karte hervorgehoben
+    el.addEventListener('click', (e) => {
+      const li = (e.target as HTMLElement).closest<HTMLElement>('li[data-key]');
+      if (!li || (e.target as HTMLElement).closest('.rdetail')) return;
+      pinned = li.classList.contains('open') ? li.dataset.key! : null;
+      app.map.highlight(pinned);
+    });
   }
 
   let wasHost = isHost();

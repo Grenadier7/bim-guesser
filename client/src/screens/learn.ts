@@ -78,6 +78,8 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
     } else if (cfg.kind === 'lines') {
       body = `<input class="line-input" id="line-search" placeholder="Linie hinzufügen, z.B. U1, 13A, D …" autocomplete="off" spellcheck="false">
         <div class="line-results" id="line-results"></div>
+        <input class="line-input" id="station-search" placeholder="… oder Station: alle Linien, die dort fahren (z.B. Praterstern)" autocomplete="off" spellcheck="false">
+        <div class="station-results" id="station-results"></div>
         <div class="quick">${(['U', 'S', 'T'] as Mode[]).map((m) => `<button data-all="${m}">+ alle ${MODE_LABEL[m]}</button>`).join('')}${cfg.lines.length ? '<button data-clear="1">Leeren</button>' : ''}</div>
         <div class="chips picked-lines">${scope.lines.map((l) => `<button class="line-opt" data-rm="${esc(l.id)}" title="entfernen">${lineChip(l.mode, l.id, l.color)}<span class="x">×</span></button>`).join('')}</div>`;
     }
@@ -160,6 +162,45 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
     results?.addEventListener('click', (e) => {
       const id = (e.target as HTMLElement).closest<HTMLElement>('[data-add]')?.dataset.add;
       if (id) addLine(id);
+    });
+    // Station eingeben → alle Linien, die dort fahren
+    const stSearch = el.querySelector<HTMLInputElement>('#station-search');
+    const stResults = el.querySelector<HTMLElement>('#station-results');
+    const norm = (x: string) => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+    /** Linien (im regulären Netz), die an einer Station mit diesem Namen halten */
+    const linesAtName = (name: string): Line[] => {
+      const ids = net.data.stations.filter((x) => x.name === name).map((x) => x.id);
+      return net.data.lines.filter((l) => patternsOf(l).some((p) => ids.some((id) => p.includes(id))));
+    };
+    const findStations = (q: string): string[] => {
+      const n = norm(q);
+      if (n.length < 2) return [];
+      const names = [...new Set(net.data.stations.map((x) => x.name))];
+      const starts = names.filter((x) => norm(x).startsWith(n));
+      const contains = names.filter((x) => !starts.includes(x) && norm(x).includes(n));
+      return [...starts, ...contains].filter((x) => linesAtName(x).length).slice(0, 6);
+    };
+    const addStation = (name: string) => {
+      const ids = linesAtName(name).map((l) => l.id);
+      cfg.lines = [...new Set([...cfg.lines, ...ids])];
+      update(true);
+    };
+    stSearch?.addEventListener('input', () => {
+      stResults!.innerHTML = findStations(stSearch.value)
+        .map((name) => {
+          const ls = linesAtName(name);
+          return `<button class="station-opt" data-station="${esc(name)}">📍 <b>${esc(name)}</b>
+            <span class="chips">${ls.map((l) => lineChip(l.mode, l.id, l.color)).join('')}</span></button>`;
+        })
+        .join('');
+    });
+    stSearch?.addEventListener('keydown', (e) => {
+      const first = findStations(stSearch.value)[0];
+      if (e.key === 'Enter' && first) addStation(first);
+    });
+    stResults?.addEventListener('click', (e) => {
+      const name = (e.target as HTMLElement).closest<HTMLElement>('[data-station]')?.dataset.station;
+      if (name) addStation(name);
     });
     el.querySelectorAll<HTMLButtonElement>('[data-all]').forEach((b) =>
       b.addEventListener('click', () => {

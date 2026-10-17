@@ -10,6 +10,8 @@ import type {
   Restriction,
   RestrictionFrequency,
   RouteGoal,
+  XtremeLevel,
+  TipLevel,
   RouteOption,
   ScoreBreakdown,
   SlotId,
@@ -43,24 +45,70 @@ export const SLOT_DAYTYPE: Record<SlotId, DayType> = { wd12: 'wd', wd17: 'wd', s
  * Haltestellen: Schiene frei kombinierbar, Bus als Stufe (Knoten ⊂ 2+ Linien ⊂ alle).
  * Der Multiplikator richtet sich nach der schwierigsten gewählten Art.
  */
-export const RAIL_KINDS: { id: StationKind; icon: string; label: string; hint: string; factor: number }[] = [
-  { id: 'U', icon: '🚇', label: 'U-Bahn', hint: 'U-Bahn-Stationen', factor: 0.9 },
-  { id: 'S', icon: '🚆', label: 'S-Bahn', hint: 'S-Bahn-Stationen', factor: 1 },
-  { id: 'T', icon: '🚋', label: 'Bim', hint: 'Straßenbahn-Haltestellen', factor: 1.15 },
-];
-export const BUS_LEVELS: { id: StationKind; icon: string; label: string; short: string; hint: string; factor: number }[] = [
-  { id: 'hub', icon: '🔀', label: 'Bus-Knoten', short: 'Knoten', hint: 'Bus-Haltestellen, an denen 3+ Linien halten', factor: 1.3 },
-  { id: 'bus', icon: '🚌', label: 'Bus (2+ Linien)', short: '2+ Linien', hint: 'Bus-Haltestellen mit mindestens 2 Linien', factor: 1.35 },
-  { id: 'all', icon: '★', label: 'alle Bus-Haltestellen', short: 'Alle', hint: 'jede Bus-Haltestelle, auch mit nur einer Linie', factor: 1.4 },
-];
-export const STATION_KINDS = [...RAIL_KINDS, ...BUS_LEVELS];
+export interface StationLevel {
+  id: StationKind;
+  short: string;
+  label: string;
+  hint: string;
+  factor: number;
+}
 
-/** gültige Arten in fester Reihenfolge, Bus nur die höchste Stufe */
+/** Haltestellen je Verkehrsmittel: aus oder eine Stufe (von wenigen zu allen) */
+export const STATION_GROUPS: { id: 'U' | 'S' | 'T' | 'B'; icon: string; label: string; levels: StationLevel[] }[] = [
+  {
+    id: 'U',
+    icon: '🚇',
+    label: 'U-Bahn',
+    levels: [
+      { id: 'Ukey', short: 'Wichtige', label: 'wichtige U-Bahn-Stationen', hint: 'Endstellen, Umstiege und bekannte Stationen (~60 %)', factor: 0.85 },
+      { id: 'U', short: 'Alle', label: 'alle U-Bahn-Stationen', hint: 'jede U-Bahn-Station', factor: 0.9 },
+    ],
+  },
+  {
+    id: 'S',
+    icon: '🚆',
+    label: 'S-Bahn',
+    levels: [
+      { id: 'Skey', short: 'Wichtige', label: 'wichtige S-Bahn-Stationen', hint: 'Endstellen, Stammstrecke und U-Bahn-Umstiege (~60 %)', factor: 0.95 },
+      { id: 'S', short: 'Alle', label: 'alle S-Bahn-Stationen', hint: 'jede S-Bahn-Station in Wien', factor: 1 },
+    ],
+  },
+  {
+    id: 'T',
+    icon: '🚋',
+    label: 'Bim',
+    levels: [
+      { id: 'Tkey', short: 'Wichtige', label: 'wichtige Bim-Stationen', hint: 'Endstellen und Umstiege (2+ Bim-Linien oder 3+ Linien insgesamt)', factor: 1.1 },
+      { id: 'T', short: 'Alle', label: 'alle Bim-Stationen', hint: 'jede Straßenbahn-Haltestelle', factor: 1.2 },
+    ],
+  },
+  {
+    id: 'B',
+    icon: '🚌',
+    label: 'Bus',
+    levels: [
+      { id: 'hub', short: 'Knoten', label: 'Bus-Knoten', hint: 'Bus-Haltestellen, an denen 3+ Linien halten', factor: 1.3 },
+      { id: 'bus', short: 'Viele', label: 'Bus (2+ Linien)', hint: 'Bus-Haltestellen mit mindestens 2 Linien', factor: 1.35 },
+      { id: 'all', short: 'Alle', label: 'alle Bus-Haltestellen', hint: 'jede Bus-Haltestelle, auch mit nur einer Linie', factor: 1.4 },
+    ],
+  },
+];
+export const STATION_KINDS: StationLevel[] = STATION_GROUPS.flatMap((g) => g.levels);
+
+/** gewählte Stufe eines Verkehrsmittels (null = aus) */
+export function groupLevel(kinds: StationKind[], group: (typeof STATION_GROUPS)[number]['id']): StationKind | null {
+  const g = STATION_GROUPS.find((x) => x.id === group)!;
+  return [...g.levels].reverse().find((l) => kinds.includes(l.id))?.id ?? null;
+}
+
+/** gültige Arten in fester Reihenfolge, je Verkehrsmittel nur die höchste Stufe */
 export function cleanStationKinds(v: unknown): StationKind[] | null {
   if (!Array.isArray(v)) return null;
-  const rail = RAIL_KINDS.map((k) => k.id).filter((id) => v.includes(id));
-  const bus = [...BUS_LEVELS].reverse().find((k) => v.includes(k.id));
-  const out = bus ? [...rail, bus.id] : rail;
+  const out: StationKind[] = [];
+  for (const g of STATION_GROUPS) {
+    const hit = [...g.levels].reverse().find((l) => v.includes(l.id));
+    if (hit) out.push(hit.id);
+  }
   return out.length ? out : null;
 }
 
@@ -68,7 +116,9 @@ export function cleanStationKinds(v: unknown): StationKind[] | null {
 export function stationKindsFromPool(pool: unknown): StationKind[] | null {
   const n = Number(pool);
   if (!Number.isInteger(n) || n < 1 || n > 6) return null;
-  return cleanStationKinds(STATION_KINDS.slice(0, n).map((k) => k.id));
+  // alte Stufen: 1 U · 2 +S · 3 +Bim · 4 +Knoten · 5 +Bus · 6 alle
+  const old: StationKind[] = ['U', 'S', 'T', 'hub', 'bus', 'all'];
+  return cleanStationKinds(old.slice(0, n));
 }
 
 export const DISTANCES: { id: DistanceRange; label: string; range: [number, number]; factor: number }[] = [
@@ -77,27 +127,34 @@ export const DISTANCES: { id: DistanceRange; label: string; range: [number, numb
   { id: 'long', label: '6–16 km', range: [6000, 16000], factor: 1.1 },
 ];
 
-export const TRANSFER_FACTOR = 1.05;
+/** Punkte-Faktor je Mindest-Umstiegszahl (0 · 1 · 2) */
+export const MIN_TRANSFER_FACTORS = [1, 1.05, 1.1];
+export const MIN_TRANSFER_MAX = 2;
+
+export function cleanMinTransfers(v: unknown): 0 | 1 | 2 | null {
+  const n = Number(v);
+  return n === 0 || n === 1 || n === 2 ? n : null;
+}
 
 export interface DifficultyPreset {
   id: Exclude<Difficulty, 'custom'>;
   label: string;
   stations: StationKind[];
   distance: DistanceRange;
-  needTransfer: boolean;
+  minTransfers: 0 | 1 | 2;
 }
 
 export const DIFFICULTY_PRESETS: DifficultyPreset[] = [
-  { id: 'easy', label: 'Leicht', stations: ['U', 'S'], distance: 'medium', needTransfer: false },
-  { id: 'medium', label: 'Mittel', stations: ['U', 'S', 'T'], distance: 'medium', needTransfer: false },
-  { id: 'hard', label: 'Schwer', stations: ['U', 'S', 'T', 'hub'], distance: 'medium', needTransfer: false },
-  { id: 'expert', label: 'Profi', stations: ['U', 'S', 'T', 'all'], distance: 'long', needTransfer: true },
+  { id: 'easy', label: 'Leicht', stations: ['Ukey', 'Skey'], distance: 'medium', minTransfers: 0 },
+  { id: 'medium', label: 'Mittel', stations: ['U', 'S'], distance: 'medium', minTransfers: 1 },
+  { id: 'hard', label: 'Schwer', stations: ['U', 'S', 'T'], distance: 'medium', minTransfers: 2 },
+  { id: 'expert', label: 'Profi', stations: ['U', 'S', 'T', 'all'], distance: 'long', minTransfers: 2 },
 ];
 
 /** Passt die Regler-Stellung zu einer Schnellwahl? Sonst "custom". */
-export function matchPreset(s: Pick<GameSettings, 'stations' | 'distance' | 'needTransfer'>): Difficulty {
+export function matchPreset(s: Pick<GameSettings, 'stations' | 'distance' | 'minTransfers'>): Difficulty {
   const p = DIFFICULTY_PRESETS.find(
-    (x) => x.stations.join() === s.stations.join() && x.distance === s.distance && x.needTransfer === s.needTransfer,
+    (x) => x.stations.join() === s.stations.join() && x.distance === s.distance && x.minTransfers === s.minTransfers,
   );
   return p?.id ?? 'custom';
 }
@@ -106,10 +163,10 @@ export function distanceRange(d: DistanceRange): [number, number] {
   return DISTANCES.find((x) => x.id === d)!.range;
 }
 
-export function difficultyMultiplier(s: Pick<GameSettings, 'stations' | 'distance' | 'needTransfer'>): number {
+export function difficultyMultiplier(s: Pick<GameSettings, 'stations' | 'distance' | 'minTransfers'>): number {
   const pool = Math.max(...STATION_KINDS.filter((k) => s.stations.includes(k.id)).map((k) => k.factor), 0.9);
   const dist = DISTANCES.find((x) => x.id === s.distance)!.factor;
-  return Math.round(pool * dist * (s.needTransfer ? TRANSFER_FACTOR : 1) * 100) / 100;
+  return Math.round(pool * dist * (MIN_TRANSFER_FACTORS[s.minTransfers] ?? 1) * 100) / 100;
 }
 
 /** Fokus-Kreis: erlaubte Radien und Anteile */
@@ -180,6 +237,30 @@ export function sortRoutes(routes: RouteOption[], s: RouteScoring): RouteOption[
     .sort((a, b) => a.c - b.c || a.i - b.i)
     .map((x) => x.r);
 }
+
+// ---------------------------------------------------------------- X-treme
+
+export const XTREME_LEVELS: { id: XtremeLevel; label: string; hint: string }[] = [
+  { id: 'off', label: 'Aus', hint: 'normales Spiel' },
+  {
+    id: 'noHints',
+    label: 'Ohne Vorschläge',
+    hint: 'Ein- und Ausstieg selbst eintippen (Auto-Vervollständigung aller Stationen), auf der Karte nur Start und Ziel – keine Route.',
+  },
+  { id: 'noNames', label: 'Ohne Namen', hint: 'Wie „Ohne Vorschläge“ – und Start und Ziel sind nur Punkte auf der Karte, ohne Namen.' },
+  { id: 'noMap', label: 'Ohne Karte', hint: 'Wie „Ohne Vorschläge“ – und auf der Karte ist gar nichts eingezeichnet, nur die Namen von Start und Ziel.' },
+];
+/** X-treme verdoppelt die Zeit */
+export const XTREME_TIME_FACTOR = 2;
+
+/** Zeitlimit einer normalen Runde (mit X-treme verdoppelt) */
+export function baseLimitSec(s: Pick<GameSettings, 'roundTimeLimitSec' | 'xtreme'>): number | null {
+  if (!s.roundTimeLimitSec) return null;
+  return s.roundTimeLimitSec * (s.xtreme !== 'off' ? XTREME_TIME_FACTOR : 1);
+}
+
+/** Bei "ohne Namen" und "ohne Karte" gibt es kein "Wo liegt das?" */
+export const xtremeBlocksLocate = (x: XtremeLevel) => x === 'noNames' || x === 'noMap';
 
 // ---------------------------------------------------------------- Einschränkungen
 
@@ -302,12 +383,25 @@ export function timeBonus(routeAfterTips: number, elapsedSec: number | null, lim
   return Math.round(routeAfterTips * TIME_BONUS_SHARE * f);
 }
 
+/** Tipp-Stufen: günstig = 5 Prozentpunkte billiger, teuer = 20 Prozentpunkte teurer als die Grundwerte */
+export const TIP_LEVELS: { id: TipLevel; label: string; delta: number }[] = [
+  { id: 'off', label: 'Keine', delta: 0 },
+  { id: 'cheap', label: 'Günstig', delta: -0.05 },
+  { id: 'expensive', label: 'Teuer', delta: 0.2 },
+];
+
+/** Abzug eines Tipps auf dieser Stufe (0–0.95) */
+export function tipShare(kind: TipKind, level: TipLevel): number {
+  const d = TIP_LEVELS.find((x) => x.id === level)?.delta ?? 0;
+  return Math.max(0, Math.min(0.95, Math.round((TIPS[kind].share + d) * 100) / 100));
+}
+
 /** Mindestens so viel der Routenpunkte bleibt auch mit allen Tipps */
 export const TIP_MIN_KEEP = 0.1;
 
 /** Gesamtabzug der Tipps: multiplikativ, damit sich Tipps nicht auf über 100 % summieren */
-export function tipShareOf(tips: TipKind[]): number {
-  const keep = tips.reduce((k, t) => k * (1 - TIPS[t].share), 1);
+export function tipShareOf(tips: TipKind[], level: TipLevel = 'cheap'): number {
+  const keep = tips.reduce((k, t) => k * (1 - tipShare(t, level)), 1);
   return Math.round((1 - Math.max(TIP_MIN_KEEP, keep)) * 1000) / 1000;
 }
 
@@ -318,8 +412,9 @@ export function computeScore(o: {
   limitSec: number | null;
   locateDist: { from: number | null; to: number | null } | null;
   multiplier: number;
+  tipLevel?: TipLevel;
 }): ScoreBreakdown {
-  const tipShare = tipShareOf(o.tips);
+  const tipShare = tipShareOf(o.tips, o.tipLevel);
   const routeAfterTips = Math.round(o.routePoints * (1 - tipShare));
   const tb = timeBonus(routeAfterTips, o.elapsedSec, o.limitSec);
   const locate = o.locateDist ? locatePoints(o.locateDist.from) + locatePoints(o.locateDist.to) : 0;

@@ -1377,7 +1377,7 @@ small {
   padding-top: 4px;
 }
 
-.ranking ol {
+.ranking > ol {
   list-style: none;
   padding: 0;
   margin: 0;
@@ -1385,7 +1385,7 @@ small {
   gap: 4px;
 }
 
-.ranking li {
+.ranking > ol > li {
   display: grid;
   grid-template-columns: 1fr auto auto;
   grid-template-areas:
@@ -1398,7 +1398,7 @@ small {
   border-radius: 10px;
 }
 
-.ranking li.is-me {
+.ranking > ol > li.is-me {
   border: 2px solid var(--ink);
 }
 
@@ -1550,7 +1550,11 @@ input[type='range'] {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid #e8d9a8;
+  border-radius: 12px;
+  background: #fffaeb;
 }
 
 .host-bar:empty {
@@ -2859,4 +2863,649 @@ div.wait-note ul {
 .reset-settings {
   display: block;
   margin: 10px auto 0;
+}
+
+/* ---------------------------------------------------------------- Auflösung: weniger auf einmal */
+
+.route-list > li.more {
+  display: none;
+}
+
+.route-list.show-more > li.more {
+  display: block;
+}
+
+.more-routes {
+  display: block;
+  margin: 6px 0 4px;
+}
+
+.ranking > ol > li.expandable {
+  cursor: pointer;
+  grid-template-areas:
+    'name min pts'
+    'chain chain chain'
+    'detail detail detail';
+}
+
+.ranking > ol > li .rdetail {
+  grid-area: detail;
+}
+
+.ranking > ol > li.open .rdetail {
+  display: block;
+}
+
+.ranking > ol > li.open .chev {
+  transform: rotate(180deg);
+  display: inline-block;
+}
+
+.ranking .chev {
+  font-size: 11px;
+  margin-left: 4px;
+}
+
+.leg-detail li.ld-wait {
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- Host-Knöpfe farbig */
+
+.host-label {
+  width: 100%;
+  font-weight: 700;
+  color: #7a5b00;
+}
+
+.host-bar button {
+  font-weight: 700;
+  border-width: 1.5px;
+}
+
+.host-bar .hb-pause {
+  background: #fff1c2;
+  border-color: #e0b13a;
+  color: #6b4b00;
+}
+
+.host-bar .hb-resume {
+  background: #dcf5e3;
+  border-color: #3aa65c;
+  color: #14572b;
+}
+
+.host-bar .hb-cancel {
+  background: #ffe9e3;
+  border-color: #e8907a;
+  color: #9a2e14;
+}
+
+.host-bar .hb-end {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.host-bar button:hover {
+  filter: brightness(0.95);
+}
+
+/* ---------------------------------------------------------------- Einladung */
+
+.invite-card {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 2px solid var(--accent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+  font-size: 15px;
+}
+
+/* ---------------------------------------------------------------- Startseite: Routenjagd groß */
+
+.mode-tile.mode-hero {
+  width: 100%;
+  min-height: 170px;
+  padding: 28px 30px;
+  border-top-width: 7px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 7%, var(--panel)), var(--panel) 60%);
+}
+
+.mode-hero .mt-icon {
+  font-size: 64px;
+}
+
+.mode-hero .mt-title {
+  font-size: 30px;
+}
+
+.mode-hero .mt-text {
+  font-size: 16px;
+}
+
+.more-modes {
+  margin: 22px 0 10px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.mode-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mode-tile.mode-small {
+  grid-template-columns: auto 1fr;
+  min-height: 0;
+  padding: 16px;
+}
+
+.mode-small .mt-icon {
+  font-size: 32px;
+}
+
+.mode-small .mt-title {
+  font-size: 18px;
+}
+
+.mode-small .mt-text {
+  font-size: 13px;
+}
+
+@media (max-width: 760px) {
+  .mode-grid-3 {
+    grid-template-columns: 1fr;
+  }
+  .mode-tile.mode-hero {
+    padding: 20px;
+  }
+  .mode-hero .mt-icon {
+    font-size: 44px;
+  }
+  .mode-hero .mt-title {
+    font-size: 24px;
+  }
+}
+
+/* ---------------------------------------------------------------- Haltestellen: Kästchen + Mini-Regler */
+
+.station-cols {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.sc-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sc-box {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 2px;
+  border: 1.5px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  opacity: 0.6;
+  position: relative;
+  z-index: 1;
+}
+
+.sc-box span {
+  font-size: 18px;
+}
+
+.sc-box small {
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.sc-col.on .sc-box {
+  opacity: 1;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* senkrechter Strich mit Querstrichen, beginnt im Kästchen */
+.vslider {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  margin-top: -6px;
+  padding-top: 8px;
+}
+
+.vslider::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 9px;
+  width: 2px;
+  margin-left: -1px;
+  background: #c9ced5;
+}
+
+.sc-col.on .vslider::before {
+  background: color-mix(in srgb, var(--accent) 55%, #c9ced5);
+}
+
+.vtick {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+
+.vtick i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 2px;
+  margin: -1px 0 0 -7px;
+  background: #b3b9c2;
+}
+
+.vtick span {
+  position: absolute;
+  left: calc(50% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.vtick.cur i {
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--panel);
+}
+
+.sc-col:not(.on) .vtick.cur i {
+  background: #8a919b;
+}
+
+.vtick.cur span {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.vtick:disabled {
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- X-treme */
+
+.xtreme-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: linear-gradient(100deg, #12002b, #5b0a7a 45%, #e3000f);
+  color: #fff;
+  font-weight: 900;
+  font-size: 20px;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 10px rgb(255 80 200 / 0.7);
+  box-shadow: 0 3px 14px rgb(91 10 122 / 0.45);
+}
+
+.xtreme-banner span {
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: rgb(255 255 255 / 0.18);
+}
+
+.xtreme-banner small {
+  width: 100%;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-shadow: none;
+  opacity: 0.9;
+}
+
+.xtreme-setting > span:first-child {
+  color: #6b1590;
+}
+
+.xtreme-hint {
+  color: #6b1590;
+}
+
+.typed-legs {
+  display: grid;
+  gap: 8px;
+}
+
+.sc-box small {
+  color: inherit;
+}
+
+/* ---------------------------------------------------------------- Info-Fenster (ⓘ) */
+
+.info-tip {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 4px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  vertical-align: middle;
+  cursor: help;
+}
+
+.info-tip:hover,
+.info-tip:focus-visible,
+.info-tip.open {
+  background: var(--ink);
+  color: #fff;
+}
+
+.tip-pop {
+  display: none;
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 6px);
+  left: -8px;
+  width: min(300px, 80vw);
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.25);
+  cursor: default;
+}
+
+.info-tip:hover .tip-pop,
+.info-tip:focus .tip-pop,
+.info-tip.open .tip-pop {
+  display: block;
+}
+
+/* X-treme-Startknopf – gleiche Farben wie der Banner im Spiel */
+.btn-xtreme {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border: 0;
+  color: #fff;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  background: linear-gradient(100deg, #12002b, #5b0a7a 45%, #e3000f);
+  text-shadow: 0 0 10px rgb(255 80 200 / 0.7);
+  box-shadow: 0 3px 16px rgb(91 10 122 / 0.5);
+}
+
+.btn-xtreme small {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgb(255 255 255 / 0.85);
+  text-shadow: none;
+}
+
+.btn-xtreme:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+/* ---------------------------------------------------------------- Lobby: Reiter, X-treme-Kachel */
+
+.adv-tabs {
+  margin: 10px 0 6px;
+}
+
+.adv-tabs button {
+  font-size: 13px;
+}
+
+.adv-body {
+  min-height: 120px;
+}
+
+.toggle .tl b {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toggle .rec {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: #dcf5e3;
+  color: #14572b;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+details.fine {
+  margin: 4px 0 10px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+details.fine > summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.xtreme-tile {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 6px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 2px solid #5b0a7a;
+  background: color-mix(in srgb, #5b0a7a 6%, var(--panel));
+}
+
+.xtreme-tile.on {
+  border-color: transparent;
+  background: linear-gradient(100deg, #12002b, #5b0a7a 45%, #e3000f);
+  color: #fff;
+  box-shadow: 0 3px 14px rgb(91 10 122 / 0.4);
+}
+
+.xt-head {
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #5b0a7a;
+}
+
+.xtreme-tile.on .xt-head {
+  color: #fff;
+  text-shadow: 0 0 10px rgb(255 80 200 / 0.7);
+}
+
+.xtreme-tile .seg {
+  background: rgb(255 255 255 / 0.65);
+}
+
+.xtreme-tile small {
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+/* ⓘ in einer Reiter-Leiste: kein Reiter-Stil */
+.tabs > .info-tip {
+  align-self: center;
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: 0;
+  width: 18px;
+  height: 18px;
+  color: var(--muted);
+}
+
+.tabs > .info-tip .tip-pop {
+  left: auto;
+  right: -8px;
+}
+
+.xtreme-tile.on .seg {
+  background: rgb(255 255 255 / 0.15);
+}
+
+.xtreme-tile.on .seg button {
+  color: #fff;
+}
+
+.xtreme-tile.on .seg button.on {
+  background: #fff;
+  color: #5b0a7a;
+  font-weight: 800;
+}
+
+.xtreme-tile.on small {
+  color: #fff;
+}
+
+.xtreme-tile.on .info-tip {
+  background: rgb(255 255 255 / 0.25);
+  color: #fff;
+}
+
+/* ⓘ-Fenster: fix positioniert (per JS ins Bild geklemmt) */
+.tip-pop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: auto;
+}
+
+.tabs > .info-tip .tip-pop {
+  left: 0;
+  right: auto;
+}
+
+.min-tr {
+  grid-template-columns: 1fr auto;
+}
+
+.min-tr b {
+  min-width: 110px;
+  text-align: right;
+}
+
+/* Zurücksetzen: schlichtes Icon rechts in der Reiter-Leiste von "Erweitert" */
+.tabs > .icon-reset {
+  margin: 0 0 0 auto;
+  padding: 0 6px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    transform 0.2s,
+    color 0.2s;
+}
+
+.tabs > .icon-reset:hover {
+  color: var(--accent);
+  transform: rotate(-90deg);
+}
+
+.tip-tr {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: 6px;
+}
+
+.adv-tabs > button[data-adv] {
+  white-space: nowrap;
+  padding: 8px 7px;
+  font-size: 12.5px;
+}
+
+/* Lernen: Station eingeben → alle Linien dort */
+#station-search {
+  margin-top: 8px;
+}
+
+.station-results {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.station-opt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.station-opt:hover {
+  border-color: var(--ink);
+}
+
+.station-opt .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+/* Weitere Spielmodi: so viele Spalten, wie Platz ist (nie gequetscht) */
+.mode-grid.mode-grid-3 {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
 }

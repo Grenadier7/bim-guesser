@@ -39,6 +39,17 @@ export class GameManager {
     return g;
   }
 
+  /** Laufende Spiele mit verbundenen Spielern – ein Update wartet, bis das 0 ist */
+  activeGames(): number {
+    let n = 0;
+    for (const g of this.games.values()) if (g.phase === 'playing' && g.hasConnections) n++;
+    return n;
+  }
+
+  get lobbyCount(): number {
+    return this.games.size;
+  }
+
   private cleanup() {
     const cutoff = Date.now() - 3 * 3600 * 1000;
     const idleLobby = Date.now() - 20 * 60 * 1000;

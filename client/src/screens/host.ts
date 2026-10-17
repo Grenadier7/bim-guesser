@@ -30,10 +30,10 @@ export function hostBar(): HTMLElement {
   const el = h('div', { class: 'host-bar' });
   if (!isHost()) return el;
   const t = openTimer();
-  el.innerHTML = `<span class="host-label">👑 Host</span>
-    ${t ? (t.pausedAt ? '<button data-a="resume">▶ Fortsetzen</button>' : '<button data-a="pause">⏸ Pause</button>') : ''}
-    ${t ? `<button data-a="cancel">✖ ${isQuiz() ? 'Frage überspringen' : 'Runde abbrechen'}</button>` : ''}
-    <button data-a="end">⏹ Spiel beenden</button>`;
+  el.innerHTML = `<span class="host-label">👑 Host-Steuerung</span>
+    ${t ? (t.pausedAt ? '<button class="hb-resume" data-a="resume">▶ Fortsetzen</button>' : '<button class="hb-pause" data-a="pause">⏸ Pause</button>') : ''}
+    ${t ? `<button class="hb-cancel" data-a="cancel">✖ ${isQuiz() ? 'Frage überspringen' : 'Runde abbrechen'}</button>` : ''}
+    <button class="hb-end" data-a="end">⏹ Spiel beenden</button>`;
   el.querySelectorAll<HTMLButtonElement>('[data-a]').forEach((b) =>
     b.addEventListener('click', () => hostActions[b.dataset.a as keyof typeof hostActions]()),
   );

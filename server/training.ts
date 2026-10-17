@@ -2,7 +2,7 @@
 import { randomBytes } from 'node:crypto';
 import type { GameSettings, RouteOption, Station, TrainingResult, TrainingRound } from '../shared/types.ts';
 import { GameError, cleanLegs, sanitizeSettings } from './game.ts';
-import type { Network } from './network.ts';
+import type { Network, PastPair } from './network.ts';
 import { EfaUnavailableError, evaluateUserRoute, topRoutes, type RouteQuery } from './routing.ts';
 import { describeSlotDate, slotTime } from './timeslots.ts';
 
@@ -20,6 +20,8 @@ const TTL_MS = 3 * 3600 * 1000;
 
 export class TrainingService {
   private rounds = new Map<string, Stored>();
+  /** zuletzt gezogene Strecken (für Abwechslung) */
+  private recent: PastPair[] = [];
   private net: Network;
 
   constructor(net: Network) {
@@ -54,15 +56,19 @@ export class TrainingService {
       to = this.net.station(String(pair!.to));
       routes = await topRoutes(this.net, from.id, to.id, time, this.query(settings));
     } else {
-      for (let attempt = 0; attempt < 8 && !routes.length; attempt++) {
-        [from, to] = this.net.randomPair(settings, new Set());
+      for (let attempt = 0; attempt < 14 && !routes.length; attempt++) {
+        [from, to] = this.net.randomPair(settings, new Set(), this.recent);
         const r = await topRoutes(this.net, from.id, to.id, time, this.query(settings));
         if (!r.length || r[0].key === 'walk') continue;
-        if (settings.needTransfer && r[0].legs.filter((l) => l.mode !== 'W').length < 2 && attempt < 6) continue;
+        if (r[0].legs.filter((l) => l.mode !== 'W').length - 1 < settings.minTransfers && attempt < 12) continue;
         routes = r;
       }
     }
     if (!from || !to || !routes.length) throw new GameError('Keine passende Strecke gefunden – bitte nochmal versuchen.', 502);
+    if (!fixed) {
+      this.recent = [...this.recent.slice(-5), { a: from, b: to }];
+      this.net.markUsed(from.id, to.id);
+    }
 
     if (this.rounds.size >= MAX_ROUNDS) this.cleanup(true);
     const id = randomBytes(9).toString('base64url');

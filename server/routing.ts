@@ -11,7 +11,7 @@
 //     Umstieg Umsteigeweg + halber Takt der nächsten Linie (Takt = Abfahrten pro Stunde zu dieser Zeit).
 //     Ein zufällig perfekter Anschluss (an um 16:32, S-Bahn um 16:34) bringt so keinen Vorteil mehr –
 //     eine S-Bahn alle 15 min kostet im Schnitt 7,5 min Warten, eine U-Bahn alle 4 min nur 2.
-import type { LatLon, Mode, NetMode, Restriction, RouteLeg, RouteOption, RouteWait, UserLeg } from '../shared/types.ts';
+import type { LatLon, Mode, NetMode, Restriction, RouteLeg, RouteOption, RouteStep, UserLeg } from '../shared/types.ts';
 import { lineColor, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs } from '../shared/rules.ts';
 import * as efa from './efa.ts';
 import { distM, type Network } from './network.ts';
@@ -309,7 +309,7 @@ async function chainRoute(
     samples: samples.length,
   };
   if (q.avgWait) {
-    const avg = await averagedRoute(net, legs, tables, fromId, toId, slotTime, q.countWait);
+    const avg = await averagedRoute(net, legs, tables, fromId, toId, slotTime, q.countWait, labels);
     if (avg) Object.assign(route, avg);
   }
   return { route, error: null };
@@ -317,10 +317,17 @@ async function chainRoute(
 
 /** Zeitfenster, über das der Takt gemittelt wird (Minuten) */
 const HEADWAY_WINDOW = 60;
+/**
+ * Am Start wird nur die halbe Ø-Wartezeit gerechnet (also ein Viertel des Takts):
+ * zur ersten Abfahrt kann man sich die Zeit meist einteilen – beim Umsteigen nicht.
+ * Gilt nur, wenn die erste Linie direkt an der Start-Station abfährt (kein Fußweg dorthin).
+ */
+const FIRST_WAIT_FACTOR = 0.5;
 
 /**
  * Ø-Wartezeiten: Fahrzeit je Linie (Median) + Umsteigeweg + halber Takt der nächsten Linie.
- * Start: halber Takt nur mit "Wartezeit mitzählen". null, wenn eine Linie im Fenster gar nicht fährt.
+ * Start: halber Takt nur mit "Wartezeit mitzählen". Liefert den ganzen Zeitplan (steps), damit
+ * überall dieselben berechneten Minuten stehen. null, wenn eine Linie im Fenster gar nicht fährt.
  */
 async function averagedRoute(
   net: Network,
@@ -330,14 +337,26 @@ async function averagedRoute(
   toId: string,
   slotTime: number,
   countWait: boolean,
-): Promise<Pick<RouteOption, 'medianMin' | 'rideMin' | 'waits'> | null> {
-  let t = slotTime + walkMin(net, fromId, legs[0].from);
+  labels?: (string | null)[],
+): Promise<Pick<RouteOption, 'medianMin' | 'rideMin' | 'steps'> | null> {
+  let t = slotTime;
   let firstWait = 0;
-  const waits: RouteWait[] = [];
+  const steps: RouteStep[] = [];
+  // Zeiten auf ganze Minuten runden, damit die Summe der Schritte genau die Gesamtzeit ergibt
+  const add = (kind: RouteStep['kind'], min: number, extra: Omit<RouteStep, 'kind' | 'at' | 'min'>) => {
+    const a = Math.round(t);
+    t += min;
+    const m = Math.round(t) - a;
+    if (m > 0 || kind === 'ride') steps.push({ kind, at: efa.fmtTime(a), min: m, ...extra });
+  };
+  const w0 = walkMin(net, fromId, legs[0].from);
+  if (w0) add('walk', w0, { to: net.station(legs[0].from).name });
   for (let i = 0; i < legs.length; i++) {
     const prev = i === 0 ? fromId : legs[i - 1].to;
-    const walk = i === 0 ? 0 : prev === legs[i].from ? 2 : Math.max(2, walkMin(net, prev, legs[i].from));
-    t += walk;
+    if (i > 0) {
+      const same = prev === legs[i].from;
+      add(same ? 'transfer' : 'walk', same ? 2 : Math.max(2, walkMin(net, prev, legs[i].from)), { to: net.station(legs[i].from).name });
+    }
     // Takt ab der (geschätzten) Ankunft an der Haltestelle, über eine Stunde gemittelt
     let window = HEADWAY_WINDOW;
     let deps = await tables[i].departures(t, window);
@@ -347,17 +366,26 @@ async function averagedRoute(
     }
     if (!deps.length) return null;
     const every = window / deps.length;
+    const wait = (every / 2) * (i === 0 && !w0 ? FIRST_WAIT_FACTOR : 1);
+    if (i > 0 || countWait) {
+      const before = t;
+      add('wait', wait, { to: net.station(legs[i].from).name, every: Math.round(every) });
+      if (i === 0) firstWait = t - before;
+    }
+    const line = net.lines.get(legs[i].line)!;
     const ride = median(deps.map((d) => d.arr - d.dep));
-    const wait = every / 2;
-    if (i === 0) firstWait = countWait ? wait : 0;
-    else t += wait;
-    if (i > 0 || countWait)
-      waits.push({ station: net.station(legs[i].from).name, line: legs[i].line, waitMin: Math.round(wait), everyMin: Math.round(every), walkMin: walk });
-    t += ride;
+    add('ride', ride, {
+      from: net.station(legs[i].from).name,
+      to: net.station(legs[i].to).name,
+      line: labels?.[i] ?? line.id,
+      mode: line.mode,
+      color: lineColor(line.mode, line.id),
+    });
   }
-  t += walkMin(net, legs[legs.length - 1].to, toId);
-  const ride = t - slotTime; // ab Abfahrt der ersten Linie (ohne Warten am Start)
-  return { medianMin: Math.round(ride + firstWait), rideMin: Math.round(ride), waits };
+  const wEnd = walkMin(net, legs[legs.length - 1].to, toId);
+  if (wEnd) add('walk', wEnd, { to: net.station(toId).name });
+  const total = Math.round(t) - slotTime;
+  return { medianMin: total, rideMin: total - Math.round(firstWait), steps };
 }
 
 // ---------------------------------------------------------------- Top-Verbindungen
@@ -445,8 +473,10 @@ export async function topRoutes(net: Network, fromId: string, toId: string, slot
       return { ...r.route, legs: r.route.legs.map((l) => (l.mode === 'W' ? l : { ...l, path: c.option.legs.find((x) => x.mode === l.mode && x.fromStation === l.fromStation)?.path ?? l.path })) };
     }),
   );
-  chained.sort((a, b) => a.medianMin - b.medianMin || b.samples - a.samples);
-  return chained;
+  // mit Ø-Wartezeiten nur berechnete Verbindungen zeigen – nicht nachrechenbare Stichproben passen nicht dazu
+  const shown = q.avgWait && chained.some((r) => r.steps) ? chained.filter((r) => r.steps || r.key === 'walk') : chained;
+  shown.sort((a, b) => a.medianMin - b.medianMin || b.samples - a.samples);
+  return shown;
 }
 
 // ---------------------------------------------------------------- User-Route nachrechnen

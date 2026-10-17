@@ -1,4 +1,4 @@
-// Startseite: vier Modi als große Kacheln + Beitreten mit Code (führt automatisch in den richtigen Modus)
+// Startseite: Routenjagd groß, darunter die weiteren Modi + Beitreten mit Code (führt automatisch in den richtigen Modus)
 import type { GameMode } from '../../../shared/types.ts';
 import { api } from '../api.ts';
 import { app, savePrefs, startSession } from '../store.ts';
@@ -36,6 +36,12 @@ const MODES = [
   },
 ] as const;
 
+function tile(m: (typeof MODES)[number], cls: string): string {
+  return `<button class="mode-tile mode-${m.id} ${cls}" data-mode="${m.id}">
+    <span class="mt-icon">${m.icon}</span><span class="mt-title">${m.title}</span>
+    <span class="mt-text">${m.text}</span><span class="mt-tag">${m.tag}</span></button>`;
+}
+
 export function homeScreen(panel: HTMLElement): Screen {
   app.map.clear();
   const urlCode = new URLSearchParams(location.search).get('code')?.toUpperCase() ?? '';
@@ -43,11 +49,18 @@ export function homeScreen(panel: HTMLElement): Screen {
     'div',
     { class: 'home' },
     `<header class="hero"><span class="logo big">U</span><div><h1>Öffi-Guesser Wien</h1><p>Wie gut kennst du die Wiener Öffis?</p></div></header>
-     <div class="mode-grid">${MODES.map(
-       (m) => `<button class="mode-tile mode-${m.id}" data-mode="${m.id}">
-         <span class="mt-icon">${m.icon}</span><span class="mt-title">${m.title}</span>
-         <span class="mt-text">${m.text}</span><span class="mt-tag">${m.tag}</span></button>`,
-     ).join('')}</div>
+     ${
+       urlCode
+         ? `<div class="invite-card"><div>📨 Du wurdest in die Lobby <b>${esc(urlCode)}</b> eingeladen.</div>
+              <label class="field"><span>Dein Name</span><input id="inviteName" maxlength="20" placeholder="z.B. Alex" value="${esc(app.prefs.name)}"></label>
+              <button class="btn btn-primary btn-big" id="joinInvite">Jetzt beitreten</button></div>`
+         : ''
+     }
+     ${tile(MODES[0], 'mode-hero')}
+     <h3 class="more-modes">Weitere Spielmodi</h3>
+     <div class="mode-grid mode-grid-3">${MODES.slice(1)
+       .map((m) => tile(m, 'mode-small'))
+       .join('')}</div>
      <div class="home-bottom">
        <label class="field"><span>Dein Name</span><input id="name" maxlength="20" placeholder="z.B. Alex" value="${esc(app.prefs.name)}"></label>
        <div class="field join"><span>Mit Code beitreten</span>
@@ -98,9 +111,14 @@ export function homeScreen(panel: HTMLElement): Screen {
     }
   };
   el.querySelector('#join')!.addEventListener('click', join);
+  // Einladung: Name oben eintragen, ein Klick zum Beitreten
+  const inviteName = el.querySelector<HTMLInputElement>('#inviteName');
+  inviteName?.addEventListener('input', () => (nameIn.value = inviteName.value));
+  inviteName?.addEventListener('keydown', (e) => e.key === 'Enter' && join());
+  el.querySelector('#joinInvite')?.addEventListener('click', join);
   codeIn.addEventListener('input', () => (codeIn.value = codeIn.value.toUpperCase().replace(/[^A-Z0-9]/g, '')));
   codeIn.addEventListener('keydown', (e) => e.key === 'Enter' && join());
   setPanel(panel, el);
-  if (urlCode) codeIn.focus();
+  if (urlCode) (inviteName ?? codeIn).focus();
   return {};
 }

@@ -1,0 +1,11 @@
+node_modules
+dist
+data/raw
+data/cache
+data/usage.json
+.env
+.git
+.github
+.claude
+deploy
+*.log

@@ -83,43 +83,69 @@ in die richtige Lobby (Routenjagd oder Quiz).
 ## Routenjagd
 
 1. Auf der Startseite **🏁 Routenjagd** wählen (erstellt eine Lobby, auch alleine) oder **mit Code beitreten** – der Einladungslink `?code=XXXXX` füllt den Code automatisch aus.
-2. In der Lobby stellt der Host alles ein:
+2. In der Lobby stellt der Host alles ein. Sichtbar sind nur Schwierigkeit, Runden, Zeitlimit und „Wo liegt das?“;
+   Erklärungen stecken hinter einem **ⓘ** (Maus drüber / antippen). „⚙️ Erweitert“ hat drei Reiter –
+   **🎯 Schwierigkeit** (Haltestellen, Entfernung, Min. Umstiege), **📏 Regeln** (Realistische Wertung, Tipps,
+   🏆 Challenges, **⚡ X-treme**-Kachel), **🕒 Zeit & Netz** (Uhrzeit, Netz, Fokus-Gebiet). ↺ in der Überschrift setzt alles zurück. *Realistische Wertung* (empfohlen)
+   schaltet Wartezeit mitzählen + Ø-Wartezeiten + Beste Route gemeinsam; unter „Einzeln einstellen“ geht es getrennt.
+   Mit X-treme heißt der Knopf „⚡ X-TREME starten“.
+   Im Einzelnen:
    - **Uhrzeit** (unter „Erweitert“): Mo–Fr 12 Uhr, Mo–Fr 17 Uhr, Sa 2 Uhr (Nacht), So 12 Uhr
    - **Netz**: *Regulär* = Referenztag ohne Baustellen (das Build-Skript sucht den nächstgelegenen Tag ohne
      Ersatzverkehr und mit funktionierenden S-Bahn-Testverbindungen, ohne Ferien/Feiertage) ·
      *Aktuell* = nächster echter Tag inkl. Sperren
    - **Schwierigkeit**: Schnellwahl Leicht / Mittel / Schwer / Profi – oder selbst mit drei Reglern:
-     *Haltestellen*: Schiene frei kombinierbar (🚇 U · 🚆 S · 🚋 Bim, z.B. nur S-Bahn) plus eine Bus-Stufe
-     (Kein Bus · 🔀 Knoten = 3+ Linien · 🚌 2+ Linien · ★ alle Bus-Haltestellen); Schwer = U + S + Bim + Bus-Knoten,
-     Profi = alles; der Multiplikator richtet sich nach der schwierigsten Art,
-     *Entfernung* (2–7 / 3–12 / 6–16 km) und *Immer mit Umstieg*. Der Punkte-Multiplikator (0,81–1,62) ergibt sich daraus.
+     *Haltestellen*: vier Kästchen (🚇 U-Bahn · 🚆 S-Bahn · 🚋 Bim · 🚌 Bus) zum An-/Ausschalten, darunter je ein
+     kleiner senkrechter Regler für die Stufe: U/S/Bim *Wichtige* (Endstellen, Umstiege, Stammstrecke, bekannte
+     Stationen – U 60/99, S 31/49, Bim 264/411) oder *Alle*; Bus *Knoten* (3+ Linien) · *Viele* (2+) · *Alle*.
+     Leicht = wichtige U + S, Mittel = alle U + S, Schwer = + alle Bim, Profi = + alle Bus-Haltestellen;
+     der Multiplikator richtet sich nach der schwierigsten Art,
+     *Entfernung* (2–7 / 3–12 / 6–16 km) und *Min. Umstiege* (Regler 0–2: so viele Umstiege hat die beste Verbindung
+     mindestens; Leicht 0, Mittel 1, Schwer/Profi 2). Der Punkte-Multiplikator (×0,85–1,69) ergibt sich daraus.
    - **Fokus-Gebiet**: Kreis auf der Karte (antippen oder Bezirk als Mittelpunkt wählen), Radius 1,5–6 km.
      10–90 % der Stationen werden aus dem Kreis gezogen, der Rest aus ganz Wien. Standardmäßig aus.
    - **Runden**: 3 / 5 / 7 / 10
-   - **Zeitlimit** (Standard: an, 3:00) – nach Ablauf wird automatisch abgegeben, was eingegeben ist
+   - **Zeitlimit** 1–10 min oder „∞ Ohne“ in einer Leiste (Standard 3:00) – nach Ablauf wird abgegeben, was eingegeben ist
    - **Wo liegt das?** – Start und Ziel vorher auf der leeren Karte tippen
    - **Wertung** (unter „Erweitert“, Standard: *Beste Route*): Reisezeit + Aufschlag je Umstieg – Punkte, Ranking
      und die Liste der Top-Verbindungen richten sich danach. Aufschlag: 2 min mit Ø-Wartezeiten (Warten ist dort
      schon eingerechnet), 4 min mit echtem Fahrplan.
      *Schnellste Route*: nur die Reisezeit zählt.
+   - **⚡ X-treme** (unter „Erweitert“, doppelte Zeit, im Spiel mit Banner): *Ohne Vorschläge* – Ein- und Ausstieg
+     selbst eintippen (Auto-Vervollständigung über alle Stationen), keine Route auf der Karte, nur Start und Ziel ·
+     *Ohne Namen* – zusätzlich Start/Ziel nur als Punkte · *Ohne Karte* – zusätzlich nichts auf der Karte, nur die
+     Namen. Bei „ohne Namen“/„ohne Karte“ ist „Wo liegt das?“ aus.
    - **Wartezeit mitzählen** – Tür-zu-Tür ab Abfragezeit statt nur Fahrzeit
    - **Ø-Wartezeiten statt Fahrplan-Glück** (Standard: an) – jede Linie zählt mit ihrer mittleren Fahrzeit, jeder
      Umstieg mit Umsteigeweg + halbem Takt der nächsten Linie (Takt = Abfahrten der folgenden Stunde; gleichwertige
      Linien wie S1–S4 auf der Stammstrecke zählen zusammen). Ein zufällig perfekter Anschluss bringt so keinen
-     Vorteil; eine S7 alle 30 min kostet im Schnitt 15 min. Die Routendetails zeigen die Wartezeit je Umstieg.
-   - **Einschränkungs-Runden** – Nie / Manchmal (ca. 30 %, mindestens eine pro Spiel) / Immer: ohne U-Bahn,
+     Vorteil; eine S7 alle 30 min kostet im Schnitt 15 min. Bei der allerersten Linie zählt nur die halbe Ø-Wartezeit
+     (ein Viertel des Takts) – zur ersten Abfahrt kann man sich die Zeit meist einteilen. Das gilt nur, wenn sie direkt
+     an der Start-Station abfährt; muss man erst zu einer anderen Haltestelle gehen, zählt die volle Ø-Wartezeit. Die Routendetails zeigen die Wartezeit je Umstieg.
+   - **🏆 Challenges** (früher Einschränkungs-Runden) – Nie / Manchmal (ca. 30 %, mindestens eine pro Spiel) / Immer: ohne U-Bahn,
      ohne Bus, max. 1 Umstieg oder **Linie gesperrt** (eine Linie der schnellsten Verbindung, z.B. „Ohne Linie U6“).
      Diese Runden haben doppelte Zeit, höchstens +2:30 – „Ohne U-Bahn“ bekommt fix +4:00.
-   - **Tipps** – Linien am Start / am Ziel, Verkehrsmittel-Kette, Umstiegsorte auf der Karte
+   - **💡 Tipps** – Keine / Günstig / Teuer (günstig 5 Prozentpunkte billiger, teuer 20 teurer; bei X-treme immer teuer):
+     Linien am Start / am Ziel, Verkehrsmittel-Kette, Umstiegsorte. Bei X-treme „ohne Namen“ zeigen die Tipps keine
+     Stationsnamen, beim Umstiegs-Tipp nur „U6 ⇄ S1“; „ohne Karte“ zeichnet nichts ein. Keine Fußweg-Entfernungen.
    - **Route eingeben**: Linie wählen → Einstieg (nächstgelegene Haltestelle, ggf. mit Fußweg) → Ausstieg. Die
      Ausstiegs-Liste zeigt die ganze Linie von der nördlicheren Endstation nach unten zur anderen (z.B. U1 Leopoldau …
      Oberlaa), die Einstiegs-Station steht markiert und nicht wählbar mittendrin.
      Hält die Linie an der Station nur in eine Richtung (Schleifen/Einbahnen, z.B. 40 bei Schöffelgasse), wird die
      Gegenrichtung ab der nächsten Haltestelle (bis 700 m) angeboten – inkl. Fußweg dorthin.
+   - **Abwechslung**: Innerhalb eines Spiels liegen neue Start/Ziele mindestens 1,2 km von allen bisherigen entfernt,
+     und keine Strecke mit beiden Enden in derselben Gegend wie eine frühere. Über alle Spiele hinweg werden Stationen,
+     die schon oft dran waren, seltener gezogen (Zähler in `data/usage.json`).
+   - **Beitreten** geht jederzeit, auch während des Spiels (Einladungslink öffnet oben eine Einladungs-Karte).
 3. Eine Runde wird aufgelöst, sobald alle (verbundenen) Spieler abgegeben haben, das Zeitlimit abläuft
    oder der Host „Jetzt auflösen“ drückt. Der Host schaltet zur nächsten Runde und kann am Ende
    mit denselben Spielern zurück in die Lobby.
-4. **Host-Steuerung** während der Runde: ⏸ Pause (Zeit steht, alle sehen eine Pause-Anzeige, Pausenzeit zählt
+4. **Auflösung**: Auf der Karte ist nur die beste und die eigene Route kräftig, alle anderen sind blass ohne
+   Beschriftung – antippen (oder drüberfahren) hebt eine hervor. Sofort sichtbar sind die 3 besten Verbindungen,
+   weitere auf Wunsch. Die Mitspieler-Liste lässt sich aufklappen (Route im Detail + Punkte). Mit Ø-Wartezeiten zeigt
+   jede Route den **berechneten Zeitplan** (Gehen, Ø-Warten, Fahrt, Umsteigen) – genau die Minuten, die gewertet werden.
+   **Fußwege**: Luftlinie × 1,3 bei 80 m/min (≈ 4,8 km/h), Umsteigen an derselben Station 2 min.
+5. **Host-Steuerung** während der Runde: ⏸ Pause (Zeit steht, alle sehen eine Pause-Anzeige, Pausenzeit zählt
    nicht zur benötigten Zeit), ✖ Runde abbrechen (Lösung wird gezeigt, keine Punkte), ⏹ Spiel beenden.
 
 **Training** (Startseite, ohne Lobby): echte Strecken ohne Zeitdruck und Punkte – zum praxisnahen Lernen.
@@ -137,8 +163,9 @@ in die richtige Lobby (Routenjagd oder Quiz).
   `POST /api/training/:id/evaluate`.
 
 **Lernmodus** (Startseite, ohne Lobby) – erst lernen, dann optional testen:
-- *Bereich*: **Gebiet** (Bezirk oder Kreis auf der Karte, mit Verkehrsmittel-Filter), **Linien** (einzelne oder
-  „alle U-Bahn/S-Bahn/Bim“) oder **ganz Wien**.
+- *Bereich*: **Gebiet** (Bezirk oder Kreis auf der Karte, mit Verkehrsmittel-Filter), **Linien** (einzelne,
+  „alle U-Bahn/S-Bahn/Bim“ oder per **Station**: Station eintippen → alle Linien, die dort fahren, werden übernommen)
+  oder **ganz Wien**.
 - *📖 Lernen → Netzplan*: alle Linien des Bereichs in unterscheidbaren Farben. Linie antippen zeigt einen
   **Steckbrief** mit automatisch erzeugtem Merksatz („Die Linie 12 fährt von Hillerstraße über Vorgartenstraße,
   Traisengasse, Friedensbrücke und Lange Gasse nach Josefstädter Straße“ – Zwischenpunkte sind die wichtigsten
@@ -154,6 +181,44 @@ in die richtige Lobby (Routenjagd oder Quiz).
 **Handy**: Auf Start, Lobby und Lern-Einstellungen keine Karte (außer zum Setzen eines Kreises). Im Spiel bleibt
 die Karte oben fix, nur das Panel scrollt; ⤢ vergrößert sie, beim „Wo liegt das?“ und Nachzeichnen wird sie automatisch groß.
 
+## Betrieb auf Ditto (Heimserver) – automatische Updates
+
+Live läuft der Öffi-Guesser als Container auf **Ditto** (Ubuntu-VM, Docker, Caddy), öffentlich über **ngrok**,
+intern unter **http://bimguesser.ditto**.
+
+**Neue Version veröffentlichen** (am Laptop, alles committet):
+
+```bash
+npm run release          # v1.2.3 → v1.2.4   (oder: npm run release minor / major)
+```
+
+Das setzt einen Tag `v…` und pusht ihn. Danach passiert alles automatisch:
+
+1. **GitHub Actions** (`.github/workflows/release.yml`): Typecheck + Build → Image `ghcr.io/grenadier7/bim-guesser:v…` und `:latest`.
+2. **Ditto** (`deploy/update.sh`, per cron alle 2 min): neues `:latest` gefunden → wartet, bis kein Spiel läuft
+   (Lobbys leben nur im Arbeitsspeicher, max. 15 min) → startet den Container neu → prüft `/api/health` →
+   bei Fehler zurück auf die vorige Version. Log: `~/docker/services/oeffi-guesser/update.log`.
+   Sofort aktualisieren (ohne auf Spielpause zu warten): `~/docker/services/oeffi-guesser/update.sh --now`.
+
+Normale Commits und Pushes deployen nichts – nur Tags `v*`.
+
+**Einrichtung auf Ditto** (einmalig):
+
+- `deploy/compose.snippet.yml` in `~/docker/compose.yml` unter `services:` einfügen, in `~/docker/.env`
+  `NGROK_AUTHTOKEN` und `NGROK_DOMAIN` setzen.
+- `deploy/Caddyfile.snippet` ins Caddyfile übernehmen, Caddy neu laden.
+- `deploy/update.sh` nach `~/docker/services/oeffi-guesser/` kopieren, ausführbar machen, cron-Eintrag:
+  `*/2 * * * * ~/docker/services/oeffi-guesser/update.sh >> ~/docker/services/oeffi-guesser/update.log 2>&1`
+- Das Paket `bim-guesser` auf GitHub (Packages) auf **public** stellen – sonst braucht Ditto ein `docker login ghcr.io`.
+
+**Container-Details:** `Dockerfile` (Node 24, läuft als Benutzer `node`), Laufzeitdaten (Auskunfts-Cache,
+Statistik) im Volume `/app/state` (`STATE_DIR`), Proxy-Vertrauen über `TRUST_PROXY` (im Image
+`loopback, uniquelocal`, damit die Rate-Limits hinter ngrok/Caddy die echte IP sehen), `GET /api/health` liefert
+Version, Laufzeit und laufende Spiele. Speicherbedarf ca. 40–100 MB (`mem_limit: 384m`).
+
+Wichtig: Die kostenlose ngrok-Domain kann nur an **einer** Stelle laufen – am Laptop daher `npm run serve`
+statt `npm start`, solange Ditto online ist.
+
 ### Standard-Einstellungen (`shared/defaults.ts`)
 
 Alle Standardwerte stehen in **einer Datei**: Routenjagd, Quiz, Training und Lernen (mit Kommentaren, welche Werte
@@ -166,10 +231,10 @@ zurücksetzen“ alles auf diese Werte zurück, im Training „↺ Einstellungen
 | Teil | Punkte | Regel |
 |---|---|---|
 | Route | 0–1000 (+300) | Toleranz max(1 min, 4 %), danach fallend, 0 bei +70 % Reisezeit (z.B. 40 → 60 min ≈ 200). Besser als die beste gefundene Route: je 1 % besser +2 %, max. 1300 (z.B. 27 statt 30 min = 1200) |
-| Tipps | −45 / −45 / −45 / −55 % | Anteil der Routenpunkte, mehrere Tipps multiplikativ, mind. 10 % bleiben. Bei 30 min optimal ≈ Start: 38 min ohne Tipp · Start+Ziel: 43 · Umstiegsorte: 40 · Start+Ziel+Verkehrsmittel: 46 · alle: 10 % |
+| Tipps | günstig −40 / −40 / −40 / −50 % · teuer −65 / −65 / −65 / −75 % | Anteil der Routenpunkte, mehrere Tipps multiplikativ, mind. 10 % bleiben. |
 | Zeitbonus | bis +10 % | der Routenpunkte (nach Tipps), linear mit Restzeit; ohne Limit gemessen an 1:30 |
 | Wo liegt das? | bis +150 | 75 je Station: voll bis 250 m, 0 ab 3 km |
-| Schwierigkeit | ×1,0 / 1,15 / 1,3 / 1,62 | auf die ganze Runde |
+| Schwierigkeit | ×0,95 / 1,05 / 1,32 / 1,69 | auf die ganze Runde |
 
 Für jede Runde wird die Auskunft für 6 Abfahrtszeiten (Slot +0 … +50 min) abgefragt und nach
 *Verbindungsart* gruppiert (Linien + Umstiegsstationen; auf demselben Abschnitt gelten S-Bahnen, Bims bzw. Busse

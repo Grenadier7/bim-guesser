@@ -30,6 +30,8 @@ export class GameMap {
   private draft = L.layerGroup();
   private routes = L.layerGroup();
   private routeLayers = new Map<string, L.Layer[]>();
+  /** Routen, die in der Auflösung ohne Auswahl kräftig gezeigt werden (beste + eigene) */
+  private focusKeys: string[] = [];
   private clickHandler: ((e: L.LeafletMouseEvent) => void) | null = null;
   private areas = L.layerGroup();
   private lineLayer = L.layerGroup();
@@ -284,20 +286,15 @@ export class GameMap {
 
   // -------------------------------------------------------------- Start/Ziel
 
-  showEndpoints(from: StationRef, to: StationRef, fit = true) {
+  showEndpoints(from: StationRef, to: StationRef, fit = true, names = true) {
     this.endpoints.clearLayers();
     for (const [s, cls, letter] of [
       [from, 'pin-start', 'A'],
       [to, 'pin-end', 'B'],
     ] as const) {
-      this.endpoints.addLayer(
-        L.marker([s.lat, s.lon], { icon: pin(cls, letter), zIndexOffset: 1000 }).bindTooltip(esc(s.name), {
-          permanent: true,
-          direction: 'top',
-          offset: [0, -14],
-          className: 'pin-label',
-        }),
-      );
+      const m = L.marker([s.lat, s.lon], { icon: pin(cls, letter), zIndexOffset: 1000 });
+      if (names) m.bindTooltip(esc(s.name), { permanent: true, direction: 'top', offset: [0, -14], className: 'pin-label' });
+      this.endpoints.addLayer(m);
     }
     if (fit) {
       const b = L.latLngBounds([
@@ -365,21 +362,20 @@ export class GameMap {
   /** Tipp: Umstiegsorte der schnellsten Route */
   showTransferHints(stops: { name: string; lat: number; lon: number }[]) {
     this.hints.clearLayers();
-    for (const s of stops)
-      this.hints.addLayer(
-        L.marker([s.lat, s.lon], { icon: pin('pin-hint', '⇄', 26), zIndexOffset: 800 }).bindTooltip(esc(s.name), {
-          permanent: true,
-          direction: 'bottom',
-          offset: [0, 12],
-          className: 'hint-label',
-        }),
-      );
+    for (const s of stops) {
+      const m = L.marker([s.lat, s.lon], { icon: pin('pin-hint', '⇄', 26), zIndexOffset: 800 });
+      if (s.name) m.bindTooltip(esc(s.name), { permanent: true, direction: 'bottom', offset: [0, 12], className: 'hint-label' });
+      this.hints.addLayer(m);
+    }
   }
 
   // -------------------------------------------------------------- Auflösung
 
-  /** Alle Routen farbig nach Verkehrsmittel, mit Beschriftung wie bei Google Maps */
-  showReveal(routes: RouteOption[], players: PlayerRoute[]) {
+  /**
+   * Alle Routen farbig nach Verkehrsmittel, mit Beschriftung wie bei Google Maps.
+   * Kräftig nur die `focus`-Routen (beste + eigene) – die anderen blass, bis man sie in der Liste auswählt.
+   */
+  showReveal(routes: RouteOption[], players: PlayerRoute[], focus: string[] = []) {
     this.stopLocate();
     this.draft.clearLayers();
     this.hints.clearLayers();
@@ -418,6 +414,8 @@ export class GameMap {
     }
     // Spieler, deren Route einer Top-Route entspricht: gleiche Layer hervorheben
     for (const p of players) if (!this.routeLayers.has(p.key)) this.routeLayers.set(p.key, this.routeLayers.get(p.route.key) ?? []);
+    this.focusKeys = focus.length ? focus : top[0] ? [top[0].key] : [];
+    this.highlight(null);
     if (bounds.isValid()) this.fit(bounds.pad(0.15));
   }
 
@@ -430,17 +428,19 @@ export class GameMap {
     ];
   }
 
+  /** Eine Route hervorheben – null = Grundzustand (nur beste + eigene kräftig, andere blass ohne Schild) */
   highlight(key: string | null) {
-    const active = key ? this.routeLayers.get(key) : null;
+    const keys = key ? [key] : this.focusKeys;
+    const active = new Set(keys.map((k) => this.routeLayers.get(k)).filter((x): x is L.Layer[] => !!x));
     // Aliase (Spieler mit Top-Route) teilen sich Layer – jede Gruppe nur einmal behandeln
     for (const layers of new Set(this.routeLayers.values())) {
-      const dim = key !== null && layers !== active;
+      const on = active.size === 0 || active.has(layers);
       for (const l of layers) {
-        if (l instanceof L.Polyline) l.setStyle({ opacity: dim ? 0.15 : 1 });
-        if (l instanceof L.Marker) l.setOpacity(dim ? 0.25 : 1);
-        if (!dim && l instanceof L.Polyline) l.bringToFront();
+        if (l instanceof L.Polyline) l.setStyle({ opacity: on ? 1 : 0.12 });
+        if (l instanceof L.Marker) l.setOpacity(on ? 1 : 0);
       }
     }
+    for (const layers of active) for (const l of layers) if (l instanceof L.Polyline) l.bringToFront();
   }
 }
 

@@ -92,7 +92,7 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
         share: 0.7,
       };
     }
-    return { slot: cfg.slot, network: 'regular', difficulty: p.id, stations: p.stations, distance: p.distance, needTransfer: p.needTransfer, countWait: true, focus };
+    return { slot: cfg.slot, network: 'regular', difficulty: p.id, stations: p.stations, distance: p.distance, minTransfers: p.minTransfers, countWait: true, focus };
   }
 
   // -------------------------------------------------------------- Einstellungen
@@ -329,7 +329,7 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
     if (!solved) mem.retry.push({ from: r.from.id, to: r.to.id, due: RETRY_AFTER });
     persist();
 
-    app.map.showReveal(r.routes, res.route ? [{ key: 'me', name: 'Du', route: res.route, isMe: true }] : []);
+    app.map.showReveal(r.routes, res.route ? [{ key: 'me', name: 'Du', route: res.route, isMe: true }] : [], [r.routes[0].key, ...(res.route ? ['me'] : [])]);
     setMapBig(false);
 
     let verdict: string;

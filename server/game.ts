@@ -25,6 +25,9 @@ import {
   stationKindsFromPool,
   RESTRICTION_CHANCE,
   roundLimitSec,
+  cleanMinTransfers,
+  baseLimitSec,
+  xtremeBlocksLocate,
   TIPS,
   computeScore,
   routeCost,
@@ -36,7 +39,7 @@ import {
   isSlotId,
   scoreRoute,
 } from '../shared/rules.ts';
-import { distM, type Network } from './network.ts';
+import { distM, type Network, type PastPair } from './network.ts';
 import { EfaUnavailableError, evaluateUserRoute, topRoutes, type RouteQuery } from './routing.ts';
 import { DEADLINE_GRACE_MS, GameError, Lobby } from './lobby.ts';
 import { describeSlotDate, slotTime } from './timeslots.ts';
@@ -78,12 +81,15 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   if (s.network === 'current' || s.network === 'regular') out.network = s.network;
   // Schnellwahl setzt die Regler; einzelne Regler-Werte überschreiben danach
   const preset = DIFFICULTY_PRESETS.find((d) => d.id === s.difficulty);
-  if (preset) Object.assign(out, { stations: [...preset.stations], distance: preset.distance, needTransfer: preset.needTransfer });
+  if (preset) Object.assign(out, { stations: [...preset.stations], distance: preset.distance, minTransfers: preset.minTransfers });
   // Haltestellen-Arten (alte Einstellung: Stufe 1–6)
   const kinds = cleanStationKinds(s.stations) ?? stationKindsFromPool((s as { stationPool?: unknown }).stationPool);
   if (kinds) out.stations = kinds;
   if (DISTANCES.some((x) => x.id === s.distance)) out.distance = s.distance!;
-  if (typeof s.needTransfer === 'boolean') out.needTransfer = s.needTransfer;
+  // alte Einstellung "Immer mit Umstieg" (true/false) → mindestens 1 / 0 Umstiege
+  const legacy = (s as { needTransfer?: unknown }).needTransfer;
+  const mt = cleanMinTransfers(s.minTransfers) ?? (typeof legacy === 'boolean' ? (legacy ? 1 : 0) : null);
+  if (mt !== null) out.minTransfers = mt;
   out.difficulty = matchPreset(out);
   if (s.focus === null) out.focus = null;
   else if (s.focus && typeof s.focus === 'object') {
@@ -99,8 +105,18 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   if (Number.isInteger(s.rounds)) out.rounds = Math.min(10, Math.max(1, s.rounds!));
   if (s.roundTimeLimitSec === null) out.roundTimeLimitSec = null;
   else if (typeof s.roundTimeLimitSec === 'number') out.roundTimeLimitSec = Math.min(600, Math.max(20, Math.round(s.roundTimeLimitSec)));
-  for (const k of ['locate', 'countWait', 'avgWait', 'tips'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
+  for (const k of ['locate', 'countWait', 'avgWait'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
+  // Tipps: keine / günstig / teuer (alte Einstellung true/false)
+  const tl = s.tips as unknown;
+  if (tl === 'off' || tl === 'cheap' || tl === 'expensive') out.tips = tl;
+  else if (tl === true) out.tips = 'cheap';
+  else if (tl === false) out.tips = 'off';
   if (s.goal === 'best' || s.goal === 'fastest') out.goal = s.goal;
+  if (s.xtreme === 'off' || s.xtreme === 'noHints' || s.xtreme === 'noNames' || s.xtreme === 'noMap') out.xtreme = s.xtreme;
+  // ohne Namen / ohne Karte: "Wo liegt das?" ergibt keinen Sinn
+  if (xtremeBlocksLocate(out.xtreme)) out.locate = false;
+  // X-treme: Tipps nur teuer (oder gar keine)
+  if (out.xtreme !== 'off' && out.tips === 'cheap') out.tips = 'expensive';
   // Einschränkungs-Runden: nie / manchmal / immer (alte Einstellung war true/false)
   const r = s.restrictions as unknown;
   if (r === 'never' || r === 'sometimes' || r === 'always') out.restrictions = r;
@@ -130,6 +146,8 @@ export class Game extends Lobby {
   currentRound = -1;
   private rounds: Round[] = [];
   private usedStations = new Set<string>();
+  /** bisherige Strecken dieses Spiels – neue sollen woanders liegen */
+  private pastPairs: PastPair[] = [];
   private generation = 0;
   private net: Network;
 
@@ -162,6 +180,7 @@ export class Game extends Lobby {
     this.currentRound = -1;
     this.rounds = [];
     this.usedStations.clear();
+    this.pastPairs = [];
     for (const p of this.players.values()) p.score = 0;
     this.touch();
     this.emitState();
@@ -223,7 +242,7 @@ export class Game extends Lobby {
       time: slotTime(this.settings.slot, this.settings.network, this.net.data.regularDays),
       restriction,
       bannedLines: [],
-      limitSec: roundLimitSec(this.settings.roundTimeLimitSec, restriction),
+      limitSec: roundLimitSec(baseLimitSec(this.settings), restriction),
       ready: Promise.resolve([]),
       routes: null,
       status: 'preparing',
@@ -254,9 +273,9 @@ export class Game extends Lobby {
 
   /** Stationspaar ziehen und Top-Verbindungen sampeln; ungeeignete Paare werden verworfen */
   private async prepare(round: Round, gen: number): Promise<RouteOption[]> {
-    for (let attempt = 0; attempt < 8; attempt++) {
+    for (let attempt = 0; attempt < 14; attempt++) {
       if (gen !== this.generation) return [];
-      const [a, b] = this.net.randomPair(this.settings, this.usedStations);
+      const [a, b] = this.net.randomPair(this.settings, this.usedStations, this.pastPairs);
       let routes: RouteOption[];
       try {
         if (round.restriction === 'banLines') {
@@ -275,8 +294,11 @@ export class Game extends Lobby {
       }
       if (!routes.length || routes[0].key === 'walk') continue;
       const ptLegs = routes[0].legs.filter((l) => l.mode !== 'W').length;
-      if (this.settings.needTransfer && ptLegs < 2 && attempt < 6) continue;
+      // beste Verbindung muss mindestens so viele Umstiege haben (nach vielen Versuchen gelockert)
+      if (ptLegs - 1 < this.settings.minTransfers && attempt < 12) continue;
       this.usedStations.add(a.id).add(b.id);
+      this.pastPairs.push({ a, b });
+      this.net.markUsed(a.id, b.id);
       round.from = a;
       round.to = b;
       round.routes = routes;
@@ -368,7 +390,7 @@ export class Game extends Lobby {
 
   async tip(token: string, roundIdx: number, kind: TipKind): Promise<TipResult> {
     const playerId = this.auth(token).id;
-    if (!this.settings.tips) throw new GameError('Tipps sind in dieser Lobby deaktiviert.');
+    if (this.settings.tips === 'off') throw new GameError('Tipps sind in dieser Lobby deaktiviert.');
     const round = this.openRoundAt(roundIdx);
     if (typeof kind !== 'string' || !Object.hasOwn(TIPS, kind)) throw new GameError('Unbekannter Tipp');
     if (round.pausedAt) throw new GameError('Die Runde ist gerade pausiert.', 409);
@@ -393,10 +415,13 @@ export class Game extends Lobby {
     const pt = best.legs.filter((l) => l.mode !== 'W');
     if (kind === 'modeChain') return { kind, modes: pt.map((l) => l.mode), transfers: Math.max(0, pt.length - 1), medianMin: best.medianMin };
     if (kind === 'transfers') {
-      const stops = pt.slice(0, -1).map((l) => {
+      // X-treme "ohne Namen": keine Stationsnamen – nur von welcher in welche Linie umgestiegen wird
+      const hide = this.settings.xtreme === 'noNames';
+      const tipLine = (l: (typeof pt)[number]) => ({ id: l.line ?? '?', mode: l.mode, color: l.color });
+      const stops = pt.slice(0, -1).map((l, i) => {
         const st = l.toStation ? this.net.station(l.toStation) : null;
         const p = l.path[l.path.length - 1];
-        return { name: st?.name ?? l.toName, lat: st?.lat ?? p[0], lon: st?.lon ?? p[1] };
+        return { name: hide ? '' : (st?.name ?? l.toName), lat: st?.lat ?? p[0], lon: st?.lon ?? p[1], from: tipLine(l), to: tipLine(pt[i + 1]) };
       });
       return { kind, stops };
     }
@@ -404,7 +429,7 @@ export class Game extends Lobby {
     const lines = this.net
       .linesAt(station.id, this.settings.network)
       .map((l) => ({ id: l.id, mode: l.mode, color: l.color }));
-    return { kind, station: station.name, lines };
+    return { kind, station: this.settings.xtreme === 'noNames' ? '' : station.name, lines };
   }
 
   // -------------------------------------------------------------- Abgabe & Auflösung
@@ -475,6 +500,7 @@ export class Game extends Lobby {
             limitSec: round.limitSec,
             locateDist,
             multiplier: difficultyMultiplier(this.settings),
+            tipLevel: this.settings.tips,
           });
           return {
             playerId: pl.id,

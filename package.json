@@ -15,7 +15,8 @@
     "serve": "node server/index.ts",
     "build": "vite build",
     "build:data": "node scripts/build-network.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "release": "node scripts/release.ts"
   },
   "dependencies": {
     "express": "^5.3.0",

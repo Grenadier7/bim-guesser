@@ -83,12 +83,22 @@ export interface TimeSlot {
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'expert' | 'custom';
 
 /**
- * Welche Haltestellen als Start/Ziel vorkommen. Schiene frei kombinierbar (U, S, T = Bim),
- * dazu höchstens EINE Bus-Stufe: hub (Bus-Haltestellen mit 3+ Linien) ⊂ bus (2+ Linien) ⊂ all (jede Bus-Haltestelle).
+ * Welche Haltestellen als Start/Ziel vorkommen – je Verkehrsmittel höchstens EINE Stufe:
+ *  U-Bahn: Ukey (wichtige) ⊂ U (alle) · S-Bahn: Skey ⊂ S · Bim: Tkey ⊂ T
+ *  Bus: hub (Bus-Haltestellen mit 3+ Linien) ⊂ bus (2+ Linien) ⊂ all (jede Bus-Haltestelle)
  */
-export type StationKind = 'U' | 'S' | 'T' | 'hub' | 'bus' | 'all';
+export type StationKind = 'Ukey' | 'U' | 'Skey' | 'S' | 'Tkey' | 'T' | 'hub' | 'bus' | 'all';
 
 export type DistanceRange = 'short' | 'medium' | 'long';
+
+/**
+ * X-treme: 'off' · 'noHints' (Haltestellen selbst eintippen, keine Route auf der Karte) ·
+ * 'noNames' (zusätzlich Start/Ziel nur als Punkte) · 'noMap' (zusätzlich nichts auf der Karte)
+ */
+export type XtremeLevel = 'off' | 'noHints' | 'noNames' | 'noMap';
+
+/** Tipps: keine · günstig · teuer */
+export type TipLevel = 'off' | 'cheap' | 'expensive';
 
 /** Wertung: "fastest" = nur Reisezeit · "best" = Reisezeit + Strafzeit je Umstieg */
 export type RouteGoal = 'fastest' | 'best';
@@ -114,7 +124,7 @@ export interface GameSettings {
   stations: StationKind[];
   distance: DistanceRange;
   /** Schnellste Verbindung muss mindestens einen Umstieg haben */
-  needTransfer: boolean;
+  minTransfers: 0 | 1 | 2;
   /** Fokus-Gebiet: Stationen darin werden häufiger gezogen (null = ganz Wien gleichmäßig) */
   focus: FocusArea | null;
   rounds: number;
@@ -128,10 +138,13 @@ export interface GameSettings {
   avgWait: boolean;
   /** Was zählt: schnellste Route oder beste (Zeit + Umstiege) */
   goal: RouteGoal;
+  /** X-treme-Stufe (doppelte Zeit) */
+  xtreme: XtremeLevel;
   /** Manche Runden mit Einschränkung (ohne U-Bahn, ohne Bus, max. 1 Umstieg) */
   restrictions: RestrictionFrequency;
   /** Tipps erlaubt */
-  tips: boolean;
+  /** Tipps: keine / günstig / teuer */
+  tips: TipLevel;
 }
 
 // ---------------------------------------------------------------- Routen
@@ -170,20 +183,25 @@ export interface RouteOption {
   rideMin: number;
   /** Wie oft diese Verbindungsart in den Stichproben vorkam */
   samples: number;
-  /** bei Ø-Wartezeiten: erwartete Wartezeit vor jeder Linie (halber Takt) */
-  waits?: RouteWait[];
+  /** bei Ø-Wartezeiten: der berechnete Zeitplan, aus dem medianMin entsteht */
+  steps?: RouteStep[];
 }
 
-export interface RouteWait {
-  /** Station, an der gewartet wird */
-  station: string;
-  line: string;
-  /** erwartete Wartezeit (halber Takt), Minuten */
-  waitMin: number;
-  /** Takt: im Schnitt alle … Minuten */
-  everyMin: number;
-  /** Umsteigeweg (Bahnsteig wechseln / zu Fuß), Minuten – 0 am Start */
-  walkMin: number;
+/** Ein Schritt des berechneten Zeitplans (Ø-Wartezeiten) */
+export interface RouteStep {
+  kind: 'walk' | 'transfer' | 'wait' | 'ride';
+  /** Beginn "HH:MM" (berechnet ab der Abfragezeit) */
+  at: string;
+  min: number;
+  /** walk/transfer: Ziel · wait: Station · ride: Ausstieg */
+  to: string;
+  /** ride: Einstieg */
+  from?: string;
+  line?: string;
+  mode?: Mode;
+  color?: string;
+  /** wait: Takt (im Schnitt alle … min) */
+  every?: number;
 }
 
 export interface Guesses {
@@ -241,7 +259,17 @@ export interface TipInfo {
 export type TipResult =
   | { kind: 'startLines' | 'endLines'; station: string; lines: { id: string; mode: Mode; color: string }[] }
   | { kind: 'modeChain'; modes: Mode[]; transfers: number; medianMin: number }
-  | { kind: 'transfers'; stops: { name: string; lat: number; lon: number }[] };
+  | {
+      kind: 'transfers';
+      /** name ist bei X-treme "ohne Namen" leer – dann zeigen die Linien, wo umgestiegen wird */
+      stops: { name: string; lat: number; lon: number; from?: TipLine; to?: TipLine }[];
+    };
+
+export interface TipLine {
+  id: string;
+  mode: Mode;
+  color: string;
+}
 
 // ---------------------------------------------------------------- Spiel
 

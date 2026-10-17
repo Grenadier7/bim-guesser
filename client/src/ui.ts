@@ -43,6 +43,7 @@ function legMinutes(dep: string, arr: string): number {
 
 /** Aufgeklappte Route: jede Teilstrecke mit Ein-/Ausstieg, Zeiten und Fußwegen */
 export function routeDetails(route: RouteOption): string {
+  if (route.steps?.length) return stepsDetails(route);
   return `<ol class="leg-detail">${route.legs
     .map((l) => {
       const min = legMinutes(l.dep, l.arr);
@@ -56,16 +57,58 @@ export function routeDetails(route: RouteOption): string {
 
 /** Erklärt, warum die gewertete Zeit länger ist als die Beispielfahrt (Wartezeit am Start) */
 function waitNote(route: RouteOption): string {
-  if (route.waits?.length) {
-    const items = route.waits
-      .map((w) => `<li>${esc(w.station)} → ${esc(w.line)}: ${w.walkMin ? `${w.walkMin} min Umsteigen + ` : ''}Ø ${w.waitMin} min <small>(alle ~${w.everyMin} min)</small></li>`)
-      .join('');
-    return `<div class="wait-note">⏳ Gewertet: <b>${route.medianMin} min</b> mit Ø-Wartezeiten (halber Takt):<ul>${items}</ul><small>Oben eine Beispielfahrt – deren Anschlüsse können zufällig besser oder schlechter sein.</small></div>`;
-  }
   const wait = route.medianMin - route.rideMin;
   if (wait < 2) return '';
   return `<p class="wait-note">⏳ Gewertet: <b>${route.medianMin} min</b> = Ø ${wait} min Warten auf die erste Abfahrt + ${route.rideMin} min unterwegs. Oben eine Beispielfahrt.</p>`;
 }
+
+/** Berechneter Zeitplan (Ø-Wartezeiten): genau die Minuten, die gewertet werden */
+function stepsDetails(route: RouteOption): string {
+  const rows = route.steps!.map((st) => {
+    if (st.kind === 'ride')
+      return `<li><span class="ld-time">${esc(st.at)}</span><span>${lineChip(st.mode!, st.line!, st.color!)} <b>${esc(st.from!)}</b> → <b>${esc(st.to)}</b> <small>Ø ${st.min} min Fahrt</small></span></li>`;
+    if (st.kind === 'wait')
+      return `<li class="ld-wait"><span class="ld-time">${esc(st.at)}</span><span>⏳ Ø ${st.min} min warten <small>(fährt etwa alle ${st.every} min)</small></span></li>`;
+    if (st.kind === 'transfer')
+      return `<li class="ld-walk"><span class="ld-time">${esc(st.at)}</span><span>🔀 ${st.min} min umsteigen</span></li>`;
+    return `<li class="ld-walk"><span class="ld-time">${esc(st.at)}</span><span>🚶 ${st.min} min zu Fuß nach ${esc(st.to)}</span></li>`;
+  });
+  const end = route.steps!.length ? route.steps![route.steps!.length - 1] : null;
+  const endAt = end ? addMin(end.at, end.min) : '';
+  return `<ol class="leg-detail">${rows.join('')}<li class="ld-end"><span class="ld-time">${esc(endAt)}</span><span>🏁 Ankunft – <b>${route.medianMin} min</b></span></li></ol>
+    <p class="wait-note">Berechnet mit Ø-Wartezeiten (halber Takt) und Umsteigezeit – genau diese Minuten zählen.</p>`;
+}
+
+function addMin(hhmm: string, min: number): string {
+  const [h, m] = hhmm.split(':').map(Number);
+  const t = (h * 60 + m + min) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+}
+
+/**
+ * ⓘ-Fenster: so platzieren, dass sie nie aus dem Bildschirm ragen (fixe Position, an den Rand geklemmt).
+ * Einmal global registriert – gilt für alle .info-tip auf jeder Seite.
+ */
+function placeTip(btn: HTMLElement) {
+  const pop = btn.querySelector<HTMLElement>('.tip-pop');
+  if (!pop) return;
+  const r = btn.getBoundingClientRect();
+  const w = Math.min(300, window.innerWidth - 16);
+  pop.style.width = `${w}px`;
+  const left = Math.max(8, Math.min(r.left - 8, window.innerWidth - w - 8));
+  pop.style.left = `${left}px`;
+  pop.style.top = `${r.bottom + 6}px`;
+  // passt es unten nicht mehr hin → über dem ⓘ anzeigen
+  requestAnimationFrame(() => {
+    const h = pop.offsetHeight;
+    if (r.bottom + 6 + h > window.innerHeight - 8) pop.style.top = `${Math.max(8, r.top - h - 6)}px`;
+  });
+}
+for (const ev of ['mouseover', 'focusin', 'click'] as const)
+  document.addEventListener(ev, (e) => {
+    const btn = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('.info-tip');
+    if (btn) placeTip(btn);
+  });
 
 /** Listeneinträge per Klick auf-/zuklappen */
 export function makeExpandable(list: HTMLElement) {

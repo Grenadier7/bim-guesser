@@ -63,7 +63,6 @@ export abstract class Lobby extends EventEmitter {
   // -------------------------------------------------------------- Spieler
 
   addPlayer(name: unknown): { id: string; token: string } {
-    if (this.phase !== 'lobby') throw new GameError('Das Spiel läuft bereits – warte bis zur nächsten Lobby.', 409);
     if (this.players.size >= MAX_PLAYERS) throw new GameError('Lobby ist voll.', 409);
     let id: string;
     do id = randomBytes(6).toString('base64url');

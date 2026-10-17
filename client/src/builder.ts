@@ -12,6 +12,17 @@ export interface DraftLeg {
 
 const WALK_WARN_M = 1200;
 
+export interface BuilderOptions {
+  /** X-treme: Ein-/Ausstieg selbst eintippen, keine Auswahllisten und keine Stationszahl */
+  typed?: boolean;
+  /** Name des Starts nicht verraten (X-treme "ohne Namen") */
+  hideStart?: boolean;
+  /** keine Fußweg-Entfernungen zeigen (X-treme "ohne Namen" / "ohne Karte") */
+  hideDistances?: boolean;
+}
+
+const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+
 /** Ausstiegs-Wert: "ausstieg" oder "einstieg>ausstieg" (Gegenrichtung hält woanders) */
 function parseAlight(v: string, board: string): [string, string] {
   const i = v.indexOf('>');
@@ -28,6 +39,7 @@ export class RouteBuilder {
   private onSubmit: () => void;
   private restriction: Restriction | null;
   private banned: string[];
+  private opts: BuilderOptions;
   // Formular-Zustand
   private pickedLine: Line | null = null;
   private board: string | null = null;
@@ -40,9 +52,11 @@ export class RouteBuilder {
     onChange: () => void,
     onSubmit: () => void,
     banned: string[] = [],
+    opts: BuilderOptions = {},
   ) {
     this.restriction = restriction;
     this.banned = banned;
+    this.opts = opts;
     this.net = net;
     this.start = start;
     this.dest = dest;
@@ -94,17 +108,20 @@ export class RouteBuilder {
     this.legs.forEach((l, i) => {
       const from = this.net.station(l.from);
       const to = this.net.station(l.to);
-      const walk = from.id !== pos.id ? `<div class="walk">🚶 ${fmtDist(distM(pos, from))} zu Fuß nach ${esc(from.name)}</div>` : '';
+      const walk =
+        from.id !== pos.id ? `<div class="walk">🚶 ${this.opts.hideDistances ? '' : `${fmtDist(distM(pos, from))} `}zu Fuß nach ${esc(from.name)}</div>` : '';
       const stops = this.net.stopsBetween(l.line, l.from, l.to);
       const last = i === this.legs.length - 1;
+      const typed = !!this.opts.typed;
+      const fromName = this.opts.hideStart && from.id === this.start.id ? 'Start' : from.name;
       const li = h(
         'li',
         { class: 'leg' },
         `${walk}<div class="leg-main">${lineChip(l.line.mode, l.line.id, l.line.color)}
-          <span class="leg-text">${esc(from.name)} →${last ? '' : ` <b>${esc(to.name)}</b>`}<small>${stops} Station${stops === 1 ? '' : 'en'}</small></span>
+          <span class="leg-text">${esc(fromName)} →${last && !typed ? '' : ` <b>${esc(to.name)}</b>`}${typed ? '<small></small>' : `<small>${stops} Station${stops === 1 ? '' : 'en'}</small>`}</span>
           ${last ? '<button class="icon-btn" data-act="remove" title="Teilstrecke entfernen">✕</button>' : ''}</div>`,
       );
-      if (last) {
+      if (last && !typed) {
         // Ziel der letzten Teilstrecke direkt änderbar (z.B. Kagran -> Kagraner Platz)
         const sel = this.alightSelect(l.line, l.from, l.to);
         sel.classList.add('leg-alight');
@@ -134,8 +151,9 @@ export class RouteBuilder {
       this.el.append(h('div', { class: 'warn' }, `${esc(restrictionLabel(this.restriction!, this.banned))}: keine weitere Linie möglich.`));
 
     if (this.legs.length) {
-      const endWalk = arrived ? '' : `<div class="walk">🚶 ${fmtDist(distM(pos, this.dest))} zu Fuß zum Ziel</div>`;
-      const far = !arrived && distM(pos, this.dest) > WALK_WARN_M ? '<div class="warn">Ziemlich weiter Fußweg – sicher?</div>' : '';
+      const hideD = !!this.opts.hideDistances;
+      const endWalk = arrived || hideD ? '' : `<div class="walk">🚶 ${fmtDist(distM(pos, this.dest))} zu Fuß zum Ziel</div>`;
+      const far = !arrived && !hideD && distM(pos, this.dest) > WALK_WARN_M ? '<div class="warn">Ziemlich weiter Fußweg – sicher?</div>' : '';
       const foot = h('div', { class: 'submit-row' }, `${endWalk}${far}<button class="btn btn-primary" data-act="submit">Route abgeben</button>`);
       foot.querySelector('button')!.disabled = this.locked;
       foot.querySelector('button')!.addEventListener('click', () => this.onSubmit());
@@ -161,7 +179,8 @@ export class RouteBuilder {
   private renderForm(): HTMLElement {
     const pos = this.position;
     const form = h('div', { class: 'leg-form' });
-    form.append(h('div', { class: 'form-title' }, this.legs.length ? `Weiter ab <b>${esc(pos.name)}</b>` : `Los geht's ab <b>${esc(pos.name)}</b>`));
+    const posName = this.opts.hideStart && pos.id === this.start.id ? 'dem Start' : pos.name;
+    form.append(h('div', { class: 'form-title' }, this.legs.length ? `Weiter ab <b>${esc(posName)}</b>` : `Los geht's ab <b>${esc(posName)}</b>`));
 
     if (!this.pickedLine) {
       const input = h('input', { type: 'text', class: 'line-input', placeholder: 'Linie eingeben, z.B. U2, 5B, 43, S45 …', autocomplete: 'off', spellcheck: 'false' });
@@ -194,6 +213,7 @@ export class RouteBuilder {
     const head = h('div', { class: 'picked' }, `${lineChip(line.mode, line.id, line.color)}<button class="link" data-act="change">andere Linie</button>`);
     head.querySelector('button')!.addEventListener('click', () => this.resetForm());
     form.append(head);
+    if (this.opts.typed) return this.typedForm(form, line, pos);
 
     // Einstieg: hier, oder nächstgelegene Haltestellen der Linie (Fußweg)
     const opts = this.net.boardOptions(line, pos);
@@ -247,6 +267,51 @@ export class RouteBuilder {
     return sel;
   }
 
+  /** X-treme: Ein- und Ausstieg als Text, Auto-Vervollständigung über ALLE Stationen (verrät nichts über die Linie) */
+  private typedForm(form: HTMLElement, line: Line, pos: Station): HTMLElement {
+    stationDatalist(this.net);
+    const showPos = !(this.opts.hideStart && pos.id === this.start.id);
+    const fields = h(
+      'div',
+      { class: 'typed-legs' },
+      `<label class="field"><span>Einstieg</span><input class="typed-board" list="all-stations" autocomplete="off" placeholder="Station eintippen …" value="${showPos ? esc(pos.name) : ''}"></label>
+       <label class="field"><span>Ausstieg</span><input class="typed-alight" list="all-stations" autocomplete="off" placeholder="Station eintippen …"></label>
+       <div class="typed-err warn" hidden></div>
+       <button class="btn btn-primary" data-act="add">Teilstrecke hinzufügen</button>`,
+    );
+    const board = fields.querySelector<HTMLInputElement>('.typed-board')!;
+    const alight = fields.querySelector<HTMLInputElement>('.typed-alight')!;
+    const err = fields.querySelector<HTMLElement>('.typed-err')!;
+    const add = () => {
+      // leer gelassener Einstieg = hier (auch wenn der Name versteckt ist)
+      const from = board.value.trim() ? this.resolveName(board.value, line) : pos.id;
+      const to = this.resolveName(alight.value, line);
+      const bad = !from ? board.value : !to ? alight.value || '(leer)' : null;
+      if (bad !== null) {
+        err.hidden = false;
+        err.textContent = `Station „${bad}“ gibt es nicht – bitte aus den Vorschlägen wählen.`;
+        return;
+      }
+      this.legs.push({ line, from: from!, to: to! });
+      this.resetForm();
+    };
+    fields.querySelector('[data-act=add]')!.addEventListener('click', add);
+    alight.addEventListener('keydown', (e) => e.key === 'Enter' && add());
+    form.append(fields);
+    queueMicrotask(() => (showPos ? alight : board).focus());
+    return form;
+  }
+
+  /** Stationsname → Station; bei gleichnamigen die, an der die Linie hält */
+  private resolveName(name: string, line: Line): string | null {
+    const n = norm(name);
+    if (!n) return null;
+    const cands = this.net.data.stations.filter((s) => norm(s.name) === n);
+    if (!cands.length) return null;
+    const served = new Set(this.net.patterns(line).flat());
+    return (cands.find((s) => served.has(s.id)) ?? cands[0]).id;
+  }
+
   /** Linie, die gerade gewählt aber noch nicht abgeschlossen ist (für den Trainings-Coach) */
   get draft(): { line: Line; board: string } | null {
     return this.pickedLine && this.board ? { line: this.pickedLine, board: this.board } : null;
@@ -263,4 +328,14 @@ export class RouteBuilder {
     this.board = this.net.boardOptions(line, this.position, 1)[0].station.id;
     this.render();
   }
+}
+
+/** Eine gemeinsame Vorschlagsliste mit allen Stationsnamen (einmal pro Seite) */
+function stationDatalist(net: NetIndex) {
+  if (document.getElementById('all-stations')) return;
+  const dl = document.createElement('datalist');
+  dl.id = 'all-stations';
+  const names = [...new Set(net.data.stations.map((s) => s.name))].sort((a, b) => a.localeCompare(b, 'de'));
+  dl.innerHTML = names.map((n) => `<option value="${esc(n)}"></option>`).join('');
+  document.body.append(dl);
 }

@@ -1,5 +1,5 @@
 import type { Guesses, LatLon, RoundPublic, Station, TipKind, TipResult } from '../../../shared/types.ts';
-import { RESTRICTIONS, TIPS, fmtDuration, locatePoints, restrictionLabel } from '../../../shared/rules.ts';
+import { RESTRICTIONS, TIPS, XTREME_LEVELS, baseLimitSec, fmtDuration, locatePoints, restrictionLabel, tipShare } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import { RouteBuilder } from '../builder.ts';
 import { distM, fmtDist } from '../net.ts';
@@ -20,6 +20,11 @@ export function roundScreen(panel: HTMLElement): Screen {
   const from = app.net.station(round.from!.id);
   const to = app.net.station(round.to!.id);
   const multi = s.players.length > 1;
+  // X-treme: Haltestellen eintippen, keine Route auf der Karte, je nach Stufe ohne Namen / ohne Karte
+  const xt = s.settings.xtreme ?? 'off';
+  const xtreme = xt !== 'off';
+  const showNames = xt !== 'noNames';
+  const showMap = xt !== 'noMap';
 
   const guesses: Guesses = { from: null, to: null };
   let target: 'from' | 'to' = 'from';
@@ -29,7 +34,12 @@ export function roundScreen(panel: HTMLElement): Screen {
   let submittedAt: number | null = null;
   // Der Builder ruft onChange schon im Konstruktor auf – daher erst deklarieren, dann zuweisen
   let builder: RouteBuilder | undefined;
-  builder = new RouteBuilder(app.net, from, to, round.restriction, () => drawDraft(), () => submit(false), round.bannedLines);
+  builder = new RouteBuilder(app.net, from, to, round.restriction, () => drawDraft(), () => submit(false), round.bannedLines, {
+    typed: xtreme,
+    hideStart: !showNames,
+    // ohne Namen / ohne Karte: keine Entfernungen verraten
+    hideDistances: !showNames || !showMap,
+  });
   const b = builder;
 
   // Grundgerüst
@@ -47,19 +57,26 @@ export function roundScreen(panel: HTMLElement): Screen {
   panel.scrollTop = 0;
 
   head.innerHTML = `
+    ${
+      xtreme
+        ? `<div class="xtreme-banner">⚡ X-TREME <span>${esc(XTREME_LEVELS.find((x) => x.id === xt)!.label)}</span><small>${
+            round.limitSec ? 'doppelte Zeit · ' : ''
+          }Haltestellen selbst eintippen${showNames ? '' : ' · keine Namen'}${showMap ? '' : ' · leere Karte'}</small></div>`
+        : ''
+    }
     <div class="when">🕒 ${esc(round.when ?? '')}${s.settings.network === 'current' ? ' · aktuelles Netz' : ''}${s.settings.countWait ? ' · inkl. Wartezeit' : ''}</div>
     ${
       round.restriction
         ? `<div class="restriction">${RESTRICTIONS[round.restriction].icon} <b>${esc(restrictionLabel(round.restriction, round.bannedLines))}</b> – ${
             round.restriction === 'banLines' ? 'finde eine andere Verbindung.' : RESTRICTIONS[round.restriction].hint
-          }${round.limitSec && s.settings.roundTimeLimitSec && round.limitSec > s.settings.roundTimeLimitSec ? ` <small>⏱ +${fmtDuration(round.limitSec - s.settings.roundTimeLimitSec)} Extrazeit</small>` : ''}</div>`
+          }${round.limitSec && baseLimitSec(s.settings) && round.limitSec > baseLimitSec(s.settings)! ? ` <small>⏱ +${fmtDuration(round.limitSec - baseLimitSec(s.settings)!)} Extrazeit</small>` : ''}</div>`
         : ''
     }
-    <div class="od"><div class="od-row"><span class="pin-dot a">A</span><b>${esc(from.name)}</b></div>
-    <div class="od-row"><span class="pin-dot b">B</span><b>${esc(to.name)}</b></div></div>`;
+    <div class="od"><div class="od-row"><span class="pin-dot a">A</span><b>${showNames ? esc(from.name) : 'Start <small>(nur auf der Karte)</small>'}</b></div>
+    <div class="od-row"><span class="pin-dot b">B</span><b>${showNames ? esc(to.name) : 'Ziel <small>(nur auf der Karte)</small>'}</b></div></div>`;
 
   // nach Neuladen: bereits genutzte Tipps holen
-  if (s.settings.tips)
+  if (s.settings.tips !== 'off')
     api
       .tips(auth, idx)
       .then((t) => {
@@ -76,9 +93,11 @@ export function roundScreen(panel: HTMLElement): Screen {
     // Handy: zum Orten die Karte groß machen, danach wieder normal
     setMapBig(view === 'locate');
     if (view === 'locate') return renderLocate();
-    app.map.showEndpoints(round.from!, round.to!, true);
+    if (showMap) app.map.showEndpoints(round.from!, round.to!, true, showNames);
+    else app.map.clear();
     const transferTip = tips.find((t) => t.kind === 'transfers');
-    app.map.showTransferHints(transferTip?.kind === 'transfers' ? transferTip.stops : []);
+    // ohne Karte: auch keine Umstiegs-Punkte · ohne Namen: Punkte ohne Beschriftung
+    app.map.showTransferHints(showMap && transferTip?.kind === 'transfers' ? transferTip.stops : []);
     if (view === 'route') renderRoute();
     else renderWaiting();
   }
@@ -161,7 +180,7 @@ export function roundScreen(panel: HTMLElement): Screen {
     body.innerHTML = '';
     body.insertAdjacentHTML('beforeend', locateSummary());
     body.querySelector('[data-act=flash]')?.addEventListener('click', flashGuesses);
-    if (s.settings.tips) body.append(renderTips());
+    if (s.settings.tips !== 'off') body.append(renderTips());
     body.append(b.el);
     drawDraft();
   }
@@ -172,7 +191,7 @@ export function roundScreen(panel: HTMLElement): Screen {
     const btns = (Object.keys(TIPS) as TipKind[])
       .map(
         (k) =>
-          `<button class="tip-btn" data-tip="${k}" ${used.has(k) ? 'disabled' : ''}>💡 ${esc(TIPS[k].label)} <small>−${Math.round(TIPS[k].share * 100)} %</small></button>`,
+          `<button class="tip-btn" data-tip="${k}" ${used.has(k) ? 'disabled' : ''}>💡 ${esc(TIPS[k].label)} <small>−${Math.round(tipShare(k, s.settings.tips) * 100)} %</small></button>`,
       )
       .join('');
     const results = tips
@@ -180,9 +199,18 @@ export function roundScreen(panel: HTMLElement): Screen {
         if (t.kind === 'modeChain')
           return `<div class="tip-result"><span>Schnellste Route:</span> ${t.modes.map(modeChip).join('<span class="sep">›</span>')}
                   <small>${t.transfers} Umstieg${t.transfers === 1 ? '' : 'e'} · ca. ${t.medianMin} min</small></div>`;
-        if (t.kind === 'transfers')
-          return `<div class="tip-result"><span>Umstiege:</span> ${t.stops.length ? t.stops.map((x) => `⇄ ${esc(x.name)}`).join(', ') + ' <small>(auf der Karte)</small>' : 'keine – Direktverbindung!'}</div>`;
-        return `<div class="tip-result"><span>${t.kind === 'startLines' ? 'Am Start' : 'Am Ziel'} (${esc(t.station)}):</span>
+        if (t.kind === 'transfers') {
+          if (!t.stops.length) return '<div class="tip-result"><span>Umstiege:</span> keine – Direktverbindung!</div>';
+          // ohne Namen: nur die Linien (von … in …)
+          const stop = (x: (typeof t.stops)[number]) =>
+            showNames && x.name
+              ? `⇄ ${esc(x.name)}`
+              : x.from && x.to
+                ? `<span class="tip-tr">${lineChip(x.from.mode, x.from.id, x.from.color)} ⇄ ${lineChip(x.to.mode, x.to.id, x.to.color)}</span>`
+                : '⇄ ?';
+          return `<div class="tip-result"><span>Umstiege:</span> ${t.stops.map(stop).join(showNames ? ', ' : ' ')}${showMap ? ' <small>(auf der Karte)</small>' : ''}</div>`;
+        }
+        return `<div class="tip-result"><span>${t.kind === 'startLines' ? 'Am Start' : 'Am Ziel'}${showNames && t.station ? ` (${esc(t.station)})` : ''}:</span>
                 <div class="chips">${t.lines.map((l) => lineChip(l.mode, l.id, l.color)).join('')}</div></div>`;
       })
       .join('');
@@ -229,7 +257,8 @@ export function roundScreen(panel: HTMLElement): Screen {
   }
 
   function drawDraft() {
-    if (builder && view !== 'locate') app.map.showDraft(builder.segments(), builder.transferPoints());
+    // X-treme: die eigene Route wird erst bei der Auflösung gezeigt
+    if (builder && view !== 'locate' && !xtreme) app.map.showDraft(builder.segments(), builder.transferPoints());
   }
 
   // -------------------------------------------------------------- Abgabe

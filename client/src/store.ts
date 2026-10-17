@@ -62,6 +62,14 @@ export const app = {
   if (t != null && !TIME_LIMITS.includes(t)) delete app.prefs.settings.roundTimeLimitSec;
   // Netz (Aktuell) und Fokus-Kreis starten immer mit dem Standard
   for (const k of NOT_REMEMBERED) delete app.prefs.settings[k];
+  // Schnellwahl gespeichert? Dann bestimmt sie die Regler (die Stufen können sich geändert haben)
+  const ps = app.prefs.settings;
+  if (ps.difficulty && ps.difficulty !== 'custom') {
+    delete ps.stations;
+    delete ps.distance;
+    delete ps.minTransfers;
+    delete (ps as { needTransfer?: unknown }).needTransfer;
+  }
 }
 
 export function savePrefs() {
@@ -152,6 +160,12 @@ export function endSession() {
 export async function restoreSession(): Promise<boolean> {
   const saved = readJson<Partial<Session>>(() => sessionStorage, SESSION_KEY, {});
   if (!saved.code || !saved.token) return false;
+  // Einladungslink zu einer ANDEREN Lobby geöffnet → nicht in die alte zurück, sondern beitreten lassen
+  const linkCode = new URLSearchParams(location.search).get('code')?.toUpperCase();
+  if (linkCode && linkCode !== saved.code) {
+    writeJson(() => sessionStorage, SESSION_KEY, null);
+    return false;
+  }
   try {
     const res = await api.state({ code: saved.code, token: saved.token });
     startSession({ code: saved.code, token: saved.token, playerId: res.playerId }, res.state);

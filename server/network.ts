@@ -1,11 +1,24 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { GameSettings, Line, NetMode, NetworkData, NetworkPublic, SlotId, Station, StationKind, StationRef } from '../shared/types.ts';
 import { distanceRange, linePatterns } from '../shared/rules.ts';
 import { inStationKinds } from '../shared/pools.ts';
 import type { EfaPoint } from './efa.ts';
+import { STATE_DIR } from './paths.ts';
 
 const FILE = path.resolve(import.meta.dirname, '../data/network.json');
+/** Wie oft jede Station schon Start/Ziel war – damit nicht dieselben ständig kommen */
+const USAGE_FILE = path.join(STATE_DIR, 'usage.json');
+
+/** Abwechslung innerhalb eines Spiels: so weit müssen neue Start/Ziele von bisherigen weg sein */
+const AVOID_POINT_M = 1200;
+/** … und eine Strecke gilt als "ähnlich", wenn beide Enden so nah an einer früheren liegen */
+const SIMILAR_ROUTE_M = 3000;
+
+export interface PastPair {
+  a: { lat: number; lon: number };
+  b: { lat: number; lon: number };
+}
 
 export function distM(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
   const dLat = (a.lat - b.lat) * 111_320;
@@ -27,6 +40,8 @@ export class Network {
   readonly stations = new Map<string, Station>();
   readonly lines = new Map<string, Line>();
   private efaToStation = new Map<string, string>();
+  private usage = new Map<string, number>();
+  private usageSave: NodeJS.Timeout | null = null;
   private byNorm = new Map<string, Station[]>();
 
   constructor(data: NetworkData) {
@@ -38,6 +53,26 @@ export class Network {
     }
     for (const l of data.lines) this.lines.set(l.id, l);
     for (const [sid, ids] of Object.entries(data.efaIds)) for (const id of ids) this.efaToStation.set(id, sid);
+    try {
+      for (const [id, n] of Object.entries(JSON.parse(readFileSync(USAGE_FILE, 'utf8')) as Record<string, number>)) this.usage.set(id, n);
+    } catch {
+      /* noch keine Statistik */
+    }
+  }
+
+  /** Start/Ziel verwendet → seltener ziehen (gespeichert in data/usage.json) */
+  markUsed(...ids: string[]) {
+    for (const id of ids) this.usage.set(id, (this.usage.get(id) ?? 0) + 1);
+    if (this.usageSave) return;
+    this.usageSave = setTimeout(() => {
+      this.usageSave = null;
+      try {
+        writeFileSync(USAGE_FILE, JSON.stringify(Object.fromEntries(this.usage)));
+      } catch {
+        /* egal – nur Statistik */
+      }
+    }, 5000);
+    this.usageSave.unref();
   }
 
   static load(): Network {
@@ -125,22 +160,48 @@ export class Network {
    * Zufälliges Start/Ziel-Paar. Mit Fokus-Kreis wird jede Station mit Wahrscheinlichkeit
    * `focus.share` aus dem Kreis gezogen, sonst aus ganz Wien.
    */
-  randomPair(s: GameSettings, exclude: Set<string>): [Station, Station] {
+  randomPair(s: GameSettings, exclude: Set<string>, past: PastPair[] = []): [Station, Station] {
     const pool = this.candidates(s.stations, s.slot, s.network).filter((x) => !exclude.has(x.id));
     const inFocus = s.focus ? pool.filter((x) => distM(x, s.focus!) <= s.focus!.radiusM) : [];
     const [minD, maxD] = distanceRange(s.distance);
-    const pick = () => {
-      const fromFocus = inFocus.length > 0 && Math.random() < s.focus!.share;
-      const src = fromFocus ? inFocus : pool;
-      return src[Math.floor(Math.random() * src.length)];
+    // selten gezogene Stationen bevorzugen: Gewicht 1 / (1 + bisherige Ziehungen)²
+    const sampler = (list: Station[]) => {
+      const cum: number[] = [];
+      let sum = 0;
+      for (const x of list) cum.push((sum += 1 / (1 + (this.usage.get(x.id) ?? 0)) ** 2));
+      return () => {
+        const r = Math.random() * sum;
+        let lo = 0;
+        let hi = cum.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (cum[mid] < r) lo = mid + 1;
+          else hi = mid;
+        }
+        return list[lo];
+      };
     };
-    for (let i = 0; i < 2000; i++) {
+    const fromPool = sampler(pool);
+    const fromFocus = inFocus.length ? sampler(inFocus) : null;
+    const pick = () => (fromFocus && Math.random() < s.focus!.share ? fromFocus() : fromPool());
+    const points = past.flatMap((p) => [p.a, p.b]);
+    for (let i = 0; i < 3000; i++) {
       // bei kleinen Kreisen darf die Mindestdistanz nach vielen Versuchen etwas schrumpfen
       const min = i < 1000 ? minD : Math.min(minD, 1500);
       const a = pick();
       const b = pick();
       const d = distM(a, b);
-      if (a !== b && d >= min && d <= maxD) return [a, b];
+      if (a === b || d < min || d > maxD) continue;
+      // Abwechslung: nicht wieder dieselbe Gegend (wird nach vielen Versuchen gelockert)
+      const strict = i < 2000;
+      if (strict && points.some((p) => distM(p, a) < AVOID_POINT_M || distM(p, b) < AVOID_POINT_M)) continue;
+      const similar = past.some(
+        (p) =>
+          (distM(p.a, a) < SIMILAR_ROUTE_M && distM(p.b, b) < SIMILAR_ROUTE_M) ||
+          (distM(p.a, b) < SIMILAR_ROUTE_M && distM(p.b, a) < SIMILAR_ROUTE_M),
+      );
+      if (strict && similar) continue;
+      return [a, b];
     }
     throw new Error('Kein passendes Stationspaar gefunden');
   }

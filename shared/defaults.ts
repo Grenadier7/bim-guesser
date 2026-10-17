@@ -15,12 +15,15 @@ export const DEFAULT_SETTINGS: GameSettings = {
   network: 'regular',
   /** Schnellwahl: 'easy' · 'medium' · 'hard' · 'expert' (muss zu stations/distance/needTransfer passen) */
   difficulty: 'medium',
-  /** Haltestellen: 'U' 'S' 'T' (Bim) + höchstens eine Bus-Stufe 'hub' (3+ Linien) · 'bus' (2+) · 'all' */
-  stations: ['U', 'S', 'T'],
+  /**
+   * Haltestellen, je Verkehrsmittel höchstens eine Stufe (muss zu difficulty passen):
+   * U-Bahn 'Ukey' (wichtige) · 'U' (alle) · S-Bahn 'Skey' · 'S' · Bim 'Tkey' · 'T' · Bus 'hub' · 'bus' · 'all'
+   */
+  stations: ['U', 'S'],
   /** Entfernung: 'short' 2–7 km · 'medium' 3–12 km · 'long' 6–16 km */
   distance: 'medium',
-  /** nur Strecken, deren beste Verbindung einen Umstieg hat */
-  needTransfer: false,
+  /** so viele Umstiege hat die beste Verbindung mindestens: 0 · 1 · 2 (muss zu difficulty passen) */
+  minTransfers: 1,
   /** Fokus-Kreis (null = aus) */
   focus: null,
   /** Runden: 3 · 5 · 7 · 10 */
@@ -35,10 +38,12 @@ export const DEFAULT_SETTINGS: GameSettings = {
   avgWait: true,
   /** 'best' = Zeit + Aufschlag je Umstieg · 'fastest' = nur Zeit */
   goal: 'best',
+  /** X-treme: 'off' · 'noHints' (selbst eintippen) · 'noNames' (+ keine Namen) · 'noMap' (+ leere Karte) */
+  xtreme: 'off',
   /** Einschränkungs-Runden: 'never' · 'sometimes' · 'always' */
   restrictions: 'never',
-  /** Tipps erlaubt */
-  tips: true,
+  /** Tipps: 'off' (keine) · 'cheap' (günstig) · 'expensive' (teuer – bei X-treme automatisch) */
+  tips: 'cheap',
 };
 
 /** Diese Einstellungen werden NICHT für die nächste Lobby gemerkt – sie starten immer mit dem Standard */

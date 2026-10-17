@@ -11,6 +11,8 @@ import { closeStream, openStream, rateLimit, securityHeaders } from './security.
 import { TrainingService } from './training.ts';
 
 const PORT = Number(process.env.PORT ?? 3000);
+const VERSION = process.env.APP_VERSION ?? 'dev';
+const STARTED = Date.now();
 const DIST = path.resolve(import.meta.dirname, '../dist');
 
 const net = Network.load();
@@ -20,8 +22,9 @@ const networkJson = JSON.stringify(net.publicData());
 
 const app = express();
 app.disable('x-powered-by');
-// ngrok (und andere lokale Proxys) verbinden sich über localhost – deren X-Forwarded-For enthält die echte IP
-app.set('trust proxy', 'loopback');
+// Proxys, deren X-Forwarded-For wir glauben (dort steht die echte IP – wichtig für die Rate-Limits):
+// lokal ngrok über localhost; im Container ngrok/Caddy aus dem Docker-Netz → TRUST_PROXY="loopback, uniquelocal"
+app.set('trust proxy', process.env.TRUST_PROXY ?? 'loopback');
 app.use(securityHeaders);
 
 // ---------------------------------------------------------------- Rate-Limits pro IP
@@ -65,6 +68,11 @@ const roundIdx = (req: Request) => {
   if (!Number.isInteger(n) || n < 0 || n > 20) throw new GameError('Ungültige Runde');
   return n;
 };
+
+// Für Docker-Healthcheck und Update-Skript: läuft der Server, und laufen gerade Spiele?
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, version: VERSION, uptimeSec: Math.round((Date.now() - STARTED) / 1000), lobbies: games.lobbyCount, activeGames: games.activeGames() });
+});
 
 app.get('/api/network', (_req, res) => {
   res.type('json').set('Cache-Control', 'public, max-age=3600').send(networkJson);

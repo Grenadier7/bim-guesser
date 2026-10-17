@@ -1,0 +1,27 @@
+# In ~/docker/compose.yml unter "services:" einfügen.
+# Dazu in ~/docker/.env:
+#   NGROK_AUTHTOKEN=…            (ngrok-Dashboard → Your Authtoken)
+#   NGROK_DOMAIN=…ngrok-free.dev (ngrok-Dashboard → Domains, ohne https://)
+
+  # --- ÖFFI-GUESSER ---
+  oeffi-guesser:
+    image: ghcr.io/grenadier7/bim-guesser:latest
+    container_name: oeffi-guesser
+    restart: unless-stopped
+    mem_limit: 384m
+    volumes:
+      - ./services/oeffi-guesser/state:/app/state # Auskunfts-Cache + Statistik
+    networks:
+      - proxy_network
+
+  oeffi-ngrok:
+    image: ngrok/ngrok:latest
+    container_name: oeffi-ngrok
+    restart: unless-stopped
+    command: ['http', 'oeffi-guesser:3000', '--url', '${NGROK_DOMAIN}']
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN}
+    depends_on:
+      - oeffi-guesser
+    networks:
+      - proxy_network
