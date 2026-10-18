@@ -1,15 +1,35 @@
-// npm run release [patch|minor|major]  →  nächster Tag v*, Push → GitHub baut das Image → Ditto aktualisiert sich
+// npm run release [patch|minor|major]  →  Tests + Klick-Durchlauf, nächster Tag v*, Push → GitHub baut das Image
+// → Ditto aktualisiert sich.  "--skip-smoke" überspringt den Klick-Durchlauf (z.B. ohne Edge/Chrome).
 import { execFileSync } from 'node:child_process';
+import path from 'node:path';
 
 const git = (...args: string[]) => execFileSync('git', args, { encoding: 'utf8' }).trim();
 
-const kind = (process.argv[2] ?? 'patch') as 'patch' | 'minor' | 'major';
+const kind = (process.argv.slice(2).find((a) => !a.startsWith('--')) ?? 'patch') as 'patch' | 'minor' | 'major';
 if (!['patch', 'minor', 'major'].includes(kind)) {
   console.error('Aufruf: npm run release [patch|minor|major]');
   process.exit(1);
 }
 if (git('status', '--porcelain')) {
   console.error('✖ Es gibt nicht committete Änderungen – erst committen, dann releasen.');
+  process.exit(1);
+}
+
+// erst prüfen, dann veröffentlichen: Typecheck, Tests und Klick-Durchlauf müssen grün sein
+// npm_execpath setzt `npm run` selbst; sonst liegt npm neben node (Windows-Installation)
+const npmCli = process.env.npm_execpath ?? path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js');
+const npm = (script: string) => execFileSync(process.execPath, [npmCli, 'run', script], { stdio: 'inherit' });
+try {
+  console.log('▶ Typecheck …');
+  npm('typecheck');
+  console.log('▶ Tests …');
+  npm('test');
+  if (!process.argv.includes('--skip-smoke')) {
+    console.log('▶ Klick-Durchlauf …');
+    npm('smoke');
+  }
+} catch {
+  console.error('\n✖ Prüfung fehlgeschlagen – kein Release.');
   process.exit(1);
 }
 

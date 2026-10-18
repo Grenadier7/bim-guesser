@@ -3,6 +3,7 @@ import { RESTRICTIONS, TIPS, XTREME_LEVELS, baseLimitSec, fmtDuration, locatePoi
 import { api } from '../api.ts';
 import { RouteBuilder } from '../builder.ts';
 import { distM, fmtDist } from '../net.ts';
+import { netLayer } from '../netmap.ts';
 import { app, routeState, currentRound, isHost, serverNow, setMapBig } from '../store.ts';
 import { esc, h, lineChip, modeChip, toast } from '../ui.ts';
 import { hostBar } from './host.ts';
@@ -11,6 +12,8 @@ import type { Screen } from './screen.ts';
 type View = 'locate' | 'route' | 'waiting';
 
 export function roundScreen(panel: HTMLElement): Screen {
+  // während des Ratens kein Netz – die Netzkarte aus der letzten Auflösung wäre eine Gratis-Hilfe
+  netLayer().clear();
   const s = routeState();
   const round = currentRound()!;
   const idx = round.index;

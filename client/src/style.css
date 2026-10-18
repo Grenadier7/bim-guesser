@@ -13,7 +13,7 @@
   --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 16px rgb(0 0 0 / 0.08);
   --c-U: #555;
   --c-S: #1e6fbf;
-  --c-T: #c8102e;
+  --c-T: #9e1b32;
   --c-B: #0a295d;
   --c-N: #3b2a7a;
   --c-W: #7a7a7a;
@@ -2156,28 +2156,6 @@ input[type='range'] {
 
 /* ---------------------------------------------------------------- Lernen: Netzplan & Steckbriefe */
 
-.line-tag-wrap {
-  width: auto !important;
-  height: auto !important;
-  background: none;
-  border: 0;
-}
-
-.line-tag {
-  display: inline-block;
-  transform: translate(-50%, -50%);
-  background: var(--c);
-  color: #fff;
-  font-weight: 800;
-  font-size: 12px;
-  padding: 1px 6px;
-  border-radius: 6px;
-  border: 2px solid #fff;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.35);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
 .learn-head h2 {
   margin: 6px 0 8px;
 }
@@ -3508,4 +3486,540 @@ details.fine > summary {
 /* Weitere Spielmodi: so viele Spalten, wie Platz ist (nie gequetscht) */
 .mode-grid.mode-grid-3 {
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+/* ---------------------------------------------------------------- Lernen: Startseite (Lernpfad, Netzkarte, Üben) */
+
+.learn-hub {
+  display: grid;
+  gap: 12px;
+}
+
+.learn-hub h2 {
+  margin: 4px 0 0;
+}
+
+.learn-hub > .link,
+.atlas > .link {
+  justify-self: start;
+}
+
+.hub-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.hub-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.hub-head b {
+  display: block;
+  font-size: 17px;
+}
+
+.hub-head small {
+  color: var(--muted);
+}
+
+.hub-icon {
+  font-size: 28px;
+  line-height: 1;
+}
+
+/* Lernpfad: ein Punkt je Kurs */
+.path-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.path-dots i {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+}
+
+.path-dots i.on {
+  background: var(--good);
+}
+
+.path-dots i.next {
+  background: var(--accent);
+  opacity: 0.55;
+}
+
+.all-courses summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.all-courses .course-list {
+  margin-top: 8px;
+}
+
+/* ---------------------------------------------------------------- Lernen: Netzkarte */
+
+.atlas {
+  display: grid;
+  gap: 10px;
+}
+
+.atlas h2 {
+  margin: 4px 0 0;
+}
+
+/* Grid-Kinder dürfen schmaler werden als ihr Inhalt – sonst schieben lange Umstiegslisten das Panel auf */
+.learn-hub > *,
+.atlas > * {
+  min-width: 0;
+}
+
+.atlas-results:empty {
+  display: none;
+}
+
+.atlas-results {
+  display: grid;
+  gap: 6px;
+}
+
+.atlas-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.atlas-nav {
+  margin-left: auto;
+  display: flex;
+  gap: 12px;
+}
+
+.toggle-chip {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.toggle-chip.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+}
+
+.toggle-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.atlas-card .learn-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.star-btn {
+  margin-left: auto;
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.star-btn.on {
+  border-color: #e6b400;
+  background: #fff6d6;
+}
+
+.chip-btn {
+  border: 0;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+
+/* kleine Liniennummern (Bim-/Bus-Umstiege in der Stationsliste) */
+.chip-btn.mini .chip {
+  font-size: 10.5px;
+  padding: 0 4px;
+}
+
+.star-btn.small {
+  margin-left: auto;
+  padding: 2px 7px;
+  flex: none;
+}
+
+/* Stationsliste im Steckbrief: einspaltig, damit die Umstiege daneben Platz haben */
+.atlas-card .stop-list {
+  columns: 1;
+}
+
+.atlas-card .stop-list li {
+  cursor: default;
+}
+
+.atlas-card .stop-list li:hover {
+  text-decoration: none;
+}
+
+.stop-transfers {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.atlas-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.atlas-actions .star-btn {
+  margin-left: 0;
+}
+
+.hub-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hub-actions .btn {
+  flex: 1 1 auto;
+}
+
+/* Üben: angetippte Stationen unter dem Steckbrief */
+.peek-card {
+  margin-top: 8px;
+  background: #f7f9fc;
+  font-size: 14px;
+}
+
+.peek-card .deps {
+  margin: 6px 0 0;
+}
+
+.star-mini {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  margin-left: 2px;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.55;
+  vertical-align: middle;
+}
+
+.star-mini:hover,
+.star-mini.on {
+  opacity: 1;
+}
+
+/* Vergleich: Linien mit kleinem × je Linie und kleinem + für eine weitere */
+.compare-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-bottom: 4px;
+}
+
+.cmp-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.cmp-x,
+.cmp-add {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 3px;
+}
+
+.cmp-x:hover {
+  color: var(--err);
+}
+
+.cmp-add {
+  width: 22px;
+  height: 22px;
+  border: 1px dashed #b9bec6;
+  border-radius: 6px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.cmp-add:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.cmp-sep {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compare-many td:first-child {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.meetings {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.meetings li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px;
+}
+
+/* Knöpfe unten in einer Karte: eigene Zeile mit Abstand (überlappen sonst die Liniennummern darüber) */
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 6px;
+}
+
+.compare-hint {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff3e6;
+  border: 1px solid #f5c08a;
+  font-size: 14px;
+}
+
+.compare-table td:not(:first-child) {
+  width: 42%;
+}
+
+.atlas-card .transfer {
+  flex-wrap: wrap;
+}
+
+.atlas-card .stop-list .link,
+.atlas-card .transfer .link {
+  font-size: 13px;
+  text-align: left;
+}
+
+/* ---------------------------------------------------------------- Lernen: geführte Kurse */
+
+.course-list {
+  display: grid;
+  gap: 8px;
+}
+
+.course-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.course-card:hover {
+  border-color: var(--ink);
+}
+
+.cc-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.cc-text {
+  display: grid;
+  gap: 2px;
+}
+
+.cc-text small {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.cc-done {
+  font-size: 12px;
+  font-weight: 700;
+  color: #14572b;
+  background: #dcf5e3;
+  padding: 2px 8px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+
+.course-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 8px;
+}
+
+.course-head h2 {
+  margin: 0;
+}
+
+.course-step ul,
+.course-step ol {
+  padding-left: 20px;
+}
+
+.course-step li {
+  margin: 4px 0;
+}
+
+.course-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.course-table td {
+  padding: 5px 6px;
+  border-top: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.course-table td:first-child {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.course-quiz button {
+  font-size: 14px;
+}
+
+/* ---------------------------------------------------------------- Netzkarte (Kurse, Lernen) */
+
+/* SVG-Ebenen selbst lassen Klicks durch – nur Linien und Punkte (leaflet-interactive) nehmen sie an.
+   Sonst würde die Routen-Ebene die tiefer liegende Netzkarte zudecken. */
+.leaflet-pane > svg {
+  pointer-events: none;
+}
+
+/* Liniennummern im Kurstext: antippbar → Steckbrief */
+.chip-link {
+  cursor: pointer;
+}
+
+.chip-link:hover .chip {
+  filter: brightness(1.15);
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 0.12);
+}
+
+.dim-chip {
+  opacity: 0.45;
+}
+
+.net-tags,
+.net-hub-label,
+.net-band-label {
+  width: auto !important;
+  height: auto !important;
+  background: none;
+  border: 0;
+}
+
+.net-tags > div {
+  display: flex;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.net-z-mid .net-stop-far,
+.net-z-low .net-tags.minor,
+.net-z-low .net-hub-label.minor,
+.net-z-low .net-dot-minor {
+  display: none;
+}
+
+.net-tag {
+  white-space: nowrap;
+  background: var(--c);
+  color: #fff;
+  font-weight: 800;
+  font-size: 10.5px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1.5px #fff, 0 1px 2px rgb(0 0 0 / 0.3);
+}
+
+.net-hub-label span {
+  display: block;
+  transform: translate(9px, -50%);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #1d2127;
+  white-space: nowrap;
+  text-shadow: 0 0 2px #fff, 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff;
+  pointer-events: none;
+}
+
+/* Fahrtrichtung auf Einbahn-Abschnitten: kleines Dreieck in Linienfarbe mit weißem Rand */
+.net-arrow {
+  display: block;
+  width: 0;
+  height: 0;
+  border-left: 9px solid var(--c);
+  border-top: 5.5px solid transparent;
+  border-bottom: 5.5px solid transparent;
+  filter: drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1px #fff);
+}
+
+.net-hub-label.left span {
+  transform: translate(calc(-100% - 9px), -50%);
+}
+
+.net-band-label span {
+  display: block;
+  transform: translate(-50%, -50%);
+  font-size: 12px;
+  font-weight: 800;
+  font-style: italic;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--c);
+  white-space: nowrap;
+  text-shadow: 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff;
+  pointer-events: none;
 }

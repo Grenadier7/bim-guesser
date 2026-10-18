@@ -1,4 +1,4 @@
-# Öffi-Guesser Wien
+# BimGuesser Wien
 
 Quiz: Du bekommst zwei zufällige Wiener Haltestellen und musst die schnellste Öffi-Verbindung erraten –
 Linie für Linie. Danach zeigt die Karte die tatsächlich schnellsten Verbindungen laut Wiener-Linien-Auskunft.
@@ -60,7 +60,7 @@ in die richtige Lobby (Routenjagd oder Quiz).
 | 🏁 **Routenjagd** | Lobby, 1–12 | Schnellste Öffi-Verbindung zwischen zwei Stationen finden |
 | 🧠 **Quiz** | Lobby, 1–12 | Fragen zu Stationen, Linien, Umstiegen – Punkte für richtig und schnell |
 | 🏋️ **Training** | allein | Echte Strecken mit Coach, Hilfen und Erklärung |
-| 📚 **Lernen** | allein | Netzplan, Linien-Steckbriefe, Linien nachzeichnen |
+| 📚 **Lernen** | allein | Lernpfad (Kurse), Netzkarte mit Linien-Steckbriefen, gemerkte Linien üben |
 
 ### Quiz
 
@@ -91,9 +91,12 @@ in die richtige Lobby (Routenjagd oder Quiz).
    Mit X-treme heißt der Knopf „⚡ X-TREME starten“.
    Im Einzelnen:
    - **Uhrzeit** (unter „Erweitert“): Mo–Fr 12 Uhr, Mo–Fr 17 Uhr, Sa 2 Uhr (Nacht), So 12 Uhr
-   - **Netz**: *Regulär* = Referenztag ohne Baustellen (das Build-Skript sucht den nächstgelegenen Tag ohne
-     Ersatzverkehr und mit funktionierenden S-Bahn-Testverbindungen, ohne Ferien/Feiertage) ·
-     *Aktuell* = nächster echter Tag inkl. Sperren
+   - **Netz**: *Regulär* = Referenztag ohne Baustellen · *Aktuell* = nächster echter Tag inkl. Sperren.
+     Referenztage derzeit **Di 30.6., Sa 27.6., So 28.6.2026** (`PREFERRED_DAYS` in `scripts/build-network.ts`):
+     nur Ende Juni fährt die S-Bahn-Stammstrecke (ab ca. 8.7. bis mindestens Dezember gesperrt) und Bim/Bus sind
+     fast im Normalbetrieb. Ohne passende Wunschtage sucht das Build-Skript selbst (Tag ohne Ersatzverkehr, mit
+     funktionierenden S-Bahn-Testverbindungen, ohne Ferien/Feiertage). Achtung: Die Auskunft hält nur einige
+     Monate Vergangenheit vor – laufen die Referenztage aus, neue wählen und `npm run build:data` ausführen.
    - **Schwierigkeit**: Schnellwahl Leicht / Mittel / Schwer / Profi – oder selbst mit drei Reglern:
      *Haltestellen*: vier Kästchen (🚇 U-Bahn · 🚆 S-Bahn · 🚋 Bim · 🚌 Bus) zum An-/Ausschalten, darunter je ein
      kleiner senkrechter Regler für die Stufe: U/S/Bim *Wichtige* (Endstellen, Umstiege, Stammstrecke, bekannte
@@ -117,7 +120,8 @@ in die richtige Lobby (Routenjagd oder Quiz).
      Namen. Bei „ohne Namen“/„ohne Karte“ ist „Wo liegt das?“ aus.
    - **Wartezeit mitzählen** – Tür-zu-Tür ab Abfragezeit statt nur Fahrzeit
    - **Ø-Wartezeiten statt Fahrplan-Glück** (Standard: an) – jede Linie zählt mit ihrer mittleren Fahrzeit, jeder
-     Umstieg mit Umsteigeweg + halbem Takt der nächsten Linie (Takt = Abfahrten der folgenden Stunde; gleichwertige
+     Umstieg mit Umsteigeweg + der erwarteten Wartezeit auf die nächste Linie (für jede Ankunftsminute der folgenden
+     Stunde die Zeit bis zur nächsten echten Abfahrt, gemittelt – stimmt auch bei unregelmäßigem Takt; gleichwertige
      Linien wie S1–S4 auf der Stammstrecke zählen zusammen). Ein zufällig perfekter Anschluss bringt so keinen
      Vorteil; eine S7 alle 30 min kostet im Schnitt 15 min. Bei der allerersten Linie zählt nur die halbe Ø-Wartezeit
      (ein Viertel des Takts) – zur ersten Abfahrt kann man sich die Zeit meist einteilen. Das gilt nur, wenn sie direkt
@@ -162,28 +166,48 @@ in die richtige Lobby (Routenjagd oder Quiz).
 - Einstellungen: Uhrzeit, Schwierigkeit, Gebiet (Ganz Wien oder Schwerpunkt-Bezirk, wird eingefärbt), Coach an/aus. Endpunkte: `POST /api/training/round`,
   `POST /api/training/:id/evaluate`.
 
-**Lernmodus** (Startseite, ohne Lobby) – erst lernen, dann optional testen:
-- *Bereich*: **Gebiet** (Bezirk oder Kreis auf der Karte, mit Verkehrsmittel-Filter), **Linien** (einzelne,
-  „alle U-Bahn/S-Bahn/Bim“ oder per **Station**: Station eintippen → alle Linien, die dort fahren, werden übernommen)
-  oder **ganz Wien**.
-- *📖 Lernen → Netzplan*: alle Linien des Bereichs in unterscheidbaren Farben. Linie antippen zeigt einen
-  **Steckbrief** mit automatisch erzeugtem Merksatz („Die Linie 12 fährt von Hillerstraße über Vorgartenstraße,
-  Traisengasse, Friedensbrücke und Lange Gasse nach Josefstädter Straße“ – Zwischenpunkte sind die wichtigsten
-  Umstiege, bevorzugt U-/S-Bahn), Bezirke und alle U-/S-Bahn-Umstiege. Haltestelle antippen zeigt
-  „Von hier fährst du mit …“ inkl. Richtungen.
-- *📖 Lernen → Linie für Linie*: Steckbrief ansehen → Linie aus dem Gedächtnis auf der leeren Karte nachzeichnen →
-  Vergleich mit dem echten Verlauf (Prozent getroffen, verfehlte Stationen) → selbst einschätzen („sitzt“/„nochmal“).
-  Unbekannte Linien kommen zuerst.
-- *🧪 Wissen testen* (aufklappbar): Wo liegt …?, Welche Linien halten hier?, Welche Linie ist das?, Nächste Station –
-  mit Lernstand pro Aufgabe; mehrdeutige Antworten (z.B. S1/S2 auf der Stammstrecke) werden vermieden.
-- Fortschritt wird im Browser gespeichert und ist je Bereich zurücksetzbar.
+**Lernmodus** (Startseite, ohne Lobby) – drei Einstiege, keine Einstellungen vorab:
+- *🎓 Lernpfad*: die geführten Kurse in fester Reihenfolge („Weiter mit …“): U-Bahn-Kreuzungen → S-Bahn
+  (Stammstrecke, Äste S1/S2/S3+S4, S7, S40/S45/S50, S60/S80) → Radiallinien → die Ringe → Querverbindungen →
+  über die Donau & Transdanubien (Brücken; U6/U1/U2 als „Finger“, Bims 25/26/27 quer, Busse von der U1 zur U2,
+  Zubringer je U-Bahn-Knoten) → der Süden (Meidling, Liesing, Favoriten, Simmering: U6/U1/U3, S-Bahn, Knoten,
+  Bims 6/11/71/62/BB/1, 60er/70er-Busse) → Busnummern (Zehnerstelle läuft gegen den Uhrzeigersinn um die Stadt)
+  → Nachts in Transdanubien. Inhalte und Fragen werden aus den Netzdaten berechnet (`client/src/learn/courses/`),
+  jede Frage hat genau eine richtige Antwort. Alle Schritte zeigen dieselbe Netzkarte und blenden nur hervor
+  oder aus; bei Fragen bleibt die Karte leer. Liniennummern im Kurstext sind antippbar (Steckbrief, „← zurück zum
+  Kurs“); am Kursende lassen sich die Linien des Kurses mit einem Tipp zum Üben merken (bis 25 Linien).
+- *🗺 Netzkarte* (`client/src/learn/atlas.ts`): Linie oder Station suchen bzw. auf der Karte antippen. Linie →
+  **Steckbrief** (Merksatz mit den wichtigsten Umstiegen, Bezirke, U-/S-Bahn-Umstiege, alle Stationen); Station →
+  **„Von hier fährst du mit …“** inkl. Richtungen. Alles darin ist wieder antippbar, „← zurück“ springt zur
+  vorigen Auswahl. Ab Zoom 14 sind alle Haltestellen antippbar. **⭐ Merken** im Steckbrief, oder an einer Station
+  alle Linien auf einmal; Chips „Bim“ und „⭐ Meine Linien“ (alles andere blass); „✕ Übersicht“ führt direkt
+  zurück. **⇄ Vergleichen**: zwei Linien nebeneinander (Strecke, Stationen, Bezirke, Umstiege, gemeinsame
+  Stationen bzw. wo sie sich am nächsten kommen); mit dem kleinen **+** bis zu sechs Linien – dann knapp
+  (Strecke, Stationen, Bezirke) mit den Treffpunkten, an denen sich mindestens zwei der Linien treffen. Einbahn-Abschnitte (Schleifen, getrennte Gassen) mit
+  Richtungspfeilen. Sonderlinien (z.B. 71E, 26E) und Halte nur aus Sonderführungen werden ausgeblendet.
+  Die Karte der Lernen-Startseite ist gleich antippbar.
+- *🏋 Üben*: die gemerkten Linien Linie für Linie – Steckbrief ansehen → aus dem Gedächtnis nachzeichnen (zur
+  Orientierung nur leise U-/S-Bahn, nie die gesuchte Linie) → Vergleich (Prozent, verfehlte Stationen) → „sitzt“/
+  „nochmal“. Unbekannte Linien kommen zuerst. Oder **🎲 5 zufällige Linien** aus U-Bahn, S-Bahn und Bim. Beim
+  Ansehen lassen sich Stationen antippen (erscheinen mit „Von hier …“), der exakte Verlauf ist als Stationsliste
+  aufklappbar, beim Zeichnen markieren Ⓐ/Ⓑ Start und Ende. ☆ hinter Liniennummern in den Routen-Details von
+  Routenjagd und Training merkt Linien ebenfalls zum Üben. Wissen gegen andere testen geht im **🧠 Quiz**-Modus.
+- **Netzkarte** (`client/src/netmap.ts`): alle U-, S-Bahn- und Bim-Linien plus die Kurs-Busse 13A/10A/48A. Jede
+  Strecke zwischen zwei Stationen ist eine weiche Kurve, die exakt durch die Stationspunkte läuft – Linien
+  treffen sich genau in den Umsteigepunkten. Punkte bei jeder Kreuzung außer Bim–Bim, große Knoten mit Namen;
+  auf Stadt-Zoom werden Bim-Nummern und dichte Innenstadt-Namen ausgeblendet. Andere Busse und Nachtlinien werden
+  nur gezeichnet, wenn eine Ansicht sie braucht. Bänder für Ring, Gürtel und Vorortelinie. Farben: U-Bahn in
+  Linienfarben, S-Bahn blau, Bim dunkelrot (dünner und dunkler als die U1), Badner Bahn türkis, Busse schiefergrau.
+  Auch das Quiz zeichnet Linien damit (bei „Welche Linie ist das?“ nur die Linie, grau und ohne Namen), und in
+  den Auflösungen von Routenjagd und Training liegt sie blass unter den Routen. Während des Ratens bleibt die
+  Karte leer.
 
-**Handy**: Auf Start, Lobby und Lern-Einstellungen keine Karte (außer zum Setzen eines Kreises). Im Spiel bleibt
+**Handy**: Auf Start, Lobby und der Lernen-Startseite keine Karte. Im Spiel bleibt
 die Karte oben fix, nur das Panel scrollt; ⤢ vergrößert sie, beim „Wo liegt das?“ und Nachzeichnen wird sie automatisch groß.
 
 ## Betrieb auf Ditto (Heimserver) – automatische Updates
 
-Live läuft der Öffi-Guesser als Container auf **Ditto** (Ubuntu-VM, Docker, Caddy), öffentlich über **ngrok**,
+Live läuft der BimGuesser als Container auf **Ditto** (Ubuntu-VM, Docker, Caddy), öffentlich über **ngrok**,
 intern unter **http://bimguesser.ditto**.
 
 **Neue Version veröffentlichen** (am Laptop, alles committet):
@@ -192,9 +216,11 @@ intern unter **http://bimguesser.ditto**.
 npm run release          # v1.2.3 → v1.2.4   (oder: npm run release minor / major)
 ```
 
-Das setzt einen Tag `v…` und pusht ihn. Danach passiert alles automatisch:
+Das prüft zuerst (Typecheck, `npm test`, Klick-Durchlauf `npm run smoke` – bei Fehlern kein Release; ohne
+Edge/Chrome: `npm run release -- --skip-smoke`), setzt dann einen Tag `v…` und pusht ihn. Danach passiert alles
+automatisch:
 
-1. **GitHub Actions** (`.github/workflows/release.yml`): Typecheck + Build → Image `ghcr.io/grenadier7/bim-guesser:v…` und `:latest`.
+1. **GitHub Actions** (`.github/workflows/release.yml`): Typecheck + Tests + Build → Image `ghcr.io/grenadier7/bim-guesser:v…` und `:latest`.
 2. **Ditto** (`deploy/update.sh`, per cron alle 2 min): neues `:latest` gefunden → wartet, bis kein Spiel läuft
    (Lobbys leben nur im Arbeitsspeicher, max. 15 min) → startet den Container neu → prüft `/api/health` →
    bei Fehler zurück auf die vorige Version. Log: `~/docker/services/oeffi-guesser/update.log`.
@@ -246,14 +272,28 @@ unterwegs“). Ist die Wiener-Linien-Auskunft nicht erreichbar, kommt eine freun
 Ist deine Route nicht unter den gefundenen, wird jede Teilstrecke mit genau dieser Linie abgefragt
 (`maxChanges=0`) und für jede Stichprobe verkettet (Umstieg gleiche Station 2 min, Fußwege Luftlinie × 1,3 bei 80 m/min).
 
+## Tests
+
+```bash
+npm test         # Wertung, Ø-Wartezeit, alle Kurse (je 15× mit Zufallsfragen gebaut, jede Frage gültig)
+npm run smoke    # Klick-Durchlauf in Edge/Chrome (unsichtbar; --headed zum Zuschauen): Lernen, Netzkarte,
+                 # Vergleich, alle Kurse, Üben, Routenjagd- und Quiz-Lobby – jeder JavaScript-Fehler = Abbruch
+```
+
+Tests liegen in `test/` (Node-Testrunner, ohne Browser), der Klick-Durchlauf in `scripts/smoke.ts`
+(`playwright-core` steuert den installierten Browser, lädt keinen eigenen herunter).
+
 ## Aufbau
 
 ```
 shared/    Typen, Spielregeln/Punkte, Quiz-Fragen (Server & Client)
 server/    Express-API + SSE, EFA-Client, Routing/Sampling
            lobby.ts (Spieler/Host/Live), game.ts (Routenjagd), quiz.ts (Quiz), training.ts, manager.ts
-scripts/   build-network.ts: GTFS + API -> data/network.json
+scripts/   build-network.ts: GTFS + API -> data/network.json · release.ts · smoke.ts (Klick-Durchlauf)
 client/    Vite + TypeScript + Leaflet (screens/: home, lobby, round, reveal, final, quiz, training, learn)
+           netmap.ts: die Netzkarte (für Lernen, Kurse, Quiz und als Hintergrund der Auflösung)
+           learn/: atlas.ts (Netzkarte mit Steckbrief), study.ts (Üben), courses/ (ein Kurs je Datei)
+test/      Unit-Tests (node --test)
 ```
 
 - **Datenquellen**: [Wiener Linien Open Data](https://www.wienerlinien.at/open-data) – Routing-API (EFA, `ogd_routing`)

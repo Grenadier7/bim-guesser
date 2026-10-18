@@ -467,7 +467,8 @@ const U_COLORS: Record<string, string> = {
 export const MODE_COLOR: Record<Mode, string> = {
   U: '#555555',
   S: '#1e6fbf',
-  T: '#c8102e',
+  // dunkles Bim-Rot – klar unterscheidbar vom hellen Rot der U1 (#e3000f)
+  T: '#9e1b32',
   B: '#0a295d',
   N: '#3b2a7a',
   W: '#7a7a7a',

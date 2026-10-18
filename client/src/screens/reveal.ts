@@ -2,7 +2,9 @@ import type { Evaluation, RoundReveal } from '../../../shared/types.ts';
 import { MODE_LABEL, RESTRICTIONS, TIPS, fmtDuration, maxRoundPoints, restrictionLabel, routeCostOf, transferPenalty, transfersOf } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import type { PlayerRoute } from '../map.ts';
+import { netLayer, netView } from '../netmap.ts';
 import { app, routeState, currentRound, getReveal, isHost } from '../store.ts';
+import { starMini } from '../learn/model.ts';
 import { chain, esc, h, makeExpandable, routeDetails, toast, viaText } from '../ui.ts';
 import { hostBar } from './host.ts';
 import { loadingHtml, type Screen } from './screen.ts';
@@ -59,7 +61,8 @@ export function revealScreen(panel: HTMLElement): Screen {
     const playerRoutes: PlayerRoute[] = reveal.evaluations
       .filter((e) => e.route)
       .map((e) => ({ key: `p:${e.playerId}`, name: e.playerId === myId ? 'Du' : e.playerName, route: e.route!, isMe: e.playerId === myId }));
-    // kräftig: beste Route + eigene – alle anderen blass, bis man sie antippt
+    // Netzkarte blass als Hintergrund, darüber die Routen: kräftig die beste + eigene, die anderen blass
+    netLayer().render(netView({ dimAll: true, hubs: false, labels: false }));
     app.map.showReveal(reveal.routes, playerRoutes, [best.key, ...(mine?.route ? [`p:${myId}`] : [])]);
     pinned = null;
     if (s.settings.locate) {
@@ -87,7 +90,7 @@ export function revealScreen(panel: HTMLElement): Screen {
             <span class="pchain">${e.route ? chain(e.route.legs) : `<small>${esc(e.error ?? '–')}</small>`}</span>
             <span class="pmin">${e.durationMin != null ? `${e.durationMin} min` : ''}${isBest && e.costMin != null && e.costMin !== e.durationMin ? ` <small>→ ${e.costMin}</small>` : ''}<small>${e.elapsedSec != null ? `⏱ ${fmtDuration(e.elapsedSec)}` : 'keine Abgabe'}</small></span>
             <b class="ppts">+${fmt(e.score.total)} <span class="chev">▾</span></b>
-            <div class="rdetail">${e.route ? routeDetails(e.route) : ''}${breakdown(e)}</div></li>`,
+            <div class="rdetail">${e.route ? routeDetails(e.route, starMini) : ''}${breakdown(e)}</div></li>`,
         )
         .join('')}</ol>`;
       makeExpandable(table);
@@ -106,7 +109,7 @@ export function revealScreen(panel: HTMLElement): Screen {
             isBest && transfersOf(r) ? `${transfersOf(r)} Umstieg${transfersOf(r) > 1 ? 'e' : ''} → <b>${routeCostOf(r, s.settings)}</b> · ` : ''
           }${s.settings.countWait && r.medianMin !== r.rideMin ? `Fahrt ${r.rideMin}` : ''}${s.settings.avgWait ? '' : ` · ${r.samples}×`}</small></div>
           <span class="chev">▾</span></div>
-          <div class="rdetail">${routeDetails(r)}</div>
+          <div class="rdetail">${routeDetails(r, starMini)}</div>
         </li>`,
       )
       .join('');
@@ -176,7 +179,7 @@ export function revealScreen(panel: HTMLElement): Screen {
       { class: `result-card ${ev.score.total >= max * 0.65 ? 'great' : ev.score.total >= max * 0.3 ? 'ok' : 'meh'}` },
       `<div class="points">+${fmt(ev.score.total)}<small>/ ${fmt(max)}</small>${ev.elapsedSec != null ? `<small class="elapsed">⏱ ${fmtDuration(ev.elapsedSec)}</small>` : ''}</div>
        <div class="mine">
-         ${ev.route ? `<div class="chainline">${chain(ev.route.legs)}<b>${ev.durationMin} min</b></div><details class="my-detail"><summary>Deine Route im Detail</summary>${routeDetails(ev.route)}</details>` : ''}
+         ${ev.route ? `<div class="chainline">${chain(ev.route.legs)}<b>${ev.durationMin} min</b></div><details class="my-detail"><summary>Deine Route im Detail</summary>${routeDetails(ev.route, starMini)}</details>` : ''}
          ${isBest && ev.durationMin !== null && tr ? `<small>gewertet: ${ev.durationMin} min + ${tr} × ${penalty} min Umstieg = <b>${ev.costMin} min</b></small><br>` : ''}
          ${diff !== null ? `<small>${diff <= 0 ? `gleich gut oder besser als die ${word}` : `+${diff} min gegenüber der ${word}n`}</small>` : ''}
          ${verdict}

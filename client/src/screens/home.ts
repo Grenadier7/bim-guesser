@@ -31,7 +31,7 @@ const MODES = [
     id: 'learn',
     icon: '📚',
     title: 'Lernen',
-    text: 'Netzplan deines Grätzls, Steckbriefe der Linien, Linien aus dem Gedächtnis nachzeichnen.',
+    text: 'Kurse Schritt für Schritt, Netzkarte mit Linien-Steckbriefen, gemerkte Linien üben.',
     tag: 'Allein',
   },
 ] as const;
@@ -48,7 +48,7 @@ export function homeScreen(panel: HTMLElement): Screen {
   const el = h(
     'div',
     { class: 'home' },
-    `<header class="hero"><span class="logo big">U</span><div><h1>Öffi-Guesser Wien</h1><p>Wie gut kennst du die Wiener Öffis?</p></div></header>
+    `<header class="hero"><span class="logo big">U</span><div><h1>BimGuesser Wien</h1><p>Wie gut kennst du die Wiener Öffis?</p></div></header>
      ${
        urlCode
          ? `<div class="invite-card"><div>📨 Du wurdest in die Lobby <b>${esc(urlCode)}</b> eingeladen.</div>

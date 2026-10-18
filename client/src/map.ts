@@ -34,7 +34,6 @@ export class GameMap {
   private focusKeys: string[] = [];
   private clickHandler: ((e: L.LeafletMouseEvent) => void) | null = null;
   private areas = L.layerGroup();
-  private lineLayer = L.layerGroup();
   private learnArea = L.layerGroup();
   private learnMarks = L.layerGroup();
   private tapHandler: ((e: L.LeafletMouseEvent) => void) | null = null;
@@ -48,7 +47,12 @@ export class GameMap {
       attribution: 'Karte: Esri, HERE, Garmin, &copy; OpenStreetMap · Daten: Wiener Linien (CC BY 4.0)',
     }).addTo(this.map);
     this.map.fitBounds(VIENNA);
-    for (const g of [this.areas, this.learnArea, this.lineLayer, this.learnMarks, this.guesses, this.endpoints, this.hints, this.draft, this.routes]) g.addTo(this.map);
+    for (const g of [this.areas, this.learnArea, this.learnMarks, this.guesses, this.endpoints, this.hints, this.draft, this.routes]) g.addTo(this.map);
+  }
+
+  /** die Leaflet-Karte selbst – für eigene Ebenen wie die Netzkarte */
+  get leaflet(): L.Map {
+    return this.map;
   }
 
   /** zuletzt angezeigter Ausschnitt – nach Größenänderung neu einpassen */
@@ -56,7 +60,15 @@ export class GameMap {
 
   private fit(bounds: L.LatLngBounds, maxZoom?: number) {
     this.lastView = { bounds, maxZoom };
-    this.map.flyToBounds(bounds, { duration: 0.6, maxZoom });
+    // Karte gerade ohne Größe (ausgeblendet, z.B. am Handy beim Umschalten)? Dann nicht animieren –
+    // flyToBounds rechnet sonst mit NaN. Beim nächsten invalidate(true) wird lastView nachgeholt.
+    const size = this.map.getSize();
+    if (!size.x || !size.y || !bounds.isValid()) return;
+    try {
+      this.map.flyToBounds(bounds, { duration: 0.6, maxZoom });
+    } catch {
+      this.map.fitBounds(bounds, { maxZoom, animate: false });
+    }
   }
 
   invalidate(refit = false) {
@@ -64,10 +76,17 @@ export class GameMap {
     if (refit && this.lastView) this.map.fitBounds(this.lastView.bounds, { maxZoom: this.lastView.maxZoom, animate: false });
   }
 
+  private clearHooks: (() => void)[] = [];
+  /** eigene Ebenen (z.B. Netzkarte), die bei clear() und clearLearn() mitgeleert werden */
+  onClear(fn: () => void) {
+    this.clearHooks.push(fn);
+  }
+
   clear() {
+    for (const fn of this.clearHooks) fn();
     this.stopLocate();
     this.onTap(null);
-    for (const g of [this.areas, this.learnArea, this.lineLayer, this.learnMarks, this.guesses, this.endpoints, this.hints, this.draft, this.routes]) g.clearLayers();
+    for (const g of [this.areas, this.learnArea, this.learnMarks, this.guesses, this.endpoints, this.hints, this.draft, this.routes]) g.clearLayers();
     this.routeLayers.clear();
   }
 
@@ -102,46 +121,6 @@ export class GameMap {
     }
   }
 
-  /** Lernmodus: eine Linie mit ihren Haltestellen */
-  showNetworkLine(
-    paths: LL[][],
-    color: string,
-    stops: { id: string; lat: number; lon: number; name: string; terminal: boolean }[],
-    opts: { labels: boolean; onStop?: (id: string) => void; fit?: boolean },
-  ) {
-    this.lineLayer.clearLayers();
-    const bounds = L.latLngBounds([]);
-    for (const p of paths) {
-      if (p.length < 2) continue;
-      bounds.extend(L.latLngBounds(p));
-      this.lineLayer.addLayer(L.polyline(p, { color: '#fff', weight: 10, opacity: 0.9, interactive: false }));
-      this.lineLayer.addLayer(L.polyline(p, { color, weight: 6, interactive: false }));
-    }
-    for (const st of stops) {
-      const m = L.circleMarker([st.lat, st.lon], {
-        radius: st.terminal ? 7 : 5,
-        color: '#222',
-        weight: 2,
-        fillColor: '#fff',
-        fillOpacity: 1,
-      });
-      if (opts.labels)
-        m.bindTooltip(esc(st.name), {
-          permanent: st.terminal,
-          direction: 'right',
-          offset: [8, 0],
-          className: st.terminal ? 'pin-label' : 'stop-label',
-        });
-      if (opts.onStop) m.on('click', () => opts.onStop!(st.id));
-      this.lineLayer.addLayer(m);
-    }
-    if (opts.fit !== false && bounds.isValid()) this.fit(bounds.pad(0.15), 15);
-  }
-
-  clearNetworkLine() {
-    this.lineLayer.clearLayers();
-  }
-
   // -------------------------------------------------------------- Lernmodus
 
   /** Lernbereich hervorheben (Bezirksumriss oder Kreis) und optional einpassen */
@@ -165,17 +144,6 @@ export class GameMap {
     if (fit) {
       if (bounds) this.fit(bounds.pad(0.1), 15);
       else this.overview();
-    }
-  }
-
-  /** Haltestellen als Punkte (Name beim Drüberfahren), optional anklickbar */
-  showStops(stops: { id: string; lat: number; lon: number; name: string }[], onStop?: (id: string) => void) {
-    this.learnMarks.clearLayers();
-    for (const st of stops) {
-      const m = L.circleMarker([st.lat, st.lon], { radius: 4, color: '#1b1e23', weight: 1.5, fillColor: '#fff', fillOpacity: 1 });
-      m.bindTooltip(esc(st.name), { direction: 'top', offset: [0, -4], className: 'stop-label' });
-      if (onStop) m.on('click', () => onStop(st.id));
-      this.learnMarks.addLayer(m);
     }
   }
 
@@ -219,34 +187,6 @@ export class GameMap {
     this.map.flyTo([lat, lon], zoom, { duration: 0.5 });
   }
 
-  /** Netzplan eines Bereichs: viele Linien in unterscheidbaren Farben, Linie antippen = auswählen */
-  showNetworkOverview(items: { id: string; paths: LL[][]; color: string; labelAt?: LL }[], onLine: ((id: string) => void) | null, fit: boolean) {
-    this.lineLayer.clearLayers();
-    const bounds = L.latLngBounds([]);
-    for (const it of items) {
-      for (const p of it.paths) {
-        if (p.length < 2) continue;
-        bounds.extend(L.latLngBounds(p));
-        this.lineLayer.addLayer(L.polyline(p, { color: '#fff', weight: 7, opacity: 0.85, interactive: false }));
-        const pl = L.polyline(p, { color: it.color, weight: 4, opacity: 0.9, interactive: !!onLine });
-        if (onLine) pl.on('click', () => onLine(it.id));
-        this.lineLayer.addLayer(pl);
-      }
-      // Linien-Nummer an einer Stelle des längsten Verlaufs
-      const longest = [...it.paths].sort((a, b) => b.length - a.length)[0];
-      if (longest?.length) {
-        const pos = it.labelAt ?? longest[Math.floor(longest.length * 0.4)];
-        const m = L.marker(pos, {
-          icon: L.divIcon({ className: 'line-tag-wrap', html: `<span class="line-tag" style="--c:${it.color}">${esc(it.id)}</span>`, iconSize: undefined }),
-          zIndexOffset: 400,
-        });
-        if (onLine) m.on('click', () => onLine(it.id));
-        this.lineLayer.addLayer(m);
-      }
-    }
-    if (fit && bounds.isValid()) this.fit(bounds.pad(0.08), 15);
-  }
-
   /** Nachzeichnen: vom Spieler getippte Punkte als gestrichelte Linie */
   showSketch(points: LatLon[], ends?: [LatLon, LatLon]) {
     this.draft.clearLayers();
@@ -273,10 +213,14 @@ export class GameMap {
       );
   }
 
+  /**
+   * Kurs-Ansicht (Lernen): vereinfachte Linien. Fokus-Linien kräftig mit weißem Rand und Nummernschild,
+   * Kontext-Linien dünn und blass. Stationspunkte mit Namen – dauerhaft (wenige) oder beim Drüberfahren.
+   */
   clearLearn() {
+    for (const fn of this.clearHooks) fn();
     this.draft.clearLayers();
     this.learnMarks.clearLayers();
-    this.lineLayer.clearLayers();
   }
 
   overview() {
@@ -303,6 +247,10 @@ export class GameMap {
       ]);
       this.fit(b.pad(0.6), 14);
     }
+  }
+
+  clearEndpoints() {
+    this.endpoints.clearLayers();
   }
 
   // -------------------------------------------------------------- "Wo liegt das?"

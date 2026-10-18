@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Öffi-Guesser auf Ditto aktuell halten (läuft per cron alle 2 min als Benutzer mew):
+# BimGuesser auf Ditto aktuell halten (läuft per cron alle 2 min als Benutzer mew):
 #  1. neues Image :latest von ghcr.io holen – nichts Neues → fertig
 #  2. warten, bis kein Spiel läuft (max. 15 min; "--now" überspringt das)
 #  3. Container mit dem neuen Image neu erstellen und prüfen: läuft wirklich das neue Image, antwortet /api/health?

@@ -42,14 +42,17 @@ function legMinutes(dep: string, arr: string): number {
 }
 
 /** Aufgeklappte Route: jede Teilstrecke mit Ein-/Ausstieg, Zeiten und Fußwegen */
-export function routeDetails(route: RouteOption): string {
-  if (route.steps?.length) return stepsDetails(route);
+/** Stern zum Merken einer Linie hinter der Liniennummer (optional, z.B. in der Routenjagd-Auflösung) */
+type StarFn = (line: string) => string;
+
+export function routeDetails(route: RouteOption, star?: StarFn): string {
+  if (route.steps?.length) return stepsDetails(route, star);
   return `<ol class="leg-detail">${route.legs
     .map((l) => {
       const min = legMinutes(l.dep, l.arr);
       if (l.mode === 'W')
         return `<li class="ld-walk"><span class="ld-time">${esc(l.dep)}</span><span>🚶 ${min ? `${min} min ` : ''}zu Fuß${l.toName && l.toName !== l.fromName ? ` nach ${esc(l.toName)}` : ''}</span></li>`;
-      return `<li><span class="ld-time">${esc(l.dep)}</span><span>${lineChip(l.mode, l.line, l.color)} <b>${esc(l.fromName)}</b> → <b>${esc(l.toName)}</b>
+      return `<li><span class="ld-time">${esc(l.dep)}</span><span>${lineChip(l.mode, l.line, l.color)}${star && l.line ? star(l.line) : ''} <b>${esc(l.fromName)}</b> → <b>${esc(l.toName)}</b>
         <small>${esc(l.dep)}–${esc(l.arr)} · ${min} min</small></span></li>`;
     })
     .join('')}<li class="ld-end"><span class="ld-time">${esc(route.legs[route.legs.length - 1]?.arr ?? '')}</span><span>🏁 Ankunft</span></li></ol>${waitNote(route)}`;
@@ -63,10 +66,10 @@ function waitNote(route: RouteOption): string {
 }
 
 /** Berechneter Zeitplan (Ø-Wartezeiten): genau die Minuten, die gewertet werden */
-function stepsDetails(route: RouteOption): string {
+function stepsDetails(route: RouteOption, star?: StarFn): string {
   const rows = route.steps!.map((st) => {
     if (st.kind === 'ride')
-      return `<li><span class="ld-time">${esc(st.at)}</span><span>${lineChip(st.mode!, st.line!, st.color!)} <b>${esc(st.from!)}</b> → <b>${esc(st.to)}</b> <small>Ø ${st.min} min Fahrt</small></span></li>`;
+      return `<li><span class="ld-time">${esc(st.at)}</span><span>${lineChip(st.mode!, st.line!, st.color!)}${star && st.line ? star(st.line) : ''} <b>${esc(st.from!)}</b> → <b>${esc(st.to)}</b> <small>Ø ${st.min} min Fahrt</small></span></li>`;
     if (st.kind === 'wait')
       return `<li class="ld-wait"><span class="ld-time">${esc(st.at)}</span><span>⏳ Ø ${st.min} min warten <small>(fährt etwa alle ${st.every} min)</small></span></li>`;
     if (st.kind === 'transfer')
@@ -104,11 +107,13 @@ function placeTip(btn: HTMLElement) {
     if (r.bottom + 6 + h > window.innerHeight - 8) pop.style.top = `${Math.max(8, r.top - h - 6)}px`;
   });
 }
-for (const ev of ['mouseover', 'focusin', 'click'] as const)
-  document.addEventListener(ev, (e) => {
-    const btn = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('.info-tip');
-    if (btn) placeTip(btn);
-  });
+// (ohne Browser – z.B. in Tests – gibt es kein document)
+if (typeof document !== 'undefined')
+  for (const ev of ['mouseover', 'focusin', 'click'] as const)
+    document.addEventListener(ev, (e) => {
+      const btn = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('.info-tip');
+      if (btn) placeTip(btn);
+    });
 
 /** Listeneinträge per Klick auf-/zuklappen */
 export function makeExpandable(list: HTMLElement) {

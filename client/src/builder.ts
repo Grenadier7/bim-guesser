@@ -258,11 +258,13 @@ export class RouteBuilder {
     const opt = (s: Station, alt?: Station) =>
       `<option value="${alt ? `${alt.id}>` : ''}${s.id}">${esc(s.name)}${s.id === this.dest.id ? ' 🏁' : ''}</option>`;
     const here = this.net.station(board);
+    // Reihenfolge wie auf dem Linienplan: obere Stationen · "↑ Richtung …" · hier · "↓ Richtung …" · untere Stationen.
+    // Die Überschriften sind leere <optgroup>s, damit sie fett direkt neben der aktuellen Station stehen.
+    // Ohne Vorauswahl ist die aktuelle Station markiert → die Liste öffnet sich genau dort.
     sel.innerHTML =
-      (selected ? '' : '<option value="" disabled selected hidden>Ausstieg wählen …</option>') +
-      (up ? `<optgroup label="↑ ${esc(up.label)}">${up.stations.map((s) => opt(s, up.board)).join('')}</optgroup>` : '') +
-      `<option value="" disabled class="here">● ${esc(here.name)} – hier steigst du ein</option>` +
-      (down ? `<optgroup label="↓ ${esc(down.label)}">${down.stations.map((s) => opt(s, down.board)).join('')}</optgroup>` : '');
+      (up ? up.stations.map((s) => opt(s, up.board)).join('') + `<optgroup label="↑ ${esc(up.label)}"></optgroup>` : '') +
+      `<option value="" disabled class="here" ${selected ? '' : 'selected'}>● ${esc(here.name)} – Ausstieg wählen …</option>` +
+      (down ? `<optgroup label="↓ ${esc(down.label)}"></optgroup>` + down.stations.map((s) => opt(s, down.board)).join('') : '');
     if (selected) sel.value = selected;
     return sel;
   }

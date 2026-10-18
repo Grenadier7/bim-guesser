@@ -317,6 +317,25 @@ async function chainRoute(
 
 /** Zeitfenster, über das der Takt gemittelt wird (Minuten) */
 const HEADWAY_WINDOW = 60;
+/** so weit nach dem Fenster wird noch nach der nächsten Abfahrt gesucht (seltene Linien) */
+const MAX_GAP = 120;
+
+/**
+ * Erwartete Wartezeit (min) bei Ankunft irgendwann in [t, t + window): für jede Ankunftsminute die Zeit bis zur
+ * nächsten Abfahrt, gemittelt. null = in diesem Fenster fährt nichts mehr (Betriebsschluss).
+ */
+export function expectedWait(departures: number[], t: number, window = HEADWAY_WINDOW): number | null {
+  const times = [...departures].sort((x, y) => x - y);
+  let sum = 0;
+  let n = 0;
+  for (let a = t; a < t + window; a++) {
+    const next = times.find((x) => x >= a);
+    if (next === undefined) break; // Betriebsschluss
+    sum += next - a;
+    n++;
+  }
+  return n ? sum / n : null;
+}
 /**
  * Am Start wird nur die halbe Ø-Wartezeit gerechnet (also ein Viertel des Takts):
  * zur ersten Abfahrt kann man sich die Zeit meist einteilen – beim Umsteigen nicht.
@@ -357,23 +376,26 @@ async function averagedRoute(
       const same = prev === legs[i].from;
       add(same ? 'transfer' : 'walk', same ? 2 : Math.max(2, walkMin(net, prev, legs[i].from)), { to: net.station(legs[i].from).name });
     }
-    // Takt ab der (geschätzten) Ankunft an der Haltestelle, über eine Stunde gemittelt
-    let window = HEADWAY_WINDOW;
-    let deps = await tables[i].departures(t, window);
-    if (deps.length < 2) {
-      window = HEADWAY_WINDOW * 2;
-      deps = await tables[i].departures(t, window);
-    }
-    if (!deps.length) return null;
-    const every = window / deps.length;
-    const wait = (every / 2) * (i === 0 && !w0 ? FIRST_WAIT_FACTOR : 1);
+    // Erwartete Wartezeit: für jede Ankunftsminute der nächsten Stunde die Zeit bis zur nächsten echten
+    // Abfahrt, gemittelt. Stimmt auch bei unregelmäßigem Takt (50B: 12:35, 13:15, 13:55, 14:45 …) und springt
+    // nicht, wenn man 2 min früher oder später ankommt – das Zählen von Abfahrten im Fenster tat das.
+    const deps = await tables[i].departures(t, HEADWAY_WINDOW + MAX_GAP);
+    const meanWait = expectedWait(
+      deps.map((d) => d.dep),
+      t,
+    );
+    if (meanWait == null) return null;
+    // "fährt etwa alle …": gleichwertiger regelmäßiger Takt
+    const every = meanWait * 2;
+    const wait = meanWait * (i === 0 && !w0 ? FIRST_WAIT_FACTOR : 1);
     if (i > 0 || countWait) {
       const before = t;
       add('wait', wait, { to: net.station(legs[i].from).name, every: Math.round(every) });
       if (i === 0) firstWait = t - before;
     }
     const line = net.lines.get(legs[i].line)!;
-    const ride = median(deps.map((d) => d.arr - d.dep));
+    const inWindow = deps.filter((d) => d.dep < t + HEADWAY_WINDOW);
+    const ride = median((inWindow.length ? inWindow : deps).map((d) => d.arr - d.dep));
     add('ride', ride, {
       from: net.station(legs[i].from).name,
       to: net.station(legs[i].to).name,

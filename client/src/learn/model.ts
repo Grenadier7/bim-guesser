@@ -1,41 +1,17 @@
-// Lernmodus – Daten: Bereich (Gebiet/Linien), Linien-Steckbriefe, Lernstand
+// Lernmodus – Daten: meine Linien (⭐), Lern-Umfang, Linien-Steckbriefe, Lernstand
 import type { LatLon, Line, Mode, Station } from '../../../shared/types.ts';
-import { MODE_LABEL, linePatterns } from '../../../shared/rules.ts';
-import { DEFAULT_LEARN } from '../../../shared/defaults.ts';
-import { distM } from '../net.ts';
+import { linePatterns } from '../../../shared/rules.ts';
 import { app } from '../store.ts';
 
-// ---------------------------------------------------------------- Konfiguration & Speicher
+// ---------------------------------------------------------------- Speicher
 
-export type ScopeKind = 'area' | 'lines' | 'all';
-export type Exercise = 'locate' | 'stopLines' | 'lineShape' | 'nextStop';
-
-export interface Config {
-  kind: ScopeKind;
-  areaType: 'district' | 'circle';
-  district: number;
-  circle: { lat: number; lon: number; radiusM: number } | null;
-  lines: string[];
-  modes: Mode[];
-  exercises: Exercise[];
-}
-
-export const EXERCISES: Record<Exercise, { icon: string; label: string; hint: string }> = {
-  locate: { icon: '📍', label: 'Wo liegt …?', hint: 'Station auf der leeren Karte antippen' },
-  stopLines: { icon: '🚏', label: 'Welche Linien halten hier?', hint: 'alle richtigen Linien auswählen' },
-  lineShape: { icon: '🔀', label: 'Welche Linie ist das?', hint: 'Linie am Verlauf erkennen' },
-  nextStop: { icon: '➡️', label: 'Nächste Station', hint: 'welche Station kommt als nächstes?' },
-};
-export const ALL_EXERCISES = Object.keys(EXERCISES) as Exercise[];
-export const AREA_MODES: Mode[] = ['U', 'S', 'T', 'B', 'N'];
-export const RADII = [1000, 1500, 2500, 4000];
-
-const CFG_KEY = 'oeffi-learn-config-v1';
 const PROGRESS_KEY = 'oeffi-learn-progress-v1';
+const MY_LINES_KEY = 'oeffi-my-lines-v1';
 
 function load<T>(key: string, def: T): T {
   try {
-    return { ...def, ...JSON.parse(localStorage.getItem(key) ?? '{}') };
+    const v = JSON.parse(localStorage.getItem(key) ?? 'null');
+    return v ?? def;
   } catch {
     return def;
   }
@@ -48,17 +24,31 @@ function save(key: string, v: unknown) {
   }
 }
 
-export function loadConfig(): Config {
-  return load<Config>(CFG_KEY, { ...DEFAULT_LEARN, lines: [...DEFAULT_LEARN.lines], modes: [...DEFAULT_LEARN.modes], exercises: [...ALL_EXERCISES] });
+// ---------------------------------------------------------------- Meine Linien (⭐)
+
+/** gemerkte Linien – das ist der Stoff für „Üben“ */
+let mine: string[] = load<string[]>(MY_LINES_KEY, []);
+export const myLines = (): string[] => mine.filter((id) => app.net.lines.has(id));
+export const isMine = (id: string) => mine.includes(id);
+export function setMine(id: string, on: boolean) {
+  mine = on ? [...new Set([...mine, id])] : mine.filter((x) => x !== id);
+  save(MY_LINES_KEY, mine);
 }
-export const saveConfig = (cfg: Config) => save(CFG_KEY, cfg);
+/** kleiner ☆-Knopf zum Merken – überall einsetzbar, ein Klick-Handler in main.ts erledigt den Rest */
+export const starMini = (id: string) =>
+  app.net.lines.has(id)
+    ? `<button class="star-mini ${isMine(id) ? 'on' : ''}" data-star-line="${id}" title="Linie für „Lernen → Üben“ merken">${isMine(id) ? '⭐' : '☆'}</button>`
+    : '';
+export function addMine(ids: string[]) {
+  mine = [...new Set([...mine, ...ids])];
+  save(MY_LINES_KEY, mine);
+}
 
 /**
  * Lernstand: Schlüssel → Stufe 0–3.
  *  "line:<id>"        – Linie für Linie (Selbsteinschätzung)
- *  "<übung>:<id>"     – Wissen testen
  */
-const progress: Record<string, number> = load(PROGRESS_KEY, {});
+const progress: Record<string, number> = load<Record<string, number>>(PROGRESS_KEY, {});
 export const MASTERED = 3;
 export const boxOf = (key: string) => progress[key] ?? 0;
 export function setBox(key: string, box: number) {
@@ -85,13 +75,7 @@ export function shuffle<T>(a: T[]): T[] {
   return a;
 }
 
-export const pickRandom = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
-export const fmtKm = (m: number) => `${(m / 1000).toLocaleString('de-AT')} km`;
-
-/** Unterscheidbare Farben für den Netzplan (Bim und Bus hätten sonst alle dieselbe Farbe) */
-export const PALETTE = ['#e3000f', '#1e6fbf', '#2f9e44', '#ee7d00', '#9c36b5', '#0c8599', '#9d6930', '#d6336c', '#364fc7', '#5c940d', '#e8590c', '#495057'];
-
-// ---------------------------------------------------------------- Bereich
+// ---------------------------------------------------------------- Lern-Umfang
 
 export interface Scope {
   label: string;
@@ -99,59 +83,41 @@ export interface Scope {
   stationSet: Set<string>;
   lines: Line[];
   area: { rings?: LatLon[][]; circle?: { lat: number; lon: number; radiusM: number } } | null;
-  /** Verkehrsmittel, die zählen (bei "Linien" alle) */
+  /** Verkehrsmittel, die zählen */
   modes: Set<Mode>;
 }
 
 const MODE_ORDER: Mode[] = ['U', 'S', 'T', 'B', 'N'];
 
-export function computeScope(cfg: Config): Scope {
+/** Lern-Umfang aus einer Linienliste (z.B. meine Linien) */
+export function scopeOfLines(ids: string[], label: string): Scope {
   const net = app.net;
-  if (cfg.kind === 'lines') {
-    const lines = cfg.lines.map((id) => net.lines.get(id)).filter((l): l is Line => !!l);
-    const ids = new Set(lines.flatMap((l) => patternsOf(l).flat()));
-    return {
-      label: lines.length ? `Linien ${lines.map((l) => l.id).join(', ')}` : 'Keine Linie gewählt',
-      stations: [...ids].map((id) => net.station(id)),
-      stationSet: ids,
-      lines,
-      area: null,
-      modes: new Set(AREA_MODES),
-    };
-  }
-  const modes = new Set(cfg.modes);
-  let stations = net.data.stations.filter((s) => s.modes.some((m) => modes.has(m)));
-  let label = 'Ganz Wien';
-  let area: Scope['area'] = null;
-  if (cfg.kind === 'area') {
-    if (cfg.areaType === 'district') {
-      const d = net.data.districts.find((x) => x.id === cfg.district)!;
-      stations = stations.filter((s) => s.district === d.id);
-      label = `${d.id}. ${d.name}`;
-      area = { rings: d.rings };
-    } else if (cfg.circle) {
-      const c = cfg.circle;
-      stations = stations.filter((s) => distM(s, c) <= c.radiusM);
-      const near = [...net.data.stations].sort((a, b) => distM(a, c) - distM(b, c))[0];
-      label = `${fmtKm(c.radiusM)} um ${near?.name ?? 'den Punkt'}`;
-      area = { circle: c };
-    } else {
-      stations = [];
-      label = 'Kreis: tippe auf die Karte';
-    }
-  }
-  const stationSet = new Set(stations.map((s) => s.id));
-  const lines = net.data.lines
-    .filter((l) => modes.has(l.mode) && [...new Set(patternsOf(l).flat())].filter((id) => stationSet.has(id)).length >= 2)
+  const lines = ids
+    .map((id) => net.lines.get(id))
+    .filter((l): l is Line => !!l && patternsOf(l).length > 0)
     .sort((a, b) => MODE_ORDER.indexOf(a.mode) - MODE_ORDER.indexOf(b.mode) || a.id.localeCompare(b.id, 'de', { numeric: true }));
-  return { label, stations, stationSet, lines, area, modes };
+  const stationSet = new Set(lines.flatMap((l) => patternsOf(l).flat()));
+  return { label, stations: [...stationSet].map((id) => net.station(id)), stationSet, lines, area: null, modes: new Set(MODE_ORDER) };
 }
 
-/** Linien an einer Station, die im Bereich zählen */
+/** alle Verkehrsmittel außer Nachtbus – für „Von hier fährst du mit …“ */
+export const DAY_SCOPE = (): Scope => ({ label: '', stations: [], stationSet: new Set(), lines: [], area: null, modes: new Set<Mode>(['U', 'S', 'T', 'B']) });
+
+/** Sonderlinien wie 71E oder 26E (Ersatz-/Verstärkerverkehr) – zum Lernen irreführend */
+export const isSpecialLine = (l: Line) => /^\d+E$/.test(l.id);
+
+/** Linien an einer Station, die im Bereich zählen (ohne Sonderlinien) */
 export function linesAt(st: Station, scope: Scope): Line[] {
   return st.lines
     .map((id) => app.net.lines.get(id)!)
-    .filter((l) => l && scope.modes.has(l.mode) && patternsOf(l).some((p) => p.includes(st.id)));
+    .filter((l) => l && scope.modes.has(l.mode) && !isSpecialLine(l) && patternsOf(l).some((p) => p.includes(st.id)));
+}
+
+let servedCache: Set<string> | null = null;
+/** Stationen, an denen im regulären Netz tagsüber etwas fährt (ohne Sonderführungen aus dem aktuellen Fahrplan) */
+export function servedStations(): Set<string> {
+  servedCache ??= new Set(app.net.data.lines.filter((l) => l.mode !== 'N' && !isSpecialLine(l)).flatMap((l) => patternsOf(l).flat()));
+  return servedCache;
 }
 
 // ---------------------------------------------------------------- Linien-Steckbrief
@@ -177,8 +143,12 @@ export interface LineProfile {
   waypoints: string[];
   sentence: string;
   districts: { id: number; name: string }[];
-  /** Umstiege zu U-Bahn/S-Bahn */
+  /** Umstiege zu U-Bahn/S-Bahn (je Station einmal) */
   transfers: { station: Station; lines: Line[] }[];
+  /** Bims, die man unterwegs irgendwo trifft (ohne die Linie selbst) */
+  trams: Line[];
+  /** je Station der Hauptstrecke die Umstiege zu Bim und Bus */
+  local: Map<string, { trams: Line[]; buses: Line[] }>;
   stopCount: number;
 }
 
@@ -220,15 +190,20 @@ export function lineProfile(line: Line): LineProfile {
       if (info && !districts.some((x) => x.id === d)) districts.push({ id: d, name: info.name });
     }
   }
+  const day: Scope = { label: '', stations: [], stationSet: new Set(), lines: [], area: null, modes: new Set<Mode>(['U', 'S', 'T', 'B']) };
+  const others = (id: string) => linesAt(net.station(id), day).filter((l) => l.id !== line.id);
+  // je Station nur einmal – manche Linien fahren eine Schleife und kommen zweimal an derselben Station vorbei
+  const seenNames = new Set<string>();
   const transfers = main
-    .map((id) => {
-      const st = net.station(id);
-      const rapid = st.lines.map((x) => net.lines.get(x)!).filter((l) => l && l.id !== line.id && (l.mode === 'U' || l.mode === 'S'));
-      return { station: st, lines: rapid };
-    })
+    .filter((id) => !seenNames.has(net.station(id).name) && seenNames.add(net.station(id).name))
+    .map((id) => ({ station: net.station(id), lines: others(id).filter((l) => l.mode === 'U' || l.mode === 'S') }))
     .filter((t) => t.lines.length);
+  const local = new Map(main.map((id) => [id, { trams: others(id).filter((l) => l.mode === 'T'), buses: others(id).filter((l) => l.mode === 'B') }]));
+  const trams = [...new Map([...local.values()].flatMap((x) => x.trams).map((l) => [l.id, l])).values()].sort((a, b) =>
+    a.id.localeCompare(b.id, 'de', { numeric: true }),
+  );
 
-  const prof: LineProfile = { line, main, waypoints, sentence, districts, transfers, stopCount: new Set(pats.flat()).size };
+  const prof: LineProfile = { line, main, waypoints, sentence, districts, transfers, trams, local, stopCount: new Set(pats.flat()).size };
   profileCache.set(line.id, prof);
   return prof;
 }
@@ -255,7 +230,6 @@ export function departuresFrom(st: Station, scope: Scope): { line: Line; dirs: {
   return out;
 }
 
-export const modeWord = (m: Mode) => MODE_LABEL[m];
 
 // ---------------------------------------------------------------- Nachzeichnen auswerten
 

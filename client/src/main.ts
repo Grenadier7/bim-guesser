@@ -1,6 +1,7 @@
 import './style.css';
 import { fmtDuration } from '../../shared/rules.ts';
 import { api } from './api.ts';
+import { isMine, setMine } from './learn/model.ts';
 import { GameMap } from './map.ts';
 import { NetIndex } from './net.ts';
 import { finalScreen } from './screens/final.ts';
@@ -153,6 +154,20 @@ async function init() {
   }
   if (!(await restoreSession())) render();
   setInterval(tick, 250);
+  // ☆ hinter Liniennummern (z.B. in der Routenjagd-Auflösung): Linie für „Lernen → Üben“ merken
+  document.addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-star-line]');
+    if (!b) return;
+    e.stopPropagation();
+    const id = b.dataset.starLine!;
+    const on = !isMine(id);
+    setMine(id, on);
+    document.querySelectorAll<HTMLElement>(`[data-star-line="${CSS.escape(id)}"]`).forEach((x) => {
+      x.textContent = on ? '⭐' : '☆';
+      x.classList.toggle('on', on);
+    });
+    toast(on ? `${id} gemerkt – zum Üben unter 📚 Lernen` : `${id} nicht mehr gemerkt`, 'info');
+  });
   window.addEventListener('resize', () => app.map.invalidate());
 }
 

@@ -3,7 +3,7 @@
 //  Hier ändern – Server, Lobby, Training und Lernmodus lesen diese Werte.
 //  (Spielregeln wie Punkte, Tipp-Abzüge oder Umstiegs-Aufschlag stehen in shared/rules.ts.)
 // ================================================================
-import type { GameSettings, Mode, SlotId } from './types.ts';
+import type { GameSettings, SlotId } from './types.ts';
 import type { QuizSettings } from './quiz.ts';
 
 // ---------------------------------------------------------------- 🏁 Routenjagd (Lobby)
@@ -73,18 +73,4 @@ export const DEFAULT_TRAINING: { slot: SlotId; preset: 'easy' | 'medium' | 'hard
   area: 0,
   /** Coach-Rückmeldungen nach jeder Teilstrecke */
   coach: true,
-};
-
-// ---------------------------------------------------------------- 📚 Lernen
-
-export const DEFAULT_LEARN = {
-  /** 'area' · 'lines' · 'all' */
-  kind: 'area' as 'area' | 'lines' | 'all',
-  /** 'district' · 'circle' */
-  areaType: 'district' as 'district' | 'circle',
-  /** Bezirk bei "Gebiet" */
-  district: 2,
-  circle: null as { lat: number; lon: number; radiusM: number } | null,
-  lines: [] as string[],
-  modes: ['U', 'S', 'T', 'B'] as Mode[],
 };

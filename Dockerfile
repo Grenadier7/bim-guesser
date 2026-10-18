@@ -1,4 +1,4 @@
-# Öffi-Guesser – Container-Image (gebaut von GitHub Actions bei jedem Tag v*)
+# BimGuesser – Container-Image (gebaut von GitHub Actions bei jedem Tag v*)
 
 # ---- Build: Typecheck + Client bauen
 FROM node:24-alpine AS build
@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npm run typecheck && npm run build
+RUN npm run typecheck && npm test && npm run build
 
 # ---- Laufzeit: nur Server, Netzdaten und fertiger Client
 FROM node:24-alpine

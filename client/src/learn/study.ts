@@ -1,9 +1,10 @@
-// Lernmodus – "Lernen": Netzplan mit Linien-Steckbriefen und "Linie für Linie" (ansehen → nachzeichnen → vergleichen)
+// Lernmodus – Üben: Linie für Linie (Steckbrief ansehen → nachzeichnen → vergleichen) auf meinen Linien
 import type { LatLon, Line } from '../../../shared/types.ts';
+import { netLayer, netView } from '../netmap.ts';
 import { app, setMapBig } from '../store.ts';
 import { esc, h, lineChip } from '../ui.ts';
 import {
-  PALETTE,
+  DAY_SCOPE,
   boxOf,
   departuresFrom,
   evaluateSketch,
@@ -21,7 +22,6 @@ export interface LearnCtx {
   back: () => void;
 }
 
-type Tab = 'map' | 'cards';
 type Phase = 'study' | 'draw' | 'review';
 
 const LEARNED = 2;
@@ -29,85 +29,53 @@ const lineKey = (l: Line) => `line:${l.id}`;
 
 export function studyView(ctx: LearnCtx) {
   const net = app.net;
-  let tab: Tab = 'map';
-  let selLine: Line | null = null;
-  let selStation: string | null = null;
-  // Linie für Linie
   const seen = new Set<string>();
   let card: { line: Line; phase: Phase; taps: LatLon[]; result: SketchResult | null } | null = null;
-
-  const colorOf = (l: Line) => {
-    if (l.mode === 'U' || l.mode === 'S') return l.color;
-    const i = ctx.scope().lines.indexOf(l);
-    return PALETTE[(i < 0 ? 0 : i) % PALETTE.length];
-  };
+  /** beim Ansehen angetippte Stationen – erscheinen zusätzlich im Panel, bis man weitergeht oder auf die Karte tippt */
+  let peek: string[] = [];
 
   // -------------------------------------------------------------- Karte
 
-  /** Linie mit markanten Punkten (beschriftet) und allen Stationen (Name beim Drüberfahren) */
-  function drawProfile(prof: LineProfile, fit: boolean, onStop?: (id: string) => void) {
-    const marks = new Set(prof.waypoints);
-    const pats = patternsOf(prof.line);
-    const paths = pats.map((p) => p.map((id) => [net.station(id).lat, net.station(id).lon] as LatLon));
-    const stops = [...new Set(pats.flat())].map((id) => {
-      const s = net.station(id);
-      return { id, lat: s.lat, lon: s.lon, name: s.name, terminal: marks.has(id) };
-    });
-    app.map.showNetworkLine(paths, prof.line.color, stops, { labels: true, onStop, fit });
-  }
-
-  function drawOverview(fit: boolean) {
-    const scope = ctx.scope();
-    app.map.clearLearn();
-    app.map.onTap(null);
-    app.map.showLearnArea(scope.area, false);
-    if (selLine) {
-      drawProfile(lineProfile(selLine), fit, selectStation);
-      return;
-    }
-    app.map.showStops(scope.stations, selectStation);
-    // Nummer der Linie auf eine Station im Bereich setzen (versetzt, damit sich die Schilder weniger überlappen)
-    const labelAt = (l: Line, i: number): LatLon | undefined => {
-      const inside = lineProfile(l).main.filter((id) => scope.stationSet.has(id));
-      if (!inside.length) return undefined;
-      const s = net.station(inside[Math.min(inside.length - 1, Math.floor(((i % 5) + 1) * (inside.length / 6)))]);
-      return [s.lat, s.lon];
-    };
-    app.map.showNetworkOverview(
-      scope.lines.map((l, i) => ({
-        id: l.id,
-        color: colorOf(l),
-        paths: patternsOf(l).map((p) => p.map((id) => [net.station(id).lat, net.station(id).lon] as LatLon)),
-        labelAt: scope.area ? labelAt(l, i) : undefined,
-      })),
-      (id) => selectLine(net.lines.get(id)!),
-      fit && !scope.area,
+  /** Linie auf der Netzkarte: markante Punkte beschriftet, alle Haltestellen (Name beim Drüberfahren, antippbar) */
+  function drawProfile(prof: LineProfile, fit: boolean, onStation?: (id: string) => void) {
+    const stops = [...new Set(patternsOf(prof.line).flat())].map((id) => net.station(id));
+    const pts = netLayer().render(
+      netView({ focus: new Set([prof.line.id]), marks: prof.waypoints.map((id) => net.station(id)), stops, onStation }),
     );
-    // bei Gebieten auf das Gebiet zoomen, nicht auf die ganzen Linien
-    if (fit && scope.area) app.map.showLearnArea(scope.area, true);
-    if (selStation) {
-      const s = net.station(selStation);
-      app.map.showTarget(s.lat, s.lon, s.name);
-    }
+    if (fit && pts.length) app.map.fitPoints(pts, 14);
   }
 
-  function selectLine(l: Line | null) {
-    selLine = l;
-    selStation = null;
-    drawOverview(true);
+  function addPeek(id: string) {
+    if (!peek.includes(id)) peek = [...peek, id];
     render();
   }
 
-  function selectStation(id: string) {
-    selStation = id;
-    selLine = null;
-    drawOverview(false);
-    render();
+  /** angetippte Stationen: wohin man von dort kommt */
+  function peekHtml(): string {
+    return peek
+      .map((id) => {
+        const st = net.station(id);
+        const deps = departuresFrom(st, DAY_SCOPE());
+        return `<div class="learn-card peek-card"><b>📍 ${esc(st.name)}</b>
+          <ul class="deps">${deps
+            .map((d) => `<li>${lineChip(d.line.mode, d.line.id, d.line.color)}<span>${d.dirs.map((x) => `→ ${esc(x.to)}`).join('<br>')}</span></li>`)
+            .join('')}</ul></div>`;
+      })
+      .join('');
+  }
+
+  /** Beim Nachzeichnen: leise U-/S-Bahn zur Orientierung – aber nie die gesuchte Linie (und bei S-Bahnen keine
+   *  anderen S-Bahnen, die oft dieselben Gleise fahren) */
+  function drawOrientation(line: Line) {
+    const ids = net.data.lines
+      .filter((l) => l.id !== line.id && (l.mode === 'U' || (l.mode === 'S' && line.mode !== 'S')) && patternsOf(l).length)
+      .map((l) => l.id);
+    netLayer().render(netView({ only: new Set(ids), context: new Set(ids), hubs: false, labels: false }));
   }
 
   // -------------------------------------------------------------- Bausteine
 
-  function profileHtml(prof: LineProfile, full: boolean): string {
+  function profileHtml(prof: LineProfile): string {
     const transfers = prof.transfers
       .map((t) => `<span class="transfer">${t.lines.map((l) => lineChip(l.mode, l.id, l.color)).join('')} <small>${esc(t.station.name)}</small></span>`)
       .join('');
@@ -116,13 +84,17 @@ export function studyView(ctx: LearnCtx) {
       <p class="sentence">${esc(prof.sentence)}</p>
       ${prof.districts.length ? `<p><b>Bezirke:</b> ${prof.districts.map((d) => `${d.id}. ${esc(d.name)}`).join(' → ')}</p>` : ''}
       ${transfers ? `<p><b>Umstieg zu U-/S-Bahn:</b></p><div class="transfers">${transfers}</div>` : ''}
-      ${
-        full
-          ? `<details class="all-stops"><summary>Alle Stationen</summary><ol class="stop-list">${prof.main
-              .map((id) => `<li data-st="${id}" class="${prof.waypoints.includes(id) ? 'in' : ''}">${esc(net.station(id).name)}</li>`)
-              .join('')}</ol></details>`
-          : ''
-      }`;
+      ${stopListHtml(prof)}`;
+  }
+
+  /** der exakte Verlauf: alle Stationen der Reihe nach (markante Punkte fett), antippbar */
+  function stopListHtml(prof: LineProfile): string {
+    const marks = new Set(prof.waypoints);
+    const seen = new Set<string>();
+    const stops = prof.main.filter((id) => !seen.has(net.station(id).name) && seen.add(net.station(id).name));
+    return `<details class="all-stops"><summary>Exakter Verlauf: alle ${stops.length} Stationen</summary><ol class="stop-list">${stops
+      .map((id) => `<li class="${marks.has(id) ? 'in' : ''}" data-peek="${id}">${esc(net.station(id).name)}</li>`)
+      .join('')}</ol></details>`;
   }
 
   function header(): HTMLElement {
@@ -131,82 +103,16 @@ export function studyView(ctx: LearnCtx) {
     const el = h(
       'div',
       { class: 'learn-head' },
-      `<button class="link" id="setup">← Bereich ändern</button>
-       <h2>📖 ${esc(scope.label)}</h2>
+      `<button class="link" id="setup">← Lernen</button>
+       <h2>🏋 Üben</h2>
        <div class="learn-progress"><div class="bar"><i style="width:${scope.lines.length ? Math.round((learned / scope.lines.length) * 100) : 0}%"></i></div>
-         <small>${learned} von ${scope.lines.length} Linien gelernt</small></div>
-       <div class="tabs">
-         <button data-tab="map" class="${tab === 'map' ? 'on' : ''}">🗺️ Netzplan</button>
-         <button data-tab="cards" class="${tab === 'cards' ? 'on' : ''}">🃏 Linie für Linie</button>
-       </div>`,
+         <small>${learned} von ${scope.lines.length} Linien gelernt</small></div>`,
     );
     el.querySelector('#setup')!.addEventListener('click', () => {
       setMapBig(false);
       ctx.back();
     });
-    el.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) =>
-      b.addEventListener('click', () => start(b.dataset.tab as Tab)),
-    );
     return el;
-  }
-
-  // -------------------------------------------------------------- Netzplan
-
-  function renderMap(): HTMLElement {
-    const scope = ctx.scope();
-    const box = h('div', { class: 'learn-body' });
-    if (selStation) {
-      const st = net.station(selStation);
-      const deps = departuresFrom(st, scope);
-      const c = h(
-        'div',
-        { class: 'learn-card' },
-        `<h3>📍 ${esc(st.name)}</h3><small>Von hier fährst du mit …</small>
-         <ul class="deps">${deps
-           .map(
-             (d) => `<li><button class="line-opt" data-line="${esc(d.line.id)}">${lineChip(d.line.mode, d.line.id, d.line.color)}</button>
-               <span>${d.dirs.map((x) => `→ <b>${esc(x.to)}</b>${x.via ? ` <small>über ${esc(x.via)}</small>` : ''}`).join('<br>')}</span></li>`,
-           )
-           .join('')}</ul>
-         <button class="link" id="close">Alle Linien zeigen</button>`,
-      );
-      c.querySelectorAll<HTMLElement>('[data-line]').forEach((b) => b.addEventListener('click', () => selectLine(net.lines.get(b.dataset.line!)!)));
-      c.querySelector('#close')!.addEventListener('click', () => {
-        selStation = null;
-        drawOverview(false);
-        render();
-      });
-      box.append(c);
-      return box;
-    }
-    if (selLine) {
-      const prof = lineProfile(selLine);
-      const c = h('div', { class: 'learn-card' }, profileHtml(prof, true));
-      c.querySelectorAll<HTMLElement>('[data-st]').forEach((li) => li.addEventListener('click', () => selectStation(li.dataset.st!)));
-      const actions = h('div', { class: 'learn-actions' }, `<button class="btn btn-primary" id="draw">✏️ Nachzeichnen üben</button><button class="btn btn-ghost" id="all">Alle Linien</button>`);
-      actions.querySelector('#draw')!.addEventListener('click', () => {
-        tab = 'cards';
-        openCard(selLine!, 'draw');
-      });
-      actions.querySelector('#all')!.addEventListener('click', () => selectLine(null));
-      box.append(c, actions);
-      return box;
-    }
-    box.append(h('p', { class: 'muted' }, 'Linie antippen (Karte oder Liste) zeigt ihren Steckbrief · Haltestelle antippen zeigt, wohin du von dort kommst.'));
-    const list = h('ul', { class: 'line-list' });
-    list.innerHTML = scope.lines
-      .map((l) => {
-        const prof = lineProfile(l);
-        const ends = `${esc(net.station(prof.main[0]).name)} ↔ ${esc(net.station(prof.main[prof.main.length - 1]).name)}`;
-        const via = prof.waypoints.slice(1, -1).map((id) => net.station(id).name);
-        const ok = boxOf(lineKey(l)) >= LEARNED;
-        return `<li data-line="${esc(l.id)}"><span class="swatch" style="background:${colorOf(l)}"></span>${lineChip(l.mode, l.id, l.color)}
-          <span class="ll-text">${ends}${via.length ? `<small>über ${via.map(esc).join(', ')}</small>` : ''}</span>${ok ? '<span class="ok">✓</span>' : ''}</li>`;
-      })
-      .join('');
-    list.querySelectorAll<HTMLElement>('[data-line]').forEach((li) => li.addEventListener('click', () => selectLine(net.lines.get(li.dataset.line!)!)));
-    box.append(list);
-    return box;
   }
 
   // -------------------------------------------------------------- Linie für Linie
@@ -222,11 +128,11 @@ export function studyView(ctx: LearnCtx) {
   function openCard(line: Line | null, phase: Phase = 'study') {
     if (!line) {
       card = null;
-      app.map.clearLearn();
-      render();
+      start();
       return;
     }
     card = { line, phase, taps: [], result: null };
+    peek = [];
     showPhase();
   }
 
@@ -242,19 +148,27 @@ export function studyView(ctx: LearnCtx) {
   function showPhase() {
     const c = card!;
     const prof = lineProfile(c.line);
-    const scope = ctx.scope();
     app.map.clearLearn();
+    app.map.clearEndpoints();
     app.map.onTap(null);
-    app.map.showLearnArea(scope.area, false);
+    peek = [];
     setMapBig(c.phase === 'draw');
-    if (c.phase === 'study') drawProfile(prof, true);
-    else {
+    if (c.phase === 'study') {
+      drawProfile(prof, true, addPeek);
+      // Tipp daneben auf die Karte: angetippte Stationen wieder weg
+      app.map.onTap(() => {
+        if (!peek.length) return;
+        peek = [];
+        render();
+      });
+    } else {
       const [a, b] = endpoints(prof);
+      const sa = net.station(prof.main[0]);
+      const sb = net.station(prof.main[prof.main.length - 1]);
+      // A = Start, B = Ende
+      app.map.showEndpoints(sa, sb, false, true);
       if (c.phase === 'draw') {
-        const sa = net.station(prof.main[0]);
-        const sb = net.station(prof.main[prof.main.length - 1]);
-        app.map.showTarget(sa.lat, sa.lon, sa.name);
-        app.map.showTarget(sb.lat, sb.lon, sb.name);
+        drawOrientation(c.line);
         app.map.showSketch([a, ...c.taps]);
         app.map.onTap((ll) => {
           c.taps.push(ll);
@@ -307,7 +221,10 @@ export function studyView(ctx: LearnCtx) {
     const from = net.station(prof.main[0]).name;
     const to = net.station(prof.main[prof.main.length - 1]).name;
     if (c.phase === 'study') {
-      box.append(h('div', { class: 'learn-card' }, profileHtml(prof, false)));
+      const info = h('div', { class: 'learn-card' }, profileHtml(prof));
+      info.querySelectorAll<HTMLElement>('[data-peek]').forEach((li) => li.addEventListener('click', () => addPeek(li.dataset.peek!)));
+      box.append(info);
+      if (peek.length) box.insertAdjacentHTML('beforeend', peekHtml());
       const actions = h('div', { class: 'learn-actions' }, `<button class="btn btn-primary" id="go">Eingeprägt → nachzeichnen</button><button class="btn btn-ghost" id="skip">Überspringen</button>`);
       actions.querySelector('#go')!.addEventListener('click', () => {
         c.phase = 'draw';
@@ -324,7 +241,7 @@ export function studyView(ctx: LearnCtx) {
           'div',
           { class: 'learn-card' },
           `<div class="learn-line">${lineChip(c.line.mode, c.line.id, c.line.color)}<span>nachzeichnen</span></div>
-           <p>Tippe auf der Karte den Weg von <b>${esc(from)}</b> nach <b>${esc(to)}</b> entlang – so genau du kannst. Kurven und Umwege mitnehmen!</p>
+           <p>Tippe auf der Karte den Weg von <b>Ⓐ ${esc(from)}</b> nach <b>Ⓑ ${esc(to)}</b> entlang – so genau du kannst. Kurven und Umwege mitnehmen!</p>
            <small class="muted">${c.taps.length} Punkte gesetzt</small>`,
         ),
       );
@@ -373,6 +290,7 @@ export function studyView(ctx: LearnCtx) {
            <p>${msg}</p>
            ${r.missed.length ? `<p class="muted">Verfehlt: ${r.missed.slice(0, 8).map((s) => esc(s.name)).join(', ')}${r.missed.length > 8 ? ' …' : ''}</p>` : ''}
            <p class="sentence">${esc(prof.sentence)}</p>
+           ${stopListHtml(prof)}
            <p><b>Wie gut kennst du die ${esc(c.line.id)} jetzt?</b></p>`,
         ),
       );
@@ -403,22 +321,19 @@ export function studyView(ctx: LearnCtx) {
 
   function render() {
     ctx.panel.innerHTML = '';
-    ctx.panel.append(header(), tab === 'map' ? renderMap() : renderCards());
+    ctx.panel.append(header(), renderCards());
   }
 
-  function start(t: Tab) {
-    tab = t;
+  function start() {
     setMapBig(false);
-    if (t === 'map') drawOverview(true);
-    else if (card) showPhase();
+    app.map.clearEndpoints();
+    if (card) showPhase();
     else {
       app.map.clearLearn();
       app.map.onTap(null);
-      app.map.showLearnArea(ctx.scope().area, true);
+      netLayer().render(netView({ focus: new Set(ctx.scope().lines.map((l) => l.id)), allLabels: true }));
       render();
-      return;
     }
-    render();
   }
 
   return { start };

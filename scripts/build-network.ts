@@ -190,6 +190,15 @@ const S_PROBES: [string, string][] = [
   ['Wien Hauptbahnhof', 'Wien Simmering'], // S60/S80
 ];
 
+/**
+ * Wunsch-Referenztage – genommen, sobald die Auskunft für sie Daten hat (Prüfnotiz trotzdem ausgeben).
+ * Ausgesucht per GTFS-Vergleich (Okt. 2026): Nur Ende Juni fährt die S-Bahn-Stammstrecke (ab ca. 8.7. bis
+ * mindestens Dezember gesperrt) UND Bim/Bus sind fast im Normalbetrieb (Anfang Juni: 42 fährt nicht, 9 verkürzt).
+ * Ab Mitte September wären Bim/Bus wieder normal – dann fehlt aber die Stammstrecke.
+ * Achtung: Die Auskunft hält nur einige Monate Vergangenheit vor – danach neue Tage wählen.
+ */
+const PREFERRED_DAYS: Partial<Record<DayType, string>> = { wd: '2026-06-30', sa: '2026-06-27', su: '2026-06-28' };
+
 async function pickRegularDays(gtfs: Gtfs): Promise<Record<DayType, ReferenceDay>> {
   // Ersatzverkehr-Routen der Wiener Linien und ihre Betriebstage
   const ersatz = new Map<string, Set<string>>(); // short name -> services
@@ -229,6 +238,21 @@ async function pickRegularDays(gtfs: Gtfs): Promise<Record<DayType, ReferenceDay
     for (let i = 1; today.getTime() + i * DAY <= gtfs.validUntil.getTime(); i++) future.push(new Date(today.getTime() + i * DAY));
     for (let i = 0; i <= 150; i++) past.push(new Date(today.getTime() - i * DAY));
     const candidates = [...future, ...past].filter((d) => isTypicalDay(d, type));
+
+    // Wunschtag: genommen, sobald die Auskunft für ihn Daten hat (Score nur zur Info)
+    const pref = PREFERRED_DAYS[type];
+    if (pref) {
+      const d = new Date(`${pref}T00:00:00Z`);
+      const e = ersatzOn(d);
+      const f = await failedProbes(d, probes.length);
+      if (f.length < probes.length) {
+        const note = [f.length ? `S-Bahn gestört: ${f.join(', ')}` : '', e.length ? `Ersatzverkehr: ${e.join(', ')}` : ''].filter(Boolean).join('; ');
+        result[type] = { date: pref, score: f.length * 10 + e.length * 3, note: note || 'keine bekannten Störungen' };
+        console.log(`Referenztag ${type}: ${pref} (Wunschtag, Score ${result[type].score}, ${result[type].note})`);
+        continue;
+      }
+      console.log(`Wunschtag ${type} ${pref}: keine Daten in der Auskunft – suche automatisch`);
+    }
 
     let best: ReferenceDay | null = null;
     let probed = 0;

@@ -13,6 +13,7 @@ import {
 } from '../../../shared/quiz.ts';
 import { api } from '../api.ts';
 import { distM, fmtDist } from '../net.ts';
+import { netLayer, netView } from '../netmap.ts';
 import { app, endSession, inviteLink, isHost, quizState, savePrefs, serverNow, setMapBig } from '../store.ts';
 import { esc, h, lineChip, toast } from '../ui.ts';
 import { hostBar } from './host.ts';
@@ -39,14 +40,10 @@ function linePaths(l: Line): { paths: [number, number][][]; stops: { id: string;
   };
 }
 
-/** Mehrere Linien in ihren Farben (mit Nummer) zeichnen */
+/** Mehrere Linien auf der Netzkarte hervorheben (mit Nummer) */
 function drawLinesColored(ids: string[], fit: boolean) {
-  const items = ids
-    .map((id) => app.net.lines.get(id))
-    .filter((l): l is Line => !!l)
-    .map((l) => ({ id: l.id, paths: linePaths(l).paths, color: l.color }))
-    .filter((x) => x.paths.length);
-  app.map.showNetworkOverview(items, null, fit);
+  const pts = netLayer().render(netView({ focus: new Set(ids.filter((id) => app.net.lines.has(id))), allLabels: true }));
+  if (fit && pts.length) app.map.fitPoints(pts, 15);
 }
 
 /** Linie zeichnen: Start- und Endstation */
@@ -67,12 +64,18 @@ function linesAt(stationId: string): Line[] {
     .filter((l): l is Line => !!l && linePaths(l).paths.length > 0);
 }
 
-/** Linie zeichnen: neutral (während der Frage) oder in Linienfarbe mit Endstationen (Auflösung) */
+/** Linie auf der Netzkarte: während der Frage allein, neutral und still (verrät nichts) – in der Auflösung
+ *  in ihrer Farbe mit Endstationen und Namen */
 function drawLine(id: string, reveal: boolean, fit: boolean) {
   const l = app.net.lines.get(id);
   if (!l) return;
-  const { paths, stops } = linePaths(l);
-  app.map.showNetworkLine(paths, reveal ? l.color : NEUTRAL, stops, { labels: reveal, fit });
+  const { stops } = linePaths(l);
+  const stations = stops.map((s) => app.net.station(s.id));
+  const view = reveal
+    ? netView({ focus: new Set([id]), stops: stations, marks: stops.filter((s) => s.terminal).map((s) => app.net.station(s.id)) })
+    : netView({ focus: new Set([id]), only: new Set([id]), colors: { [id]: NEUTRAL }, stops: stations, quiet: true });
+  const pts = netLayer().render(view);
+  if (fit && pts.length) app.map.fitPoints(pts, 15);
 }
 
 function areaOf(s: QuizSettings) {

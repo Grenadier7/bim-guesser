@@ -5,7 +5,8 @@ import { DIFFICULTY_PRESETS, TIME_SLOTS } from '../../../shared/rules.ts';
 import { DEFAULT_TRAINING } from '../../../shared/defaults.ts';
 import { api } from '../api.ts';
 import { RouteBuilder } from '../builder.ts';
-import { departuresFrom, type Scope } from '../learn/model.ts';
+import { netLayer, netView } from '../netmap.ts';
+import { departuresFrom, starMini, type Scope } from '../learn/model.ts';
 import { app, setMapBig, setMobileMap } from '../store.ts';
 import { HINTS, compass, explain, hintText, legFeedback, lineDirections, routeSentence, type CoachMsg, type HintId } from '../training/coach.ts';
 import { chain, esc, h, lineChip, makeExpandable, routeDetails, toast } from '../ui.ts';
@@ -329,6 +330,8 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
     if (!solved) mem.retry.push({ from: r.from.id, to: r.to.id, due: RETRY_AFTER });
     persist();
 
+    // Netzkarte blass als Hintergrund unter den Routen
+    netLayer().render(netView({ dimAll: true, hubs: false, labels: false }));
     app.map.showReveal(r.routes, res.route ? [{ key: 'me', name: 'Du', route: res.route, isMe: true }] : [], [r.routes[0].key, ...(res.route ? ['me'] : [])]);
     setMapBig(false);
 
@@ -346,7 +349,7 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
       <div class="learn training">
         <h2>Auswertung${isRetry ? ' <small class="retry">🔁 Wiederholung</small>' : ''}</h2>
         <div class="result-card ${solved ? 'great' : delta != null && delta <= 3 ? 'ok' : 'meh'}"><div class="mine">
-          ${res.route ? `<div class="chainline">${chain(res.route.legs)}<b>${res.durationMin} min</b></div><details class="my-detail"><summary>Deine Route im Detail</summary>${routeDetails(res.route)}</details>` : ''}
+          ${res.route ? `<div class="chainline">${chain(res.route.legs)}<b>${res.durationMin} min</b></div><details class="my-detail"><summary>Deine Route im Detail</summary>${routeDetails(res.route, starMini)}</details>` : ''}
           ${verdict}
           ${hintsUsed.length ? `<small>mit ${hintsUsed.length} Hilfe${hintsUsed.length > 1 ? 'n' : ''}</small>` : ''}
         </div></div>
@@ -358,7 +361,7 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
         <h3>Top-Verbindungen</h3>
         <ol class="route-list">${r.routes
           .slice(0, 4)
-          .map((x, i) => `<li data-key="${esc(x.key)}" class="expandable"><div class="rrow"><span class="rank">${i + 1}</span><div class="rmain"><div class="chainline">${chain(x.legs)}</div></div><div class="rtime"><b>${x.medianMin} min</b></div><span class="chev">▾</span></div><div class="rdetail">${routeDetails(x)}</div></li>`)
+          .map((x, i) => `<li data-key="${esc(x.key)}" class="expandable"><div class="rrow"><span class="rank">${i + 1}</span><div class="rmain"><div class="chainline">${chain(x.legs)}</div></div><div class="rtime"><b>${x.medianMin} min</b></div><span class="chev">▾</span></div><div class="rdetail">${routeDetails(x, starMini)}</div></li>`)
           .join('')}</ol>
         <div class="learn-actions"><button class="btn btn-primary" id="next">Nächste Strecke →</button><button class="btn btn-ghost" id="setup">Einstellungen</button></div>
       </div>`;
