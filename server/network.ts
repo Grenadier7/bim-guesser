@@ -68,8 +68,9 @@ export class Network {
       this.usageSave = null;
       try {
         writeFileSync(USAGE_FILE, JSON.stringify(Object.fromEntries(this.usage)));
-      } catch {
-        /* egal – nur Statistik */
+      } catch (e) {
+        // nur Statistik – aber melden, damit man fehlende Rechte am Volume bemerkt
+        console.warn(`Statistik ${USAGE_FILE} nicht beschreibbar: ${(e as Error).message}`);
       }
     }, 5000);
     this.usageSave.unref();

@@ -91,6 +91,21 @@ async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
 const memCache = new Map<string, Promise<any>>();
 export let requestCount = 0;
 
+/** Fehlertext inkl. Ursache (fetch packt den eigentlichen Grund in .cause, z.B. ENOTFOUND, ECONNRESET) */
+function errText(e: unknown): string {
+  const err = e as { message?: string; cause?: { code?: string; message?: string } };
+  return [err.message, err.cause?.code ?? err.cause?.message].filter(Boolean).join(' – ');
+}
+
+/** Dieselbe Warnung höchstens alle 10 min ins Log schreiben */
+const warned = new Map<string, number>();
+function warnOnce(key: string, msg: string) {
+  const now = Date.now();
+  if ((warned.get(key) ?? 0) > now - 10 * 60 * 1000) return;
+  warned.set(key, now);
+  console.warn(`[${new Date().toISOString()}] ${msg}`);
+}
+
 async function efaGet(endpoint: string, params: Record<string, string>): Promise<any> {
   const qs = new URLSearchParams({
     outputFormat: 'JSON',
@@ -118,13 +133,21 @@ async function efaGet(endpoint: string, params: Record<string, string>): Promise
           if (!res.ok) throw new Error(`EFA ${endpoint}: HTTP ${res.status}`);
           return await res.json();
         } catch (e) {
-          if (attempt >= 2) throw e;
+          if (attempt >= 2) {
+            warnOnce('fetch', `Wiener-Linien-Auskunft nicht erreichbar: ${errText(e)}`);
+            throw e;
+          }
           await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
         }
       }
     });
-    await mkdir(CACHE_DIR, { recursive: true });
-    await writeFile(file, JSON.stringify({ t: Date.now(), url, data }));
+    // Cache ist nur eine Beschleunigung – ein Schreibfehler (z.B. fehlende Rechte am Volume) darf die Abfrage nicht kaputt machen
+    try {
+      await mkdir(CACHE_DIR, { recursive: true });
+      await writeFile(file, JSON.stringify({ t: Date.now(), url, data }));
+    } catch (e) {
+      warnOnce('cache', `Cache ${CACHE_DIR} nicht beschreibbar (${errText(e)}) – läuft ohne Cache weiter`);
+    }
     return data;
   })();
   memCache.set(url, p);
