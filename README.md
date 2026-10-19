@@ -58,16 +58,19 @@ in die richtige Lobby (Routenjagd oder Quiz).
 | Modus | Spieler | Worum geht's |
 |---|---|---|
 | 🏁 **Routenjagd** | Lobby, 1–12 | Schnellste Öffi-Verbindung zwischen zwei Stationen finden |
-| 🧠 **Quiz** | Lobby, 1–12 | Fragen zu Stationen, Linien, Umstiegen – Punkte für richtig und schnell |
 | 🏋️ **Training** | allein | Echte Strecken mit Coach, Hilfen und Erklärung |
 | 📚 **Lernen** | allein | Lernpfad (Kurse), Netzkarte mit Linien-Steckbriefen, gemerkte Linien üben |
+| 🧠 **Quiz** | Lobby, 1–12 | Fragen zu Stationen, Linien, Umstiegen – Punkte für richtig und schnell |
 
 ### Quiz
 
 - Fragetypen: 📍 Wo liegt …? · 🎯 Direktverbindung (welche Linie fährt ohne Umsteigen von A nach B?) ·
-  🔀 Umstieg (wo kann man von X in Y umsteigen?) · 🚏 Linien an der Station (mehrere) · ↔️ Endstationen ·
-  〰️ Linie erkennen · ✏️ Linie zeichnen (Verlauf von Endstation zu Endstation antippen, doppelte Zeit) ·
-  🏘️ Bezirk · ➡️ Nächste Station.
+  🧭 Richtung (welche Linie fährt von hier nach X?) · 🔀 Umstieg (wo kann man von X in Y umsteigen?) ·
+  🚇 U-Bahn-Kreuzung (an welcher U6-Station kreuzt die 43?) · 🔗 Querverbindung (welche Linie verbindet U1 und U2?) ·
+  🚏 Linien an der Station (mehrere) · ↔️ Endstationen · 〰️ Linie erkennen · ✏️ Linie zeichnen (Verlauf von
+  Endstation zu Endstation antippen, doppelte Zeit) · 🏘️ Bezirk · ➡️ Nächste Station · 🔢 Busnummer (in welchem
+  Bezirk fährt der 76A? – nur mit Bussen).
+- Standard ohne Busse (U-Bahn, S-Bahn, Bim) – mit Bussen wären drei Viertel aller Linien und Stationen Busse.
 - Einstellungen: Anzahl Fragen, Zeit pro Frage, Gebiet (Bezirk, wird auf der Karte eingefärbt), Verkehrsmittel;
   unter „Fragetypen & Häufigkeit“ je Typ ein Regler mit 7 Stufen (1 = gar nicht, 4 = normal, 7 = sehr häufig)
   und „↺ Standard-Häufigkeiten“.
@@ -77,7 +80,8 @@ in die richtige Lobby (Routenjagd oder Quiz).
   gerade Linie schon träfe) und Anteil der Punkte, die auf der Linie liegen.
 - Fragen werden am Server erzeugt und bewertet (`shared/quiz.ts`): richtig = 500–1000 Punkte je nach Tempo;
   „Linie zeichnen“ zählt nur die Genauigkeit (bis 1000), nicht das Tempo. „Wo liegt …?“ gibt Teilpunkte nach Entfernung (voll bis 200 m, 0 ab 3 km), Mehrfachauswahl Teilpunkte
-  (falsche ziehen ab). Mehrdeutige Antworten (z.B. S1/S2) werden vermieden.
+  (falsche ziehen ab). Mehrdeutige Antworten (z.B. S1/S2) werden vermieden. Nur reguläres Netz: keine
+  Sonderlinien (71E, 26E) und keine Halte aus Sonderführungen.
 - Host: Pause, Frage überspringen, Jetzt auflösen, Spiel beenden.
 
 ## Routenjagd
@@ -197,7 +201,7 @@ in die richtige Lobby (Routenjagd oder Quiz).
   treffen sich genau in den Umsteigepunkten. Punkte bei jeder Kreuzung außer Bim–Bim, große Knoten mit Namen;
   auf Stadt-Zoom werden Bim-Nummern und dichte Innenstadt-Namen ausgeblendet. Andere Busse und Nachtlinien werden
   nur gezeichnet, wenn eine Ansicht sie braucht. Bänder für Ring, Gürtel und Vorortelinie. Farben: U-Bahn in
-  Linienfarben, S-Bahn blau, Bim dunkelrot (dünner und dunkler als die U1), Badner Bahn türkis, Busse schiefergrau.
+  Linienfarben, S-Bahn blau, Bim dunkelrot (dünner und dunkler als die U1), Badner Bahn dunkelblau, Busse schiefergrau.
   Auch das Quiz zeichnet Linien damit (bei „Welche Linie ist das?“ nur die Linie, grau und ohne Namen), und in
   den Auflösungen von Routenjagd und Training liegt sie blass unter den Routen. Während des Ratens bleibt die
   Karte leer.
@@ -275,7 +279,7 @@ Ist deine Route nicht unter den gefundenen, wird jede Teilstrecke mit genau dies
 ## Tests
 
 ```bash
-npm test         # Wertung, Ø-Wartezeit, alle Kurse (je 15× mit Zufallsfragen gebaut, jede Frage gültig)
+npm test         # Wertung, Ø-Wartezeit, alle Kurse und alle Quiz-Fragetypen (mit Zufallsfragen gebaut, jede Frage gültig)
 npm run smoke    # Klick-Durchlauf in Edge/Chrome (unsichtbar; --headed zum Zuschauen): Lernen, Netzkarte,
                  # Vergleich, alle Kurse, Üben, Routenjagd- und Quiz-Lobby – jeder JavaScript-Fehler = Abbruch
 ```

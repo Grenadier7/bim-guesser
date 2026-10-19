@@ -188,7 +188,7 @@ export function atlasView(panel: HTMLElement, onBack: () => void, opts: { query?
     } else {
       const mine = myLines();
       const pts = layer.render(netView({ ...common, focus: mineOnly ? new Set(mine) : new Set() }));
-      if (fit) mineOnly && mine.length && pts.length ? app.map.fitPoints(pts, 14) : app.map.overview();
+      if (fit) mineOnly && mine.length && pts.length ? app.map.fitPoints(pts, 14) : app.map.cityView();
     }
   }
 

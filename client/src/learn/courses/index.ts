@@ -3,7 +3,7 @@
 // Jeder Kurs liegt in einer eigenen Datei; hier: Reihenfolge (Lernpfad), Fortschritt und die Ansicht.
 //
 // Die Karte ist immer dieselbe Netzkarte (netmap.ts); jeder Schritt blendet nur Linien und Abschnitte hervor
-// oder aus. Farben wie dort: U-Bahn in Linienfarben, S-Bahn blau, Badner Bahn türkis, Bim dunkelrot, Busse schiefergrau.
+// oder aus. Farben wie dort: U-Bahn in Linienfarben, S-Bahn blau, Badner Bahn dunkelblau, Bim dunkelrot, Busse schiefergrau.
 import { netLayer, netView, NO_BANDS } from '../../netmap.ts';
 import { app, setMapBig } from '../../store.ts';
 import { esc, h, lineChip } from '../../ui.ts';

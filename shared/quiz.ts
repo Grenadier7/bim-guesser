@@ -2,18 +2,35 @@
 import type { District, LatLon, Line, Mode, Station } from './types.ts';
 import { DEFAULT_QUIZ_SETTINGS } from './defaults.ts';
 
-export type QuizType = 'locate' | 'stopLines' | 'lineShape' | 'nextStop' | 'termini' | 'district' | 'transfer' | 'direct' | 'draw';
+export type QuizType =
+  | 'locate'
+  | 'stopLines'
+  | 'lineShape'
+  | 'nextStop'
+  | 'termini'
+  | 'district'
+  | 'transfer'
+  | 'direct'
+  | 'draw'
+  | 'uCross'
+  | 'uLink'
+  | 'towards'
+  | 'busArea';
 
 export const QUIZ_TYPES: Record<QuizType, { icon: string; label: string; hint: string }> = {
   locate: { icon: '📍', label: 'Wo liegt …?', hint: 'Station auf der leeren Karte antippen' },
   direct: { icon: '🎯', label: 'Direktverbindung', hint: 'Welche Linie fährt ohne Umsteigen von A nach B?' },
+  towards: { icon: '🧭', label: 'Richtung', hint: 'Welche Linie fährt von dieser Station zu einem bestimmten Ziel?' },
   transfer: { icon: '🔀', label: 'Umstieg', hint: 'Wo kann man von Linie X in Linie Y umsteigen?' },
+  uCross: { icon: '🚇', label: 'U-Bahn-Kreuzung', hint: 'An welcher U-Bahn-Station kreuzt eine Linie die U-Bahn?' },
+  uLink: { icon: '🔗', label: 'Querverbindung', hint: 'Welche Linie verbindet zwei U-Bahn-Linien miteinander?' },
   stopLines: { icon: '🚏', label: 'Linien an der Station', hint: 'Welche Linien halten hier? (mehrere)' },
   termini: { icon: '↔️', label: 'Endstationen', hint: 'Zwischen welchen Endstationen fährt die Linie?' },
   lineShape: { icon: '〰️', label: 'Linie erkennen', hint: 'Welche Linie hat diesen Verlauf?' },
   draw: { icon: '✏️', label: 'Linie zeichnen', hint: 'Verlauf einer Linie von Anfang bis Ende nachzeichnen' },
   district: { icon: '🏘️', label: 'Bezirk', hint: 'In welchem Bezirk liegt die Station?' },
   nextStop: { icon: '➡️', label: 'Nächste Station', hint: 'Welche Station kommt als nächstes?' },
+  busArea: { icon: '🔢', label: 'Busnummer', hint: 'In welchem Bezirk fährt ein Bus? (nur mit Bussen)' },
 };
 export const QUIZ_TYPE_ORDER = Object.keys(QUIZ_TYPES) as QuizType[];
 
@@ -137,19 +154,23 @@ interface QuizScope {
   modes: Set<Mode>;
 }
 
+/** Sonderlinien wie 71E oder 26E (Ersatz-/Verstärkerverkehr) – im Quiz irreführend */
+const isSpecial = (l: Line) => /^\d+E$/.test(l.id);
+
 export function quizScope(net: QuizNet, s: QuizSettings): QuizScope {
   const modes = new Set(s.modes);
-  let stations = net.stations.filter((st) => st.modes.some((m) => modes.has(m)));
+  const candidates = net.lines.filter((l) => modes.has(l.mode) && !isSpecial(l) && net.patterns(l).length);
+  // nur Stationen, an denen im regulären Netz eine dieser Linien hält (keine Halte aus Sonderführungen)
+  const served = new Set(candidates.flatMap((l) => net.patterns(l).flat()));
+  let stations = net.stations.filter((st) => served.has(st.id));
   if (s.area) stations = stations.filter((st) => st.district === s.area);
   const stationSet = new Set(stations.map((st) => st.id));
-  const lines = net.lines.filter(
-    (l) => modes.has(l.mode) && net.patterns(l).length && [...new Set(net.patterns(l).flat())].filter((id) => stationSet.has(id)).length >= 2,
-  );
+  const lines = candidates.filter((l) => [...new Set(net.patterns(l).flat())].filter((id) => stationSet.has(id)).length >= 2);
   return { stations, stationSet, lines, modes };
 }
 
 function linesAt(net: QuizNet, st: Station, scope: QuizScope): Line[] {
-  return st.lines.map((id) => net.line(id)!).filter((l) => l && scope.modes.has(l.mode) && net.patterns(l).some((p) => p.includes(st.id)));
+  return st.lines.map((id) => net.line(id)!).filter((l) => l && scope.modes.has(l.mode) && !isSpecial(l) && net.patterns(l).some((p) => p.includes(st.id)));
 }
 
 function mainPattern(net: QuizNet, l: Line): string[] {
@@ -382,6 +403,148 @@ const GENERATORS: Record<QuizType, Gen> = {
     };
   },
 
+  uCross(net, scope) {
+    const us = scope.lines.filter((l) => l.mode === 'U');
+    const others = scope.lines.filter((l) => l.mode !== 'U' && l.mode !== 'N');
+    if (!us.length || !others.length) return null;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const u = pick(us);
+      const line = pick(others);
+      const uMain = mainPattern(net, u);
+      const byName = new Map(uMain.map((id) => [net.station(id).name, id]));
+      const lineNames = new Set(net.patterns(line).flat().map((id) => net.station(id).name));
+      // genau eine gemeinsame Station – sonst gäbe es mehrere richtige Antworten
+      const shared = [...lineNames].filter((n) => byName.has(n));
+      if (shared.length !== 1) continue;
+      const st = net.station(byName.get(shared[0])!);
+      // falsche Antworten: andere Stationen derselben U-Bahn in der Nähe, an denen die Linie nicht hält
+      const idx = uMain.indexOf(st.id);
+      const wrong = shuffle(uMain.filter((id, i) => id !== st.id && Math.abs(i - idx) <= 5 && !lineNames.has(net.station(id).name)))
+        .slice(0, 3)
+        .map((id) => net.station(id));
+      if (wrong.length < 3) continue;
+      return {
+        type: 'uCross',
+        prompt: `An welcher ${u.id}-Station kreuzt die ${line.id}?`,
+        chips: [line.id, u.id],
+        drawLineId: u.id,
+        drawLines: [u.id, line.id],
+        options: shuffle([st, ...wrong]).map(stationOpt),
+        correct: st.id,
+        explanation: `Die ${line.id} trifft die ${u.id} bei ${st.name}.`,
+        revealStationId: st.id,
+      };
+    }
+    return null;
+  },
+
+  uLink(net, scope) {
+    const uIds = new Set(scope.lines.filter((l) => l.mode === 'U').map((l) => l.id));
+    if (uIds.size < 2) return null;
+    // je Linie: welche U-Bahnen sie trifft (erste Station je U-Bahn)
+    const touches = (l: Line) => {
+      const out = new Map<string, Station>();
+      for (const id of mainPattern(net, l))
+        for (const u of net.station(id).lines) if (uIds.has(u) && !out.has(u) && net.patterns(net.line(u)!).some((p) => p.includes(id))) out.set(u, net.station(id));
+      return out;
+    };
+    const cands = scope.lines.filter((l) => l.mode !== 'U' && l.mode !== 'N');
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const line = pick(cands);
+      if (!line) return null;
+      const t = touches(line);
+      const pairs = [...t.keys()].flatMap((a, i, arr) => arr.slice(i + 1).map((b) => [a, b] as const)).filter(([a, b]) => t.get(a)!.name !== t.get(b)!.name);
+      if (!pairs.length) continue;
+      const [a, b] = pick(pairs);
+      const [sa, sb] = [t.get(a)!, t.get(b)!];
+      // falsche Antworten: Linien, die nur eine der beiden U-Bahnen treffen
+      const wrong = shuffle(
+        cands.filter((x) => {
+          if (x === line) return false;
+          const tx = touches(x);
+          return (tx.has(a) || tx.has(b)) && !(tx.has(a) && tx.has(b));
+        }),
+      ).slice(0, 3);
+      if (wrong.length < 3) continue;
+      return {
+        type: 'uLink',
+        prompt: `Welche Linie verbindet die ${a} (${sa.name}) mit der ${b} (${sb.name})?`,
+        markers: [sa.id, sb.id],
+        drawLines: [a, b, line.id],
+        options: shuffle([line, ...wrong]).map(lineOpt),
+        correct: line.id,
+        explanation: `Die ${line.id} fährt von ${sa.name} (${a}) bis ${sb.name} (${b}) – ohne Umweg über eine andere U-Bahn.`,
+        revealLineId: line.id,
+      };
+    }
+    return null;
+  },
+
+  towards(net, scope) {
+    for (let attempt = 0; attempt < 40; attempt++) {
+      const st = pick(scope.stations);
+      if (!st) return null;
+      const here = linesAt(net, st, scope).filter((l) => l.mode !== 'N');
+      if (here.length < 2) continue;
+      const line = pick(here);
+      // nur Hauptrichtungen (keine Kurzführungen), und die Station darf nicht schon Endstation sein
+      const longest = Math.max(...net.patterns(line).map((p) => p.length));
+      const pats = net.patterns(line).filter((p) => p.length >= longest * 0.75 && p.indexOf(st.id) >= 0 && p.indexOf(st.id) < p.length - 3);
+      if (!pats.length) continue;
+      const term = net.station(pick(pats).at(-1)!);
+      /** fährt die Linie von hier (in irgendeiner Richtung) bis zum Ziel? */
+      const reaches = (x: Line) =>
+        net.patterns(x).some((p) => {
+          const i = p.indexOf(st.id);
+          return i >= 0 && p.slice(i + 1).some((id) => net.station(id).name === term.name);
+        });
+      const near = net.stations.filter((x) => x.id !== st.id && distM(x, st) < 500).flatMap((x) => linesAt(net, x, scope));
+      const wrong = [...new Map([...shuffle(here), ...shuffle(near)].filter((x) => x !== line && x.mode !== 'N' && !reaches(x)).map((x) => [x.id, x])).values()].slice(0, 3);
+      if (wrong.length < 2) continue;
+      return {
+        type: 'towards',
+        prompt: `Du stehst bei ${st.name}. Welche Linie fährt von hier Richtung ${term.name}?`,
+        stationId: st.id,
+        options: shuffle([line, ...wrong]).map(lineOpt),
+        correct: line.id,
+        explanation: `Die ${line.id} fährt von ${st.name} nach ${term.name}.`,
+        revealLineId: line.id,
+      };
+    }
+    return null;
+  },
+
+  busArea(net, scope) {
+    const buses = scope.lines.filter((l) => l.mode === 'B' && /^\d+[AB]$/.test(l.id) && parseInt(l.id, 10) >= 20);
+    if (buses.length < 4 || !net.districts.length) return null;
+    /** Bezirk mit den meisten Stationen dieser Linien */
+    const topDistrict = (ls: Line[]) => {
+      const c = new Map<number, number>();
+      for (const l of ls) for (const id of new Set(net.patterns(l).flat())) c.set(net.station(id).district, (c.get(net.station(id).district) ?? 0) + 1);
+      return [...c].sort((a, b) => b[1] - a[1])[0]?.[0];
+    };
+    const decade = (l: Line) => Math.floor(parseInt(l.id, 10) / 10);
+    const line = pick(buses);
+    const own = topDistrict([line]);
+    const groupTop = topDistrict(buses.filter((b) => decade(b) === decade(line)));
+    // falsche Antworten: die Hauptbezirke der anderen Zehnergruppen
+    const decades = [...new Set(buses.map(decade))].filter((g) => g !== decade(line));
+    const wrongIds = shuffle([...new Set(decades.map((g) => topDistrict(buses.filter((b) => decade(b) === g))))].filter((d) => d != null && d !== own)).slice(0, 3);
+    if (own == null || wrongIds.length < 2) return null;
+    const label = (id: number) => `${id}. ${net.districts.find((d) => d.id === id)?.name ?? ''}`;
+    return {
+      type: 'busArea',
+      prompt: `In welchem Bezirk fährt der ${line.id} vor allem?`,
+      chips: [line.id],
+      options: shuffle([own, ...wrongIds]).map((id) => ({ id: String(id), label: label(id) })),
+      correct: String(own),
+      explanation:
+        `Der ${line.id} fährt vor allem im ${label(own)}.` +
+        (groupTop != null ? ` Faustregel: Die ${decade(line)}0er-Busse fahren meist im ${label(groupTop)}.` : ''),
+      revealLineId: line.id,
+    };
+  },
+
   direct(net, scope) {
     for (let attempt = 0; attempt < 20; attempt++) {
       const line = pick(scope.lines);
@@ -434,8 +597,11 @@ export function generateQuiz(net: QuizNet, s: QuizSettings): QuizQuestion[] {
     // nicht dreimal hintereinander derselbe Typ
     if (types.length > 1 && out.length >= 2 && out[out.length - 1].type === type && out[out.length - 2].type === type) continue;
     const q = GENERATORS[type](net, scope);
-    if (!q || seenPrompts.has(q.prompt)) continue;
-    seenPrompts.add(q.prompt);
+    if (!q) continue;
+    // Wiederholung erkennen – auch bei gleichem Fragetext (z.B. „Welche Linie fährt diese Strecke?“ mit anderer Linie)
+    const key = [q.prompt, q.drawLineId, q.stationId, q.markers?.join()].join('|');
+    if (seenPrompts.has(key)) continue;
+    seenPrompts.add(key);
     if (q.type === 'draw') q.timeSec = Math.max(s.timeSec * 2, 40);
     out.push(q);
   }

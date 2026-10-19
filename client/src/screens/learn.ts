@@ -38,7 +38,7 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
         onStation: (id) => openAtlas('', { kind: 'station', id }),
       }),
     );
-    app.map.overview();
+    app.map.cityView();
 
     const progress = courseProgress();
     const done = COURSES.filter((c) => progress[c.id]?.done).length;

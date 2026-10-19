@@ -228,6 +228,13 @@ export class GameMap {
     this.map.flyToBounds(VIENNA, { duration: 0.5 });
   }
 
+  /** Innenstadt bis etwas über den Gürtel hinaus – Startansicht zum Lernen */
+  cityView() {
+    this.lastView = null;
+    if (!this.map.getSize().x) return this.map.setView([48.2045, 16.3685], 12.5);
+    this.map.flyTo([48.2045, 16.3685], 12.5, { duration: 0.5 });
+  }
+
   // -------------------------------------------------------------- Start/Ziel
 
   showEndpoints(from: StationRef, to: StationRef, fit = true, names = true) {

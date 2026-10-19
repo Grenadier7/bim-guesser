@@ -1917,6 +1917,15 @@ input[type='range'] {
   background: #fff;
 }
 
+/* nur die gewählte Station fett – in der aufgeklappten Liste normale Schrift (Richtungs-Überschriften bleiben fett) */
+.leg-alight option {
+  font-weight: 400;
+}
+
+.leg-alight optgroup {
+  font-weight: 700;
+}
+
 /* ---------------------------------------------------------------- Erweiterte Einstellungen */
 
 .advanced {

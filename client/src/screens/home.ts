@@ -14,13 +14,6 @@ const MODES = [
     tag: 'Mehrspieler · Lobby',
   },
   {
-    id: 'quiz',
-    icon: '🧠',
-    title: 'Quiz',
-    text: 'Stationen, Linien, Umstiege, Direktverbindungen – schnell antworten, Punkte sammeln.',
-    tag: 'Mehrspieler · Lobby',
-  },
-  {
     id: 'training',
     icon: '🏋️',
     title: 'Training',
@@ -33,6 +26,13 @@ const MODES = [
     title: 'Lernen',
     text: 'Kurse Schritt für Schritt, Netzkarte mit Linien-Steckbriefen, gemerkte Linien üben.',
     tag: 'Allein',
+  },
+  {
+    id: 'quiz',
+    icon: '🧠',
+    title: 'Quiz',
+    text: 'Stationen, Linien, Umstiege, Direktverbindungen – schnell antworten, Punkte sammeln.',
+    tag: 'Mehrspieler · Lobby',
   },
 ] as const;
 

@@ -474,8 +474,12 @@ export const MODE_COLOR: Record<Mode, string> = {
   W: '#7a7a7a',
 };
 
+/** Badner Bahn: eigenes Blau – dunkler als die S-Bahn, damit man sie nicht verwechselt */
+export const BB_COLOR = '#2b4c9b';
+
 export function lineColor(mode: Mode, line: string | null): string {
   if (mode === 'U' && line) return U_COLORS[line.slice(0, 2)] ?? MODE_COLOR.U;
+  if (line === 'BB') return BB_COLOR;
   return MODE_COLOR[mode];
 }
 

@@ -58,10 +58,24 @@ export const DEFAULT_QUIZ_SETTINGS: QuizSettings = {
   timeSec: 20,
   /** 0 = ganz Wien, sonst Bezirksnummer */
   area: 0,
-  /** Verkehrsmittel: 'U' 'S' 'T' 'B' 'N' */
-  modes: ['U', 'S', 'T', 'B'],
-  /** Häufigkeit je Fragetyp: 1 = gar nicht · 4 = normal · 7 = sehr häufig */
-  weights: { locate: 3, direct: 4, transfer: 6, stopLines: 4, termini: 4, lineShape: 5, draw: 3, district: 2, nextStop: 1 },
+  /** Verkehrsmittel: 'U' 'S' 'T' 'B' 'N' – ohne Busse, sonst wären drei Viertel der Fragen über Busse */
+  modes: ['U', 'S', 'T'],
+  /** Häufigkeit je Fragetyp: 1 = gar nicht · 4 = normal · 7 = sehr häufig ("Busnummer" nur, wenn Busse an sind) */
+  weights: {
+    locate: 3,
+    direct: 4,
+    towards: 4,
+    transfer: 6,
+    uCross: 4,
+    uLink: 3,
+    stopLines: 4,
+    termini: 4,
+    lineShape: 5,
+    draw: 3,
+    district: 2,
+    nextStop: 1,
+    busArea: 3,
+  },
 };
 
 // ---------------------------------------------------------------- 🏋️ Training

@@ -5,7 +5,7 @@ export const NET_COLOR = {
   T: '#a8475a',
   /** Bim, wenn sie hervorgehoben ist */
   Tfocus: '#9e1b32',
-  BB: '#0d8a80',
+  BB: '#2b4c9b',
   B: '#5f6f86',
   N: '#22304f',
   band: { ring: '#e39a2d', guertel: '#d9487a', vorort: '#2f9e63' },

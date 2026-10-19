@@ -250,7 +250,7 @@ export function quizQuestionScreen(panel: HTMLElement): Screen {
     if (q.drawLineId) drawLine(q.drawLineId, false, !q.stationId);
     if (q.stationId) {
       const s = app.net.station(q.stationId);
-      app.map.showTarget(s.lat, s.lon, q.type === 'nextStop' || q.type === 'stopLines' ? s.name : null);
+      app.map.showTarget(s.lat, s.lon, q.type === 'nextStop' || q.type === 'stopLines' || q.type === 'towards' ? s.name : null);
       if (!q.drawLineId) app.map.zoomTo(s.lat, s.lon, 14);
     }
     if (q.markers) {
@@ -415,7 +415,7 @@ export function quizRevealScreen(panel: HTMLElement): Screen {
     if (!r) return;
     app.map.clear();
     app.map.showLearnArea(areaOf(st0.settings), false);
-    if (q.type === 'transfer' && q.drawLines?.length) drawLinesColored(q.drawLines, true);
+    if (q.drawLines?.length) drawLinesColored(q.drawLines, true);
     else if (q.type === 'district' && r.revealStationId) drawLinesColored(linesAt(r.revealStationId).map((l) => l.id), true);
     else if (r.revealLineId) drawLine(r.revealLineId, true, true);
     if (q.type === 'draw') {
