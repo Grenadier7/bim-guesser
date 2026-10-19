@@ -37,3 +37,10 @@ for (const type of QUIZ_TYPE_ORDER)
       }
     }
   });
+
+test('Regression: „Umstieg“ fragt nie nach Sonderlinien als Ziellinie (z.B. 72A → 71E)', () => {
+  const weights = Object.fromEntries(QUIZ_TYPE_ORDER.map((t) => [t, t === 'transfer' ? 4 : 0])) as QuizSettings['weights'];
+  for (let i = 0; i < 40; i++)
+    for (const q of generateQuiz(net, { ...DEFAULT_QUIZ_SETTINGS, modes: ['T', 'B'], questions: 20, weights }))
+      for (const id of q.chips ?? []) assert.ok(!/^\d+E$/.test(id), `Sonderlinie in „${q.prompt}“`);
+});

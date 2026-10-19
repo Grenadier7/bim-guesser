@@ -333,7 +333,7 @@ const GENERATORS: Record<QuizType, Gen> = {
       for (const id of main) {
         for (const other of net.station(id).lines) {
           const o = net.line(other);
-          if (!o || o.id === line.id || !scope.modes.has(o.mode) || overlap(net, line, o) > 0.5) continue;
+          if (!o || o.id === line.id || !scope.modes.has(o.mode) || isSpecialLine(o) || !net.patterns(o).length || overlap(net, line, o) > 0.5) continue;
           byLine.set(o.id, (byLine.get(o.id) ?? new Set()).add(id));
         }
       }
