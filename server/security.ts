@@ -38,8 +38,12 @@ setInterval(() => {
   for (const [k, b] of buckets) if (!b.hits.length || now - b.hits[b.hits.length - 1] > 3600_000) buckets.delete(k);
 }, 600_000).unref();
 
+/** Alle Limits mit diesem Faktor (Standard 1) – Tests setzen RATE_LIMIT_SCALE hoch, damit sie nicht ausgebremst werden */
+const SCALE = Math.max(1, Number(process.env.RATE_LIMIT_SCALE) || 1);
+
 /** Höchstens `max` Anfragen pro `windowMs` und IP für diesen Bereich */
 export function rateLimit(name: string, max: number, windowMs: number, message = 'Zu viele Anfragen – bitte kurz warten.') {
+  max *= SCALE;
   return (req: Request, res: Response, next: NextFunction) => {
     const key = `${name}:${req.ip}`;
     const now = Date.now();

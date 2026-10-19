@@ -1,0 +1,96 @@
+// E2E: Lernen (Netzkarte, Steckbrief, Vergleich, Kurs) und ein komplettes Solo-Quiz im Browser.
+// Die Zählungen der Netzkarte sind Charakterisierungswerte: Ändert ein Umbau die Darstellung, fällt es hier auf.
+import assert from 'node:assert/strict';
+import { after, before, test } from 'node:test';
+import { setName, startApp, type App } from './harness.ts';
+
+let app: App;
+before(async () => (app = await startApp({ RATE_LIMIT_SCALE: '1000' })));
+after(async () => app?.close());
+
+test('Netzkarte: Lernen-Startseite zeichnet das ganze Netz, Linie antippen öffnet den Steckbrief', async () => {
+  const t = await app.page();
+  const p = t.page;
+  await p.goto(app.base);
+  await p.locator('.mode-learn').click();
+  await p.locator('.learn-hub').waitFor();
+  await p.waitForTimeout(800);
+  // Netzkarte: Linien (SVG-Pfade im eigenen Pane), Klickflächen, Punkte
+  const counts = await p.evaluate(() => {
+    const pane = document.querySelector('.leaflet-net-pane')!;
+    const paths = [...pane.querySelectorAll('path')];
+    return {
+      paths: paths.length,
+      hits: paths.filter((x) => x.getAttribute('stroke-opacity') === '0').length,
+      tags: document.querySelectorAll('.leaflet-netLabels-pane .net-tags').length,
+    };
+  });
+  assert.ok(counts.paths > 1500, `zu wenige Netz-Elemente: ${counts.paths}`);
+  assert.ok(counts.hits > 300, `Linien nicht antippbar: ${counts.hits}`);
+  assert.ok(counts.tags > 30, `zu wenige Liniennummern: ${counts.tags}`);
+  await t.shot('learn-hub');
+  // Suche → Steckbrief
+  await p.locator('#hub-search').fill('U6');
+  await p.locator('#atlas-search').press('Enter');
+  await p.locator('.atlas-card', { hasText: 'Floridsdorf' }).waitFor();
+  await p.locator('.atlas-card .learn-line', { hasText: 'U6' }).waitFor();
+  // Station aus der Liste → „Von hier“
+  await p.locator('.atlas-card details summary').click();
+  await p.locator('.stop-list [data-st]', { hasText: 'Westbahnhof' }).first().click();
+  await p.locator('.atlas-card h3', { hasText: 'Westbahnhof' }).waitFor();
+  assert.ok((await p.locator('.deps li').count()) >= 5, 'zu wenige Linien am Westbahnhof');
+  await t.shot('atlas-station');
+  assert.deepEqual(t.errors, []);
+  await t.context.close();
+});
+
+test('Kurs: U-Bahn-Kreuzungen komplett durchklicken', async () => {
+  const t = await app.page();
+  const p = t.page;
+  await p.goto(app.base);
+  await p.locator('.mode-learn').click();
+  await p.locator('.all-courses summary').click();
+  await p.locator('.all-courses .course-card[data-course="ubahn"]').click();
+  for (let i = 0; i < 30; i++) {
+    const opt = p.locator('.course-quiz button:not([disabled])');
+    if (await opt.count()) await opt.first().click();
+    if (await p.getByText('Kurs geschafft').count()) break;
+    await p.locator('#next').click();
+  }
+  await p.getByText('Kurs geschafft').waitFor();
+  assert.deepEqual(t.errors, []);
+  await t.context.close();
+});
+
+test('Quiz allein: Lobby → 5 Fragen → Endstand', async () => {
+  const t = await app.page();
+  const p = t.page;
+  await p.goto(app.base);
+  await setName(p, 'E2E-Quiz');
+  await p.locator('.mode-quiz').click();
+  await p.locator('[data-k="questions"][data-v="5"]').click();
+  await p.locator('#start').click();
+  for (let q = 0; q < 5; q++) {
+    await p.locator('.quiz-q h2').waitFor();
+    // Karte wird bei „Wo liegt …?“/„Linie zeichnen“ groß – Position jedes Mal neu messen
+    await p.waitForTimeout(300);
+    const map = (await p.locator('#map').boundingBox())!;
+    // antworten – je nach Fragetyp
+    if (await p.locator('.quiz-options button[data-o]').count()) await p.locator('.quiz-options button[data-o]').first().click();
+    else if (await p.locator('.pick-lines button[data-o]').count()) {
+      await p.locator('.pick-lines button[data-o]').first().click();
+      await p.getByRole('button', { name: 'Antworten' }).click();
+    } else {
+      // Wo liegt …? bzw. Linie zeichnen: auf die Karte tippen
+      await p.mouse.click(map.x + map.width / 2, map.y + map.height / 2);
+      await p.mouse.click(map.x + map.width / 2 + 30, map.y + map.height / 2 + 20);
+      await p.locator('.quiz-q button.btn-primary').click();
+    }
+    await p.locator('.result-card').waitFor();
+    await p.locator('.btn-big', { hasText: q === 4 ? 'Zum Endergebnis' : 'Nächste Frage' }).click();
+  }
+  await p.locator('.final h2', { hasText: 'Quiz-Endstand' }).waitFor();
+  await t.shot('quiz-final');
+  assert.deepEqual(t.errors, []);
+  await t.context.close();
+});
