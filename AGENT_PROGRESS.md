@@ -86,11 +86,36 @@ home · lobby (Routenjagd) · round · reveal · final · quiz (Lobby, Frage, Au
 `oeffi-guesser-session`, `oeffi-guesser-prefs-v2`, `oeffi-training-config-v1`, `oeffi-training-memory-v1`,
 `oeffi-learn-progress-v1`, `oeffi-my-lines-v1`, `oeffi-courses-v1`
 
+## Rohbefunde (noch zu verifizieren → 02-befunde.md)
+
+Aus eigener Prüfung:
+- R-1 keine docker-compose.yml im Repo · R-2 kein Linter · R-3 `lineHtml(compare)` ignoriert Parameter → toter „Vergleichen“-Knopf im Kurs-Steckbrief (atlas.ts)
+- R-4 cleanName `.slice(0,20)` kann Emoji (Surrogatpaar) zerschneiden (server/security.ts) – unverifiziert
+
+Client-Review (Agent):
+- C-H1 round.ts submit(): Fehler → Spieler sitzt fest („Abgegeben“, Builder gesperrt)
+- C-H2 quiz.ts submit(): gleicher Fehler
+- C-H3 lobby.ts/quiz.ts rendern bei jedem SSE-Event komplett neu → Range-Drag/Fokus verloren
+- C-H4 send() verwirft Einstellungs-Patches während pending (lobby.ts, quiz.ts)
+- C-M1 home.ts Enter → doppelter Join · C-M2 training Doppelklick nächste Strecke · C-M3 training Auswertungsfehler wirft Strecke weg
+- C-M4 reveal.ts getReveal-Fehler → Spinner für immer · C-M5 expandable <li> nicht per Tastatur · C-M6 ⓘ-Tooltips nicht für Screenreader
+- C-M7 Toasts ohne aria-live, überlappen · C-M8 seg()/Toggles ohne aria-pressed · C-M9 Kontrast .pchip/.muted < 4.5:1
+- C-M10 Browser-Zurück/Neuladen in Lernen/Training → Startseite, Builder-Entwurf verloren · C-M11 ungelabelte Inputs
+- C-N1..N15: Start-Button-Text nach Fehler, Doppelklick Host-Buttons, Quiz-Zeitablauf Karte bleibt groß, roundScreen räumt Karte nicht,
+  SSE-Parse ohne try, localStorage-Struktur ungeprüft, Bezirksmittel NaN (unverif.), pickLine leere boardOptions (unverif.),
+  Prefetch-Race training, Karte springt bei Tipp, lange Namen ohne Umbruch, Icon-Buttons ohne aria-label, Schrift < 12px, stopPropagation global unwirksam
+- XSS: nichts ausnutzbar; Defense-in-depth: Lobby-Code/IDs/Farben ohne esc, Einladungslink ohne encodeURIComponent
+- Struktur: große Funktionen (lobby render 270 Z., quiz.ts 4 Screens, training 350-Z.-Closure, NetMapLayer.render 200 Z.), seg/infoTip in lobby.ts,
+  Duplikate (norm, linesAt, chip-Helfer, colorOf/lineColor, CENTER 3×, Bezirksmittel 2×, Storage-Helfer 4×, Spielerliste/Podium/Link-Kopieren/Verlassen mehrfach,
+  ALL_MODES-Scope-Hack 2×), toter Code (store.mode, lobby toggle, map.showLocateAnswer, model.resetBoxes), ~300 Zeilen totes CSS
+- Inkonsistenzen: Gebietsauswahl 3× verschieden, Zurücksetzen 3× verschieden (Training ohne confirm), Start-Button-Text
+
 ## Erledigt
 
 - [x] Phase 0.1 Branches `backup/pre-agent-run`, `refactor/structure`
 - [x] Phase 0.2 Referenzläufe (siehe Tabelle)
 - [x] Phase 0.3 Inventar
+- [x] Phase 1: Charakterisierungstests (API 17, E2E 6), Refactor Helfer→shared (2f3d5f2), NetGraph abgetrennt + Tests (c03cbcf)
 - [x] Phase 0.4 E2E-Gerüst `test/e2e/harness.ts` + `npm run e2e` (Node-Testrunner + playwright-core/Edge, Screenshots in `test/e2e/artifacts`, Auskunfts-Cache in `test/e2e/.state`); erster Test: Startseite auf 3 Bildschirmgrößen ✅
 
 ## Offen / Nächste Schritte
