@@ -5,3 +5,5 @@ data/cache/
 data/usage.json
 *.log
 .env
+test/e2e/artifacts/
+test/e2e/.state/
