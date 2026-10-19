@@ -1,7 +1,8 @@
 // Trainingsmodus: einzelne Strecken ohne Lobby, ohne Punkte – mit Top-Verbindungen für den Coach.
 import { randomBytes } from 'node:crypto';
 import type { GameSettings, RouteOption, Station, TrainingResult, TrainingRound } from '../shared/types.ts';
-import { GameError, cleanLegs, sanitizeSettings } from './game.ts';
+import { GameError } from './game.ts';
+import { cleanLegs, sanitizeSettings } from './settings.ts';
 import type { Network, PastPair } from './network.ts';
 import { EfaUnavailableError, evaluateUserRoute, topRoutes, type RouteQuery } from './routing.ts';
 import { describeSlotDate, slotTime } from './timeslots.ts';
