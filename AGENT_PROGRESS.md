@@ -4,7 +4,7 @@ Gedächtnis des Agenten. Bei Kontextverlust zuerst lesen.
 
 ## Aktueller Stand
 
-- **Phase:** 1 – Strukturbewertung
+- **Phase:** 2 – Analyse (Testmatrix, Algorithmen, UX, Sicherheit)
 - **Aktiver Branch:** `refactor/structure`
 
 ## Branches (max. ~7, alles lokal, nichts gepusht)
@@ -23,6 +23,7 @@ Geplant (Phase 4/6): `feature/accounts` (Basis: Phase-3-Stand) und höchstens 4 
 |---|---|---|
 | E1 | `master` gilt als „main“ | `origin/main` enthält nur einen leeren „Initial commit“; alle Arbeit und Releases laufen über `master`. Auf `master` wird nichts committet. |
 | E2 | Phase 1–3 auf einem Branch (`refactor/structure`), kein extra `fix/analysis-findings` | Branch-Limit ~7; Fixes bauen direkt auf dem Umbau auf. |
+| E4 | Fehler, die die Testsuite zufällig rot machen, sofort als `fix:` beheben (auch vor Phase 3) | Regel „alle Tests grün“ gilt auf jedem Branch; Beispiel: 71E-Umstiegsfrage `e78d6d5`. |
 | E3 | Accounts: SQLite über das eingebaute `node:sqlite`, Passwort-Hash mit eingebautem `crypto.argon2` (Argon2id) | Keine nativen Abhängigkeiten (Windows-Laptop + Alpine-Image), DB-Datei im vorhandenen `STATE_DIR`-Volume → persistent, Ditto-Deployment bleibt einfach. Node 24.15 bietet beides. |
 
 ## Phase 0 – Ausgangslage (Referenz)
@@ -147,6 +148,14 @@ Algorithmus-/Deploy-Review (Agent, Repro-Skripte in docs/analysis/evidence/agent
 - [x] Phase 1: Charakterisierungstests (API 17, E2E 6), Refactor Helfer→shared (2f3d5f2), NetGraph abgetrennt + Tests (c03cbcf)
 - [x] Phase 0.4 E2E-Gerüst `test/e2e/harness.ts` + `npm run e2e` (Node-Testrunner + playwright-core/Edge, Screenshots in `test/e2e/artifacts`, Auskunfts-Cache in `test/e2e/.state`); erster Test: Startseite auf 3 Bildschirmgrößen ✅
 
+- [x] Phase 1 abgeschlossen: `docs/analysis/01-struktur.md` (S1–S10), toter Code + CSS, server/settings.ts, createApp, storage.ts,
+      CENTER, docker-compose.yml (geprüft: startet, health ok). 67 Tests + 6 E2E + Smoke grün. Fix 71E-Umstiegsfrage (E4).
+- R-5 (gefunden, behoben `e78d6d5`): Quiz-Umstiegsfrage nahm Sonderlinie als Ziellinie
+
 ## Offen / Nächste Schritte
 
-1. Phase 1: Strukturbewertung → `docs/analysis/01-struktur.md`
+1. Phase 2a: Testmatrix als E2E (alle Modi × Einstellungen inkl. Grenzwerte, Mehrspieler, Abbruch/Reload/Zurück/2 Tabs/Doppelklick/Namen)
+2. Phase 2b: Algorithmen – Wertung mit handgerechneten Werten, property-based; Routing mit gemockter Auskunft (synth2)
+3. Phase 2c: UX/a11y – Screenshots 3 Größen, Kontrast-Messung, Tastatur, Labels
+4. Phase 2d: Sicherheit/Performance/Logging
+5. → `docs/analysis/02-befunde.md`, `03-ideen.md`
