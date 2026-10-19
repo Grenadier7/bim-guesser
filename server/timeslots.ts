@@ -79,11 +79,6 @@ export function slotTime(slot: SlotId, net: NetMode, regularDays: Record<DayType
   return atTime(day, SLOT_TIME[slot]);
 }
 
-/** Für das Build-Skript: Wochentag 12:00 des aktuellen Netzes */
-export function nextSlotDate(slot: SlotId): number {
-  return atTime(nextTypicalDay(SLOT_DAYTYPE[slot]), SLOT_TIME[slot]);
-}
-
 export function describeSlotDate(min: number): string {
   const d = new Date(min * 60000);
   const p = (n: number) => String(n).padStart(2, '0');

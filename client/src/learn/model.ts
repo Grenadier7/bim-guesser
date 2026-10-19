@@ -56,11 +56,6 @@ export function setBox(key: string, box: number) {
   progress[key] = Math.max(0, Math.min(MASTERED, box));
   save(PROGRESS_KEY, progress);
 }
-export function resetBoxes(keys: string[]) {
-  for (const k of keys) delete progress[k];
-  save(PROGRESS_KEY, progress);
-}
-
 // ---------------------------------------------------------------- Hilfen
 
 /** Haltefolgen im regulären Netz (Lernmodus und Kurse zeigen immer das reguläre Netz) */

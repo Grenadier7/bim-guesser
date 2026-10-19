@@ -155,14 +155,6 @@ export class GameMap {
     if (pan) this.map.panTo([lat, lon]);
   }
 
-  /** Antwort bei "Wo liegt …?": Tipp + echte Station + Linie dazwischen */
-  showLocateAnswer(guess: LatLon, actual: { lat: number; lon: number; name: string }) {
-    this.learnMarks.addLayer(L.marker(guess, { icon: pin('pin-guess', '?', 24), zIndexOffset: 900 }));
-    this.learnMarks.addLayer(L.polyline([guess, [actual.lat, actual.lon]], { color: '#333', weight: 2, dashArray: '4 6' }));
-    this.showTarget(actual.lat, actual.lon, actual.name);
-    this.fit(L.latLngBounds([guess, [actual.lat, actual.lon]]).pad(0.5), 15);
-  }
-
   /** Quiz-Auflösung "Wo liegt …?": Tipps aller Spieler mit Namen + echte Station */
   showPlayerGuesses(guesses: { name: string; ll: LatLon; me: boolean }[], actual: { lat: number; lon: number; name: string }) {
     const bounds = L.latLngBounds([[actual.lat, actual.lon]]);

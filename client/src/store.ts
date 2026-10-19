@@ -1,5 +1,5 @@
 // App-Zustand: Sitzung (Lobby-Code + Spieler-ID), Spielzustand und Live-Verbindung (SSE).
-import type { GameEvent, GameMode, GameSettings, GameState, LobbyState, PlayerPublic, QuizState, RoundPublic, RoundReveal } from '../../shared/types.ts';
+import type { GameEvent, GameSettings, GameState, LobbyState, PlayerPublic, QuizState, RoundPublic, RoundReveal } from '../../shared/types.ts';
 import type { QuizSettings } from '../../shared/quiz.ts';
 import { TIME_LIMITS } from '../../shared/rules.ts';
 import { NOT_REMEMBERED } from '../../shared/defaults.ts';
@@ -103,7 +103,7 @@ export function isHost(): boolean {
 /** Zustand als Routenjagd (wirft nicht – Bildschirme werden nur im passenden Modus geöffnet) */
 export const routeState = () => app.state as GameState;
 export const quizState = () => app.state as QuizState;
-export const mode = (): GameMode | null => app.state?.mode ?? null;
+
 
 export function currentRound(): RoundPublic | null {
   const s = app.state;

@@ -128,7 +128,7 @@ export const DISTANCES: { id: DistanceRange; label: string; range: [number, numb
 
 /** Punkte-Faktor je Mindest-Umstiegszahl (0 · 1 · 2) */
 export const MIN_TRANSFER_FACTORS = [1, 1.05, 1.1];
-export const MIN_TRANSFER_MAX = 2;
+
 
 export function cleanMinTransfers(v: unknown): 0 | 1 | 2 | null {
   const n = Number(v);
