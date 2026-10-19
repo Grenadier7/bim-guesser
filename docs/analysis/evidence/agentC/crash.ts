@@ -1,0 +1,32 @@
+// Offline E2E: EFA fails at reveal time triggered by the round timer -> what happens to the process?
+const R = 'file:///D:/files/!workingDIR/Zuhause_Dateien/verbindungs_guesser/';
+const { Network } = await import(R + 'server/network.ts');
+const { Game } = await import(R + 'server/game.ts');
+const { naiveMinutes } = await import(R + 'server/efa.ts');
+const net = Network.load();
+const efa2st = new Map<string, string>();
+for (const [sid, ids] of Object.entries(net.data.efaIds) as [string, string[]][]) for (const id of ids) efa2st.set(id, sid);
+let fail = false;
+const pt = (sid: string, min: number) => { const d = new Date(min * 60000); const p = (n: number) => String(n).padStart(2, '0'); const s = net.station(sid);
+  return { name: s.name, ref: { id: net.data.efaIds[sid][0], coords: `${s.lon},${s.lat}` }, dateTime: { date: `${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`, time: `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}` } }; };
+globalThis.fetch = (async (url: string) => {
+  if (fail) throw new Error('fetch failed (simuliert)');
+  const q = new URL(url).searchParams;
+  const o = efa2st.get(q.get('name_origin')!)!, d = efa2st.get(q.get('name_destination')!)!;
+  const dt = q.get('itdDate')!, tm = q.get('itdTime')!;
+  const T = naiveMinutes(+dt.slice(0, 4), +dt.slice(4, 6), +dt.slice(6, 8), +tm.slice(0, 2), +tm.slice(2, 4));
+  const trips = Array.from({ length: Number(q.get('calcNumberOfTrips') ?? 5) }, (_, i) => ({ legs: [{ points: [pt(o, T + 1 + i * 5), pt(d, T + 21 + i * 5)], mode: { code: 2, number: 'U6' }, stopSeq: [], path: '' }] }));
+  return new Response(JSON.stringify({ trips }), { status: 200 });
+}) as any;
+process.on('exit', (c) => console.log('process exit code', c));
+const g = new Game('TEST1', net, { minTransfers: 0, roundTimeLimitSec: 20, rounds: 1, locate: false } as any);
+const host = g.addPlayer('A');
+g.addPlayer('B');
+await g.start(host.token);
+console.log('round open, phase', g.phase);
+const p = net.lines.get('U1')!.patterns[0];
+fail = true;
+const r = await g.submit(host.token, 0, [{ line: 'U1', from: p[1], to: p[4] }], null);
+console.log('submitted, reveal now?', r);
+console.log('waiting for timer (~23 s)…');
+setTimeout(() => console.log('still alive after timer; phase', g.phase, 'round state', g.state().rounds[0].status), 30000);

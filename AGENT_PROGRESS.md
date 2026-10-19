@@ -126,6 +126,19 @@ Server-Review (Agent):
 - Struktur: sanitizeSettings/cleanLegs in game.ts (training importiert), index.ts startet beim Import (kein createApp), setInterval bei Modul-Load,
   Magic Numbers, cleanName 2× mit anderer Bedeutung (efa vs security), toter Code nextSlotDate, MIN_TRANSFER_MAX, unnötige Exporte; Logging uneinheitlich
 
+Algorithmus-/Deploy-Review (Agent, Repro-Skripte in docs/analysis/evidence/agentC):
+- A-K1 = S-H1 (verifiziert: Prozess exit 1, crash.ts)
+- A-H1 Ø-Wartezeit: LegTimetable-Abdeckung lückenhaft (firstAfter lädt ab max(t,coveredUntil); departures(t<coveredFrom) lädt nicht nach) → U1 60-min + U3 3-min: Umstieg 13 statt ≤2 min (synth2.ts)
+- A-H2 = S-H2 (gemessen ~106 KB/Eintrag) · A-H3 prepare späterer Runde wirft → Spiel zurück in Lobby, Ergebnisse weg; randomPair Error→500
+- A-M1 leerer Pool → TypeError; Skey+Nacht+short+10 Runden 1/20 Abbruch · A-M2 Modelle gemischt (averagedRoute null / sample ohne Wartezeit)
+- A-M3 EFA-Last (minTransfers erst nach vollem topRoutes, departures lädt 180 min, banLines nur nachträglich) · A-M4 Disk-Cache 1,15 GB, Fehlerantworten 3 Tage gecacht
+- A-M5 Training ohne sortRoutes/routeCost (beste=schnellste), fixes Paar ungeprüft; Ortung 200 vs 250 m · A-M6 Referenztage Juni → nach Fahrplanwechsel/EFA-Horizont kein „Regulär“
+- A-M7 release.ts taggt beliebigen Branch, latest bei jedem Tag
+- A-N: expectedWait diskret (H−1)/2 statt H/2 („alle 14 min“ bei 15er-Takt); Startwartefaktor springt bei 1 min Fußweg; Ukey 0.85 wirkungslos (0.81 statt 0.77);
+  maxRoundPoints 2113 statt 2670 (>100 % möglich); timeBonus elapsed<0; withSlot-Race/Retry bei 4xx; via-Suche fällt auf null; Pfingstferien 2027 fehlen, Ferienliste endet 2027-09;
+  nextTypicalDay lokal/UTC; Fokus share 0.9 → real 48 %; usage ohne Zerfall, RNG nicht injizierbar; kein SIGTERM-Handler/init; update.sh Rollback holt latest wieder; keine compose im Repo
+- Testvorschläge (Werte gerechnet): scoreRoute-Tabelle, tipShareOf, computeScore total 487, difficultyMultiplier, maxRoundPoints 2670, expectedWait-Fälle, Routing-Regressionstest synth2
+
 ## Erledigt
 
 - [x] Phase 0.1 Branches `backup/pre-agent-run`, `refactor/structure`
