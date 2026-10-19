@@ -19,7 +19,6 @@ import type {
   TipInfo,
   TipKind,
 } from './types.ts';
-import { DEFAULT_SETTINGS } from './defaults.ts';
 
 // ---------------------------------------------------------------- Einstellungen
 
@@ -191,6 +190,15 @@ export function linePatterns(line: Line, net: NetMode): string[][] {
   const flag = net === 'current' ? 'c' : 'r';
   return line.patterns.filter((_, i) => line.nets[i].includes(flag));
 }
+
+/** Haltefolgen im regulären Netz – Linien, die es nur im aktuellen Fahrplan gibt, mit ihren aktuellen */
+export function regularPatterns(line: Line): string[][] {
+  const reg = linePatterns(line, 'regular');
+  return reg.length ? reg : linePatterns(line, 'current');
+}
+
+/** Sonderlinien wie 71E oder 26E (Ersatz-/Verstärkerverkehr) – zum Lernen und im Quiz irreführend */
+export const isSpecialLine = (l: { id: string }) => /^\d+E$/.test(l.id);
 
 export function isSlotId(v: unknown): v is SlotId {
   return TIME_SLOTS.some((s) => s.id === v);

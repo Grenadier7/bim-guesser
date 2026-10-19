@@ -1,12 +1,10 @@
 // Netz-Hilfen im Browser: Linien suchen, Einstiege und Ausstiege ermitteln.
 import type { Line, NetMode, NetworkPublic, Restriction, Station } from '../../shared/types.ts';
+import { distM } from '../../shared/geo.ts';
 import { linePatterns, restrictionAllowsLine } from '../../shared/rules.ts';
 
-export function distM(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
-  const dLat = (a.lat - b.lat) * 111_320;
-  const dLon = (a.lon - b.lon) * 111_320 * Math.cos((a.lat * Math.PI) / 180);
-  return Math.hypot(dLat, dLon);
-}
+export { distM };
+
 
 export function fmtDist(m: number): string {
   return m < 950 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`;

@@ -1,10 +1,13 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { distM, normName } from '../shared/geo.ts';
 import type { GameSettings, Line, NetMode, NetworkData, NetworkPublic, SlotId, Station, StationKind, StationRef } from '../shared/types.ts';
 import { distanceRange, linePatterns } from '../shared/rules.ts';
 import { inStationKinds } from '../shared/pools.ts';
 import type { EfaPoint } from './efa.ts';
 import { STATE_DIR } from './paths.ts';
+
+export { distM };
 
 const FILE = path.resolve(import.meta.dirname, '../data/network.json');
 /** Wie oft jede Station schon Start/Ziel war – damit nicht dieselben ständig kommen */
@@ -20,20 +23,7 @@ export interface PastPair {
   b: { lat: number; lon: number };
 }
 
-export function distM(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
-  const dLat = (a.lat - b.lat) * 111_320;
-  const dLon = (a.lon - b.lon) * 111_320 * Math.cos((a.lat * Math.PI) / 180);
-  return Math.hypot(dLat, dLon);
-}
 
-function normName(name: string): string {
-  return name
-    .replace(/\s*\(.*?\)\s*/g, ' ')
-    .replace(/\s+(S\s*U|U\s*S|S|U)$/i, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
 
 export class Network {
   readonly data: NetworkData;

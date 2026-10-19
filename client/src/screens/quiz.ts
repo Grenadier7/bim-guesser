@@ -1,6 +1,6 @@
 // Quiz (Mehrspieler): Lobby mit Einstellungen, Frage, Auflösung, Endstand
 import type { LatLon, Line, Mode, QuizState } from '../../../shared/types.ts';
-import { MODE_ICON, MODE_LABEL, linePatterns } from '../../../shared/rules.ts';
+import { MODE_ICON, MODE_LABEL, regularPatterns } from '../../../shared/rules.ts';
 import {
   DEFAULT_QUIZ_SETTINGS,
   FREQUENCY_LABELS,
@@ -28,8 +28,7 @@ function chip(id: string): string {
 }
 
 function linePaths(l: Line): { paths: [number, number][][]; stops: { id: string; lat: number; lon: number; name: string; terminal: boolean }[] } {
-  const reg = linePatterns(l, 'regular');
-  const pats = reg.length ? reg : linePatterns(l, 'current');
+  const pats = regularPatterns(l);
   const ends = new Set(pats.flatMap((p) => [p[0], p[p.length - 1]]));
   return {
     paths: pats.map((p) => p.map((id) => [app.net.station(id).lat, app.net.station(id).lon] as [number, number])),

@@ -1,6 +1,7 @@
 // Lernmodus – Daten: meine Linien (⭐), Lern-Umfang, Linien-Steckbriefe, Lernstand
 import type { LatLon, Line, Mode, Station } from '../../../shared/types.ts';
-import { linePatterns } from '../../../shared/rules.ts';
+import { shuffle } from '../../../shared/random.ts';
+import { isSpecialLine, regularPatterns } from '../../../shared/rules.ts';
 import { app } from '../store.ts';
 
 // ---------------------------------------------------------------- Speicher
@@ -62,18 +63,9 @@ export function resetBoxes(keys: string[]) {
 
 // ---------------------------------------------------------------- Hilfen
 
-export function patternsOf(line: Line): string[][] {
-  const reg = linePatterns(line, 'regular');
-  return reg.length ? reg : linePatterns(line, 'current');
-}
-
-export function shuffle<T>(a: T[]): T[] {
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
+/** Haltefolgen im regulären Netz (Lernmodus und Kurse zeigen immer das reguläre Netz) */
+export const patternsOf = regularPatterns;
+export { isSpecialLine, shuffle };
 
 // ---------------------------------------------------------------- Lern-Umfang
 
@@ -103,8 +95,6 @@ export function scopeOfLines(ids: string[], label: string): Scope {
 /** alle Verkehrsmittel außer Nachtbus – für „Von hier fährst du mit …“ */
 export const DAY_SCOPE = (): Scope => ({ label: '', stations: [], stationSet: new Set(), lines: [], area: null, modes: new Set<Mode>(['U', 'S', 'T', 'B']) });
 
-/** Sonderlinien wie 71E oder 26E (Ersatz-/Verstärkerverkehr) – zum Lernen irreführend */
-export const isSpecialLine = (l: Line) => /^\d+E$/.test(l.id);
 
 /** Linien an einer Station, die im Bereich zählen (ohne Sonderlinien) */
 export function linesAt(st: Station, scope: Scope): Line[] {

@@ -1,6 +1,11 @@
 // Quiz: Fragetypen, Erzeugung und Bewertung – läuft am Server (gemeinsame Fragen für alle Spieler).
 import type { District, LatLon, Line, Mode, Station } from './types.ts';
 import { DEFAULT_QUIZ_SETTINGS } from './defaults.ts';
+import { distM } from './geo.ts';
+import { pick, shuffle } from './random.ts';
+import { isSpecialLine } from './rules.ts';
+
+export { distM };
 
 export type QuizType =
   | 'locate'
@@ -132,20 +137,7 @@ export interface QuizNet {
   patterns(line: Line): string[][];
 }
 
-export function distM(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
-  const dLat = (a.lat - b.lat) * 111_320;
-  const dLon = (a.lon - b.lon) * 111_320 * Math.cos((a.lat * Math.PI) / 180);
-  return Math.hypot(dLat, dLon);
-}
 
-function shuffle<T>(a: T[]): T[] {
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-const pick = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
 
 interface QuizScope {
   stations: Station[];
@@ -154,12 +146,10 @@ interface QuizScope {
   modes: Set<Mode>;
 }
 
-/** Sonderlinien wie 71E oder 26E (Ersatz-/Verstärkerverkehr) – im Quiz irreführend */
-const isSpecial = (l: Line) => /^\d+E$/.test(l.id);
 
 export function quizScope(net: QuizNet, s: QuizSettings): QuizScope {
   const modes = new Set(s.modes);
-  const candidates = net.lines.filter((l) => modes.has(l.mode) && !isSpecial(l) && net.patterns(l).length);
+  const candidates = net.lines.filter((l) => modes.has(l.mode) && !isSpecialLine(l) && net.patterns(l).length);
   // nur Stationen, an denen im regulären Netz eine dieser Linien hält (keine Halte aus Sonderführungen)
   const served = new Set(candidates.flatMap((l) => net.patterns(l).flat()));
   let stations = net.stations.filter((st) => served.has(st.id));
@@ -170,7 +160,7 @@ export function quizScope(net: QuizNet, s: QuizSettings): QuizScope {
 }
 
 function linesAt(net: QuizNet, st: Station, scope: QuizScope): Line[] {
-  return st.lines.map((id) => net.line(id)!).filter((l) => l && scope.modes.has(l.mode) && !isSpecial(l) && net.patterns(l).some((p) => p.includes(st.id)));
+  return st.lines.map((id) => net.line(id)!).filter((l) => l && scope.modes.has(l.mode) && !isSpecialLine(l) && net.patterns(l).some((p) => p.includes(st.id)));
 }
 
 function mainPattern(net: QuizNet, l: Line): string[] {

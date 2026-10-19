@@ -12,6 +12,7 @@ import readline from 'node:readline';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import yauzl from 'yauzl';
+import { distM, normName } from '../shared/geo.ts';
 import type { DayType, District, LatLon, Line, Mode, NetworkData, ReferenceDay, Station } from '../shared/types.ts';
 import { lineColor } from '../shared/rules.ts';
 import * as efa from '../server/efa.ts';
@@ -97,20 +98,7 @@ interface Node {
 /** Haltefolge (EFA-IDs) mit Netz-Flags "c"/"r"/"cr" */
 type FlaggedPatterns = Map<string, string>;
 
-function distM(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
-  const dLat = (a.lat - b.lat) * 111_320;
-  const dLon = (a.lon - b.lon) * 111_320 * Math.cos((a.lat * Math.PI) / 180);
-  return Math.hypot(dLat, dLon);
-}
 
-function normName(name: string): string {
-  return name
-    .replace(/\s*\(.*?\)\s*/g, ' ')
-    .replace(/\s+(S\s*U|U\s*S|S|U)$/i, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .toLowerCase();
-}
 
 /** "at:49:1667:0:1" -> EFA-ID "60201667" (nur Wiener Haltestellen, Präfix at:49) */
 function gtfsToEfa(stopId: string): string | null {

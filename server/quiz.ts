@@ -1,6 +1,6 @@
 // Quiz – Mehrspieler: alle bekommen dieselbe Frage, Punkte für richtig und schnell.
 import type { LatLon, QuizAnswerResult, QuizRevealPublic, QuizState } from '../shared/types.ts';
-import { linePatterns } from '../shared/rules.ts';
+import { regularPatterns } from '../shared/rules.ts';
 import {
   DEFAULT_QUIZ_SETTINGS,
   generateQuiz,
@@ -32,8 +32,7 @@ export function quizNet(net: Network): QuizNet {
     patterns(l) {
       let hit = cache.get(l.id);
       if (!hit) {
-        const reg = linePatterns(l, 'regular');
-        hit = reg.length ? reg : linePatterns(l, 'current');
+        hit = regularPatterns(l);
         cache.set(l.id, hit);
       }
       return hit;

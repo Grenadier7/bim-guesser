@@ -5,6 +5,7 @@ import { NET_COLOR } from '../../netcolors.ts';
 import type { NetView, Piece } from '../../netmap.ts';
 import { app } from '../../store.ts';
 import { esc, lineChip } from '../../ui.ts';
+import { pick } from '../../../../shared/random.ts';
 import { patternsOf, shuffle } from '../model.ts';
 
 export interface Quiz {
@@ -136,7 +137,7 @@ export function quiz(q: string, right: string, wrong: string[], explain: string,
   return { q, options: shuffle([right, ...others]).map((x) => ({ id: x, html: html(x) })), correct: right, explain };
 }
 export const lineQuiz = (q: string, right: string, wrong: string[], explain: string) => quiz(q, right, wrong, explain, (x) => chip(x));
-export const pick = <T>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
+export { pick };
 export const ask = (qz: Quiz | null): Step[] => (qz ? [{ title: 'Frage', html: '', quiz: qz }] : []);
 
 export function table(rows: [string, string][]): string {

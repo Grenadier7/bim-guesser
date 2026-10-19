@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { DEFAULT_QUIZ_SETTINGS, generateQuiz, gradeQuiz, QUIZ_TYPE_ORDER, type QuizNet, type QuizSettings } from '../shared/quiz.ts';
-import { linePatterns } from '../shared/rules.ts';
+import { regularPatterns } from '../shared/rules.ts';
 import type { NetworkPublic } from '../shared/types.ts';
 
 const data = JSON.parse(readFileSync(new URL('../data/network.json', import.meta.url), 'utf8')) as NetworkPublic;
@@ -15,10 +15,7 @@ const net: QuizNet = {
   line: (id) => lines.get(id),
   lines: data.lines,
   districts: data.districts,
-  patterns: (l) => {
-    const r = linePatterns(l, 'regular');
-    return r.length ? r : linePatterns(l, 'current');
-  },
+  patterns: regularPatterns,
 };
 
 for (const type of QUIZ_TYPE_ORDER)
