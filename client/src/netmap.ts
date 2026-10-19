@@ -4,7 +4,7 @@
 // Alle Ansichten (Kurse, Test) zeichnen dieselbe Karte und blenden nur Linien hervor oder aus.
 import L from 'leaflet';
 import type { Line, Station } from '../../shared/types.ts';
-import { distM } from './net.ts';
+import { CENTER, distM } from '../../shared/geo.ts';
 import { NET_COLOR } from './netcolors.ts';
 import { kindOf, NetGraph, type Edge, type Kind, type LL } from './netgraph.ts';
 import { app } from './store.ts';
@@ -13,7 +13,6 @@ import { esc } from './ui.ts';
 export { kindOf, MAP_BUSES, NetGraph, type Kind } from './netgraph.ts';
 export { NET_COLOR };
 
-const CENTER = { lat: 48.2085, lon: 16.3731 }; // Stephansplatz
 
 // ---------------------------------------------------------------- Darstellung
 

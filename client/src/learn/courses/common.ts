@@ -1,6 +1,6 @@
 // Lernmodus – Kurse: gemeinsame Typen, Farben und Helfer (Netz, Fragen, Tabellen)
 import type { Line, Station } from '../../../../shared/types.ts';
-import { distM } from '../../net.ts';
+import { CENTER, distM } from '../../../../shared/geo.ts';
 import { NET_COLOR } from '../../netcolors.ts';
 import type { NetView, Piece } from '../../netmap.ts';
 import { app } from '../../store.ts';
@@ -45,7 +45,7 @@ export interface Course {
   build: () => Step[];
 }
 
-export const CENTER = { lat: 48.2085, lon: 16.3731 }; // Stephansplatz
+export { CENTER };
 export const TRANSDANUBIEN = new Set([21, 22]);
 
 // ---------------------------------------------------------------- Farben
