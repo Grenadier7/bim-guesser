@@ -9,7 +9,7 @@ import { homeScreen } from './screens/home.ts';
 import { hostActions, hostBar } from './screens/host.ts';
 import { learnScreen } from './screens/learn.ts';
 import { lobbyScreen } from './screens/lobby.ts';
-import { quizFinalScreen, quizLobbyScreen, quizQuestionScreen, quizRevealScreen } from './screens/quiz.ts';
+import { quizFinalScreen, quizLobbyScreen, quizQuestionScreen, quizRevealScreen } from './screens/quiz/index.ts';
 import { revealScreen } from './screens/reveal.ts';
 import { roundScreen } from './screens/round.ts';
 import { loadingHtml, type Screen } from './screens/screen.ts';

@@ -32,28 +32,14 @@ import { api } from '../api.ts';
 import { app, routeState, endSession, inviteLink, isHost, savePrefs, setMobileMap } from '../store.ts';
 import { distM } from '../net.ts';
 import { esc, toast } from '../ui.ts';
+import { infoTip, seg, toggleInfo } from '../widgets.ts';
 import type { Screen } from './screen.ts';
-
-interface Opt {
-  value: string;
-  label: string;
-  title?: string;
-}
-
-export function seg(key: string, opts: Opt[], current: string, disabled: boolean): string {
-  return `<div class="seg seg-wide">${opts
-    .map(
-      (o) =>
-        `<button data-k="${key}" data-v="${esc(o.value)}" class="${o.value === current ? 'on' : ''}" ${o.title ? `title="${esc(o.title)}"` : ''} ${disabled ? 'disabled' : ''}>${o.label}</button>`,
-    )
-    .join('')}</div>`;
-}
 
 /**
  * Haltestellen je Verkehrsmittel: Kästchen an/aus (an = alle, aus = keine) und darunter ein
  * kleiner senkrechter Regler für die Stufe (oben = alle, unten = aus).
  */
-export function stationPicker(current: StationKind[], disabled: boolean): string {
+function stationPicker(current: StationKind[], disabled: boolean): string {
   const dis = disabled ? 'disabled' : '';
   return `<div class="station-cols">${STATION_GROUPS.map((g) => {
     const lvl = groupLevel(current, g.id);
@@ -80,22 +66,10 @@ function stationsText(kinds: StationKind[]): string {
   return `${STATION_KINDS.filter((k) => kinds.includes(k.id)).map((k) => k.label).join(', ')} · ${n} Haltestellen`;
 }
 
-/** Kleines ⓘ – Erklärung erscheint beim Drüberfahren/Antippen in einem Fenster */
-export function infoTip(html: string): string {
-  return `<button type="button" class="info-tip" aria-label="Erklärung anzeigen">ⓘ<span class="tip-pop" role="tooltip">${html}</span></button>`;
-}
-
 /** Erklärung zu "Beste / Schnellste Route" */
 function goalInfo(st: GameSettings): string {
   const p = transferPenalty({ ...st, goal: 'best' });
   return `<b>🏅 Beste Route:</b> Reisezeit + ${p} min je Umstieg${st.avgWait ? ' (die Wartezeit ist über die Ø-Wartezeiten schon drin)' : ''}. Beispiel: 30 min mit 2 Umstiegen zählen als ${30 + 2 * p} min – eine direkte Verbindung mit ${30 + 2 * p - 1} min gewinnt.<br><b>⚡ Schnellste Route:</b> nur die Reisezeit zählt.`;
-}
-
-/** Schalter mit ⓘ statt Erklärtext (optional eine kurze Zusatzzeile) */
-export function toggleInfo(key: string, label: string, info: string, on: boolean, disabled: boolean, sub = ''): string {
-  return `<label class="toggle ${disabled ? 'is-disabled' : ''}">
-    <input type="checkbox" data-k="${key}" ${on ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
-    <span class="switch"></span><span class="tl"><b>${label} ${infoTip(info)}</b>${sub ? `<small>${sub}</small>` : ''}</span></label>`;
 }
 
 type AdvTab = 'diff' | 'rules' | 'world';
@@ -104,12 +78,6 @@ const ADV_TABS: { id: AdvTab; label: string }[] = [
   { id: 'rules', label: '📏 Regeln' },
   { id: 'world', label: '🕒 Zeit & Netz' },
 ];
-
-export function toggle(key: string, label: string, hint: string, on: boolean, disabled: boolean): string {
-  return `<label class="toggle ${disabled ? 'is-disabled' : ''}">
-    <input type="checkbox" data-k="${key}" ${on ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
-    <span class="switch"></span><span class="tl"><b>${label}</b><small>${hint}</small></span></label>`;
-}
 
 function regularHint(s: GameSettings): string {
   if (s.network === 'current') return 'Nächster echter Tag – mit allen aktuellen Sperren und Ersatzverkehren.';

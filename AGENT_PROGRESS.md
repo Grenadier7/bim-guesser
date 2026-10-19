@@ -110,6 +110,22 @@ Client-Review (Agent):
   ALL_MODES-Scope-Hack 2×), toter Code (store.mode, lobby toggle, map.showLocateAnswer, model.resetBoxes), ~300 Zeilen totes CSS
 - Inkonsistenzen: Gebietsauswahl 3× verschieden, Zurücksetzen 3× verschieden (Training ohne confirm), Start-Button-Text
 
+Server-Review (Agent):
+- S-H1 Auswertung: EFA-Fehler in evaluateUserRoute → reveal() rejected, Promise in `revealing` gespeichert; via Timer/maybeReveal unhandled rejection → Prozess stirbt; sonst Runde hängt für immer (game.ts reveal, routing.ts chainRoute)
+- S-H2 efa.ts memCache bis 5000 rohe JSON (~100 KB/Eintrag) → ~500 MB > mem_limit 384m
+- S-M1 cancelRound/backToLobby während laufender Auswertung → Punkte trotzdem/ins neue Spiel · S-M2 Abgaben während Auswertung angenommen aber 0 Punkte; pause in Auswertung
+- S-M3 Lösung im öffentlichen Zustand: uLink drawLines enthält Antwort; lineShape drawLineId = Antwort; state() schickt Start/Ziel-Namen+Koordinaten auch bei noNames/vor Wo-liegt
+- S-M4 Lobby-Kapazität (100 global) leicht erschöpfbar · S-M5 cleanup schließt SSE-Streams nicht, Lobbys mit Spielern nach 3 h weg
+- S-M6 Top-Routen mischen Fahrzeit/Tür-zu-Tür ohne avgWait · S-M7 fehlgeschlagener Start: generation nicht erhöht, Hintergrundkette läuft weiter
+- S-M8 Disk-Cache nie aufgeräumt (lokal 1,2 GB)
+- S-N1 `{"token":{"toString":1}}` → 500 + Stack · S-N2 training evaluate/randomPair Fehler als 500 · S-N3 Emoji-Surrogat & ZWJ in Namen (verifiziert)
+- S-N4 verwaiste Spieler nie entfernt · S-N5 SSE nach leave weiter · S-N6 maxRoundPoints ignoriert Beat-Bonus (1300)
+- S-N7 Ukey-Faktor 0.85 wirkungslos (Math.max(...,0.9)) · S-N8 Wo-liegt voll 200 m (Quiz) vs 250 m (Route); Mehrfachauswahl alles anklicken → Teilpunkte
+- S-N9 pause/resume Quiz still no-op vs Routenjagd Fehler · S-N10 revealing-Map nie geleert, Lobby-Codes Math.random, 404/403 verrät Code
+- S-N11 nextTypicalDay mischt lokal/UTC; Schulferien nur bis 2027-09
+- Struktur: sanitizeSettings/cleanLegs in game.ts (training importiert), index.ts startet beim Import (kein createApp), setInterval bei Modul-Load,
+  Magic Numbers, cleanName 2× mit anderer Bedeutung (efa vs security), toter Code nextSlotDate, MIN_TRANSFER_MAX, unnötige Exporte; Logging uneinheitlich
+
 ## Erledigt
 
 - [x] Phase 0.1 Branches `backup/pre-agent-run`, `refactor/structure`
