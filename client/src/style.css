@@ -998,13 +998,6 @@ small {
 
 /* ---------------------------------------------------------------- Startseite */
 
-.home-cards {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
-  margin-top: 6px;
-}
-
 .card {
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -1134,10 +1127,6 @@ small {
 
 .tabs button:disabled {
   cursor: default;
-}
-
-.tab-body {
-  padding-top: 8px;
 }
 
 .toggles {
@@ -1481,15 +1470,6 @@ small {
 
 /* ---------------------------------------------------------------- Schwierigkeits-Regler & Fokus */
 
-.sliders {
-  margin-top: 8px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--bg);
-  display: grid;
-  gap: 6px;
-}
-
 .slider-row {
   display: grid;
   grid-template-columns: 92px 1fr auto;
@@ -1516,10 +1496,6 @@ small {
 input[type='range'] {
   width: 100%;
   accent-color: var(--accent);
-}
-
-.sliders .toggle {
-  margin-top: 4px;
 }
 
 .hint.mult {
@@ -1629,10 +1605,6 @@ input[type='range'] {
 
 /* ---------------------------------------------------------------- Lernmodus */
 
-.card-learn {
-  background: #f6f8ff;
-}
-
 .learn-head h2 {
   margin: 6px 0 10px;
 }
@@ -1645,11 +1617,6 @@ input[type='range'] {
   margin-top: 12px;
   display: grid;
   gap: 10px;
-}
-
-.learn-search {
-  display: grid;
-  gap: 8px;
 }
 
 .learn-card {
@@ -1716,11 +1683,6 @@ input[type='range'] {
   opacity: 1;
   border-color: var(--ink);
   font-weight: 600;
-}
-
-.quiz-stats {
-  font-size: 13px;
-  color: var(--muted);
 }
 
 .quiz-options {
@@ -1992,38 +1954,6 @@ input[type='range'] {
   padding: 0;
 }
 
-.learn-scope {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-
-.learn-scope select {
-  width: 100%;
-  padding: 8px;
-}
-
-.quick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.quick button {
-  border: 1px dashed #b9bec6;
-  background: #fff;
-  border-radius: 8px;
-  padding: 4px 9px;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.picked-lines .x {
-  margin-left: 2px;
-  color: var(--muted);
-  font-weight: 700;
-}
-
 .scope-card {
   display: grid;
   gap: 4px;
@@ -2065,35 +1995,8 @@ input[type='range'] {
   margin-top: 10px;
 }
 
-.learn-top {
-  display: grid;
-  gap: 4px;
-  margin: 8px 0 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: var(--bg);
-}
-
-.learn-q h3 {
-  margin: 4px 0 10px;
-  line-height: 1.45;
-}
-
-.learn-q h3 .chip {
-  vertical-align: 2px;
-}
-
 .ex-label {
   font-weight: 600;
-}
-
-.q-name {
-  color: #1e6fbf;
-}
-
-.learn-q .btn-dark {
-  width: 100%;
-  margin-top: 10px;
 }
 
 .learn > .link:last-child {
@@ -2150,15 +2053,6 @@ input[type='range'] {
   padding: 12px 8px;
 }
 
-.explore-lines {
-  margin: 10px 0;
-}
-
-.explore-lines .line-opt.sel .chip {
-  outline: 2px solid var(--ink);
-  outline-offset: 1px;
-}
-
 .stop-list li.in {
   font-weight: 700;
 }
@@ -2173,46 +2067,11 @@ input[type='range'] {
   margin-bottom: 8px;
 }
 
-.line-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.line-list li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 8px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  cursor: pointer;
-}
-
-.line-list li:hover {
-  border-color: #9aa1aa;
-}
-
 .swatch {
   flex: none;
   width: 6px;
   align-self: stretch;
   border-radius: 3px;
-}
-
-.ll-text {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  display: flex;
-  flex-direction: column;
-}
-
-.line-list .ok {
-  color: var(--good);
-  font-weight: 800;
 }
 
 .sentence {
@@ -2305,19 +2164,7 @@ input[type='range'] {
   margin: 6px 0 4px;
 }
 
-.test-box .toggles {
-  margin: 4px 0 0;
-}
-
-.test-box .btn-big {
-  margin: 10px 0 6px;
-}
-
 /* ---------------------------------------------------------------- Training */
-
-.card-train {
-  background: #f3fbf5;
-}
 
 .training .facts li {
   font-size: 13px;
@@ -2680,61 +2527,6 @@ body.panel-full #panel {
 
 /* ---------------------------------------------------------------- Haltestellen-Stufen */
 
-.pool-steps {
-  grid-column: 2 / 4;
-  display: flex;
-  gap: 3px;
-}
-
-.pool-steps button {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  padding: 5px 2px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--muted);
-  font: inherit;
-  cursor: pointer;
-  opacity: 0.55;
-}
-
-.pool-steps button span {
-  font-size: 16px;
-  line-height: 1.1;
-}
-
-.pool-steps button small {
-  font-size: 10.5px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
-.pool-steps button.inc {
-  opacity: 1;
-  color: var(--ink);
-  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
-  border-color: color-mix(in srgb, var(--accent) 25%, var(--line));
-}
-
-.pool-steps button.on {
-  opacity: 1;
-  color: var(--accent-ink);
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.pool-steps button:disabled {
-  cursor: default;
-}
-
 .wait-note {
   margin: 6px 0 0;
   font-size: 12px;
@@ -2791,15 +2583,6 @@ body.panel-full #panel {
   margin-top: 4px;
 }
 
-.slider-row.pool-row {
-  grid-template-columns: 1fr;
-  gap: 4px;
-}
-
-.pool-row .pool-steps {
-  grid-column: 1 / -1;
-}
-
 .training #area {
   margin-top: 6px;
   width: 100%;
@@ -2808,38 +2591,6 @@ body.panel-full #panel {
 .learn-actions .skip-draw {
   grid-column: 1 / -1;
   justify-self: center;
-}
-
-.station-picker {
-  display: grid;
-  gap: 6px;
-}
-
-.sp-row {
-  display: grid;
-  grid-template-columns: 52px 1fr;
-  align-items: center;
-  gap: 6px;
-}
-
-.sp-row > small {
-  color: var(--muted);
-  font-weight: 600;
-}
-
-.sp-row .seg {
-  background: var(--panel);
-}
-
-.sp-row .pool-steps button {
-  flex-direction: row;
-  justify-content: center;
-  gap: 4px;
-  padding: 6px 4px;
-}
-
-.sp-row .pool-steps button small {
-  font-size: 12px;
 }
 
 div.wait-note ul {
@@ -3183,10 +2934,6 @@ div.wait-note ul {
   opacity: 0.9;
 }
 
-.xtreme-setting > span:first-child {
-  color: #6b1590;
-}
-
 .xtreme-hint {
   color: #6b1590;
 }
@@ -3459,12 +3206,6 @@ details.fine > summary {
 /* Lernen: Station eingeben → alle Linien dort */
 #station-search {
   margin-top: 8px;
-}
-
-.station-results {
-  display: grid;
-  gap: 4px;
-  margin-top: 4px;
 }
 
 .station-opt {
