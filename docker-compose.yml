@@ -1,0 +1,18 @@
+# BimGuesser lokal im Container: docker compose up --build → http://localhost:3000
+# (Server-Deployment siehe deploy/compose.snippet.yml – dort kommt das fertige Image von ghcr.io)
+services:
+  bimguesser:
+    build: .
+    image: bimguesser:local
+    init: true # Signale sauber weiterreichen (schnelles docker stop)
+    restart: unless-stopped
+    mem_limit: 384m
+    ports:
+      - '${PORT:-3000}:3000'
+    environment:
+      - APP_VERSION=local
+    volumes:
+      - state:/app/state # Auskunfts-Cache + Statistik
+
+volumes:
+  state:
