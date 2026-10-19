@@ -11,6 +11,7 @@ import { lineHtml, stationHtml } from '../atlas.ts';
 import { DAY_SCOPE, addMine, departuresFrom, isMine, isSpecialLine, lineProfile, linesAt, patternsOf, setMine } from '../model.ts';
 import { L, type Course, type Step } from './common.ts';
 import { COURSES } from './list.ts';
+import { loadJson, saveJson } from '../../storage.ts';
 
 export type { Course } from './common.ts';
 export { COURSES };
@@ -21,20 +22,12 @@ export { COURSES };
 const PROGRESS_KEY = 'oeffi-courses-v1';
 type Progress = Record<string, { done: boolean; best: number; total: number }>;
 export function courseProgress(): Progress {
-  try {
-    return JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? '{}') as Progress;
-  } catch {
-    return {};
-  }
+  return loadJson<Progress>(PROGRESS_KEY, {});
 }
 function saveProgress(id: string, score: number, total: number) {
   const p = courseProgress();
   p[id] = { done: true, best: Math.max(p[id]?.best ?? 0, score), total };
-  try {
-    localStorage.setItem(PROGRESS_KEY, JSON.stringify(p));
-  } catch {
-    /* privater Modus */
-  }
+  saveJson(PROGRESS_KEY, p);
 }
 
 // ---------------------------------------------------------------- Ansicht

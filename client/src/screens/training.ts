@@ -11,6 +11,7 @@ import { app, setMapBig, setMobileMap } from '../store.ts';
 import { HINTS, compass, explain, hintText, legFeedback, lineDirections, routeSentence, type CoachMsg, type HintId } from '../training/coach.ts';
 import { chain, esc, h, lineChip, makeExpandable, routeDetails, toast } from '../ui.ts';
 import { loadingHtml, type Screen } from './screen.ts';
+import { loadMerged, saveJson } from '../storage.ts';
 
 // ---------------------------------------------------------------- Speicher
 
@@ -41,20 +42,6 @@ const CFG_KEY = 'oeffi-training-config-v1';
 const MEM_KEY = 'oeffi-training-memory-v1';
 const RETRY_AFTER = 3;
 
-function load<T>(key: string, def: T): T {
-  try {
-    return { ...def, ...JSON.parse(localStorage.getItem(key) ?? '{}') };
-  } catch {
-    return def;
-  }
-}
-function save(key: string, v: unknown) {
-  try {
-    localStorage.setItem(key, JSON.stringify(v));
-  } catch {
-    /* privater Modus */
-  }
-}
 
 const ALL_MODES = { modes: new Set(['U', 'S', 'T', 'B', 'N']) } as Scope;
 
@@ -62,9 +49,9 @@ const ALL_MODES = { modes: new Set(['U', 'S', 'T', 'B', 'N']) } as Scope;
 
 export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
   const net = app.net;
-  const cfg = load<TrainCfg>(CFG_KEY, { ...DEFAULT_TRAINING });
-  const mem = load<Memory>(MEM_KEY, { retry: [], notes: [], rounds: 0, solved: 0 });
-  const persist = () => (save(CFG_KEY, cfg), save(MEM_KEY, mem));
+  const cfg = loadMerged<TrainCfg>(CFG_KEY, { ...DEFAULT_TRAINING });
+  const mem = loadMerged<Memory>(MEM_KEY, { retry: [], notes: [], rounds: 0, solved: 0 });
+  const persist = () => (saveJson(CFG_KEY, cfg), saveJson(MEM_KEY, mem));
 
   let round: TrainingRound | null = null;
   let isRetry = false;

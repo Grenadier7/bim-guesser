@@ -3,37 +3,23 @@ import type { LatLon, Line, Mode, Station } from '../../../shared/types.ts';
 import { shuffle } from '../../../shared/random.ts';
 import { isSpecialLine, regularPatterns } from '../../../shared/rules.ts';
 import { app } from '../store.ts';
+import { loadJson, saveJson } from '../storage.ts';
 
 // ---------------------------------------------------------------- Speicher
 
 const PROGRESS_KEY = 'oeffi-learn-progress-v1';
 const MY_LINES_KEY = 'oeffi-my-lines-v1';
 
-function load<T>(key: string, def: T): T {
-  try {
-    const v = JSON.parse(localStorage.getItem(key) ?? 'null');
-    return v ?? def;
-  } catch {
-    return def;
-  }
-}
-function save(key: string, v: unknown) {
-  try {
-    localStorage.setItem(key, JSON.stringify(v));
-  } catch {
-    /* privater Modus */
-  }
-}
 
 // ---------------------------------------------------------------- Meine Linien (⭐)
 
 /** gemerkte Linien – das ist der Stoff für „Üben“ */
-let mine: string[] = load<string[]>(MY_LINES_KEY, []);
+let mine: string[] = loadJson<string[]>(MY_LINES_KEY, []);
 export const myLines = (): string[] => mine.filter((id) => app.net.lines.has(id));
 export const isMine = (id: string) => mine.includes(id);
 export function setMine(id: string, on: boolean) {
   mine = on ? [...new Set([...mine, id])] : mine.filter((x) => x !== id);
-  save(MY_LINES_KEY, mine);
+  saveJson(MY_LINES_KEY, mine);
 }
 /** kleiner ☆-Knopf zum Merken – überall einsetzbar, ein Klick-Handler in main.ts erledigt den Rest */
 export const starMini = (id: string) =>
@@ -42,19 +28,19 @@ export const starMini = (id: string) =>
     : '';
 export function addMine(ids: string[]) {
   mine = [...new Set([...mine, ...ids])];
-  save(MY_LINES_KEY, mine);
+  saveJson(MY_LINES_KEY, mine);
 }
 
 /**
  * Lernstand: Schlüssel → Stufe 0–3.
  *  "line:<id>"        – Linie für Linie (Selbsteinschätzung)
  */
-const progress: Record<string, number> = load<Record<string, number>>(PROGRESS_KEY, {});
+const progress: Record<string, number> = loadJson<Record<string, number>>(PROGRESS_KEY, {});
 export const MASTERED = 3;
 export const boxOf = (key: string) => progress[key] ?? 0;
 export function setBox(key: string, box: number) {
   progress[key] = Math.max(0, Math.min(MASTERED, box));
-  save(PROGRESS_KEY, progress);
+  saveJson(PROGRESS_KEY, progress);
 }
 // ---------------------------------------------------------------- Hilfen
 

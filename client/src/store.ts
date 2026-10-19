@@ -6,6 +6,7 @@ import { NOT_REMEMBERED } from '../../shared/defaults.ts';
 import { api } from './api.ts';
 import type { GameMap } from './map.ts';
 import type { NetIndex } from './net.ts';
+import { loadMerged, saveJson } from './storage.ts';
 
 export interface Session {
   code: string;
@@ -26,21 +27,8 @@ interface Prefs {
 const SESSION_KEY = 'oeffi-guesser-session';
 const PREFS_KEY = 'oeffi-guesser-prefs-v2';
 
-function readJson<T>(storage: () => Storage, key: string, def: T): T {
-  try {
-    return { ...def, ...JSON.parse(storage().getItem(key) ?? '{}') };
-  } catch {
-    return def;
-  }
-}
-function writeJson(storage: () => Storage, key: string, v: unknown) {
-  try {
-    if (v == null) storage().removeItem(key);
-    else storage().setItem(key, JSON.stringify(v));
-  } catch {
-    /* privater Modus o.ä. */
-  }
-}
+/** Spielsitzung je Tab (sessionStorage) */
+const tabStore = () => sessionStorage;
 
 export const app = {
   net: null as unknown as NetIndex,
@@ -52,7 +40,7 @@ export const app = {
   reveals: new Map<number, RoundReveal>(),
   /** Bildschirm außerhalb einer Lobby */
   view: 'home' as 'home' | 'learn' | 'training',
-  prefs: readJson<Prefs>(() => localStorage, PREFS_KEY, { name: '', settings: {}, quiz: {} }),
+  prefs: loadMerged<Prefs>(PREFS_KEY, { name: '', settings: {}, quiz: {} }),
   onChange: () => {},
 };
 
@@ -73,7 +61,7 @@ export const app = {
 }
 
 export function savePrefs() {
-  writeJson(() => localStorage, PREFS_KEY, app.prefs);
+  saveJson(PREFS_KEY, app.prefs);
 }
 
 export const serverNow = () => Date.now() + app.clockOffset;
@@ -139,7 +127,7 @@ export function setState(s: LobbyState) {
 
 export function startSession(session: Session, state: LobbyState) {
   app.session = session;
-  writeJson(() => sessionStorage, SESSION_KEY, session);
+  saveJson(SESSION_KEY, session, tabStore);
   history.replaceState(null, '', `?code=${session.code}`);
   setState(state);
   connect();
@@ -151,19 +139,19 @@ export function endSession() {
   app.session = null;
   app.state = null;
   app.reveals.clear();
-  writeJson(() => sessionStorage, SESSION_KEY, null);
+  saveJson(SESSION_KEY, null, tabStore);
   history.replaceState(null, '', location.pathname);
   app.onChange();
 }
 
 /** Nach Neuladen der Seite wieder in die Lobby einsteigen */
 export async function restoreSession(): Promise<boolean> {
-  const saved = readJson<Partial<Session>>(() => sessionStorage, SESSION_KEY, {});
+  const saved = loadMerged<Partial<Session>>(SESSION_KEY, {}, tabStore);
   if (!saved.code || !saved.token) return false;
   // Einladungslink zu einer ANDEREN Lobby geöffnet → nicht in die alte zurück, sondern beitreten lassen
   const linkCode = new URLSearchParams(location.search).get('code')?.toUpperCase();
   if (linkCode && linkCode !== saved.code) {
-    writeJson(() => sessionStorage, SESSION_KEY, null);
+    saveJson(SESSION_KEY, null, tabStore);
     return false;
   }
   try {
@@ -171,7 +159,7 @@ export async function restoreSession(): Promise<boolean> {
     startSession({ code: saved.code, token: saved.token, playerId: res.playerId }, res.state);
     return true;
   } catch {
-    writeJson(() => sessionStorage, SESSION_KEY, null);
+    saveJson(SESSION_KEY, null, tabStore);
     return false;
   }
 }
