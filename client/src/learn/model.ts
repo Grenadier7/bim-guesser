@@ -2,6 +2,7 @@
 import type { LatLon, Line, Mode, Station } from '../../../shared/types.ts';
 import { shuffle } from '../../../shared/random.ts';
 import { isSpecialLine, regularPatterns } from '../../../shared/rules.ts';
+import { distM } from '../../../shared/geo.ts';
 import { app } from '../store.ts';
 import { loadJson, saveJson } from '../storage.ts';
 
@@ -247,4 +248,68 @@ export function evaluateSketch(prof: LineProfile, sketch: LatLon[]): SketchResul
     precision: taps.length ? good / taps.length : 0,
     missed,
   };
+}
+
+/** Farben für den Linienvergleich (höchstens so viele Linien) */
+const CMP = ['#e8590c', '#7048e8', '#0ca678', '#d6336c', '#1c7ed6', '#a07400'];
+
+export const COMPARE_MAX = CMP.length;
+
+/** Vergleichsfarben: U-Bahnen in ihrer echten Farbe, alle anderen Linien bekommen eine freie Farbe aus CMP */
+export function compareColors(lines: Pick<Line, 'id' | 'mode' | 'color'>[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const free = [...CMP];
+  for (const l of lines) if (l.mode === 'U') out[l.id] = l.color;
+  for (const l of lines) if (l.mode !== 'U') out[l.id] = free.shift() ?? '#495057';
+  return out;
+}
+
+/** „alle 4 min“, „alle 2,5 min“, „1× pro Stunde“ */
+export function fmtHeadway(min: number): string {
+  if (min >= 45) return `${Math.round(60 / min)}× pro Stunde`;
+  return `alle ${min.toLocaleString('de-AT')} min`;
+}
+
+/**
+ * Ø-Takt für den Steckbrief, z.B. „Mo–Fr alle 4 min (früh alle 2,5, abends alle 5) · Sa alle 5 · So alle 5 min“.
+ * null, wenn es keine Takt-Daten gibt (data/headways.json fehlt oder Linie unbekannt).
+ */
+export function headwayText(lineId: string, data: Record<string, Record<string, number | null>> | undefined = app.net?.data.headways): string | null {
+  const h = data?.[lineId];
+  if (!h) return null;
+  const n = (v: number | null | undefined) => (v == null ? null : v.toLocaleString('de-AT'));
+  const parts: string[] = [];
+  if (h.wd12 != null) {
+    const extra = [h.wd7 != null && h.wd7 !== h.wd12 ? `früh alle ${n(h.wd7)}` : '', h.wd20 != null && h.wd20 !== h.wd12 ? `abends alle ${n(h.wd20)}` : ''].filter(Boolean);
+    parts.push(`Mo–Fr ${fmtHeadway(h.wd12)}${extra.length ? ` (${extra.join(', ')})` : ''}`);
+  } else if (h.wd7 != null || h.wd20 != null) parts.push(`Mo–Fr ${h.wd7 != null ? `früh ${fmtHeadway(h.wd7)}` : `abends ${fmtHeadway(h.wd20!)}`}`);
+  if (h.sa12 != null) parts.push(`Sa ${fmtHeadway(h.sa12)}`);
+  if (h.su12 != null) parts.push(`So ${fmtHeadway(h.su12)}`);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+// ---------------------------------------------------------------- Linien einer Gegend (N-1)
+
+export type AreaPick = { kind: 'district'; id: number } | { kind: 'circle'; lat: number; lon: number; radiusM: number };
+
+/** Stationen in der Gegend: Bezirk oder Kreis */
+export function stationsInArea(area: AreaPick, stations: Station[] = app.net.data.stations): Station[] {
+  return area.kind === 'district' ? stations.filter((s) => s.district === area.id) : stations.filter((s) => distM(s, area) <= area.radiusM);
+}
+
+/**
+ * Linien, die in der Gegend halten – sortiert nach Anzahl der Halte dort (die Linien, die die Gegend wirklich
+ * erschließen, zuerst), dann Verkehrsmittel und Nummer. Sonderlinien (71E …) bleiben draußen.
+ */
+export function linesInArea(area: AreaPick, modes: Set<Mode>, lines: Line[] = app.net.data.lines, stations: Station[] = app.net.data.stations): { line: Line; stops: number }[] {
+  const inside = new Set(stationsInArea(area, stations).map((s) => s.id));
+  const out: { line: Line; stops: number }[] = [];
+  for (const l of lines) {
+    if (!modes.has(l.mode) || isSpecialLine(l)) continue;
+    const stops = new Set(regularPatterns(l).flat().filter((id) => inside.has(id))).size;
+    if (stops) out.push({ line: l, stops });
+  }
+  return out.sort(
+    (a, b) => b.stops - a.stops || MODE_ORDER.indexOf(a.line.mode) - MODE_ORDER.indexOf(b.line.mode) || a.line.id.localeCompare(b.line.id, 'de', { numeric: true }),
+  );
 }

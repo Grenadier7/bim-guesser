@@ -94,3 +94,38 @@ test('Quiz allein: Lobby → 5 Fragen → Endstand', async () => {
   assert.deepEqual(t.errors, []);
   await t.context.close();
 });
+
+test('N-1/N-2/N-3: Linien einer Gegend üben, Takt im Steckbrief, U-Bahn-Farben im Vergleich', async () => {
+  const t = await app.page();
+  const p = t.page;
+  await p.goto(app.base);
+  await p.locator('.mode-learn').click();
+  // Gegend: 1. Bezirk, ohne Bus
+  await p.locator('#area').click();
+  await p.locator('#area-district').selectOption('1');
+  await p.locator('.area-lines .chip').first().waitFor();
+  const withBus = await p.locator('.area-lines .chip').count();
+  await p.locator('[data-mode="B"]').click();
+  const noBus = await p.locator('.area-lines .chip').count();
+  assert.ok(withBus > noBus && noBus >= 4, `mit Bus ${withBus}, ohne ${noBus}`);
+  await t.shot('learn-area');
+  await p.locator('#area-practice').click();
+  await p.locator('.btn-big').first().click();
+  await p.locator('#go').waitFor();
+  // zurück zur Gegend, dann Lernen-Start
+  await p.goto(app.base);
+  await p.locator('.mode-learn').click();
+  await p.locator('#hub-search').fill('U6');
+  await p.locator('#atlas-search').press('Enter');
+  await p.locator('.atlas-card .headway', { hasText: 'Mo–Fr' }).waitFor();
+  // Vergleich U6 ⇄ U3: Chips in den echten Linienfarben
+  await p.locator('#compare').click();
+  await p.locator('#atlas-search').fill('U3');
+  await p.locator('#atlas-search').press('Enter');
+  await p.locator('.compare-head').waitFor();
+  const colors = await p.locator('.compare-head .chip').evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundColor));
+  assert.deepEqual(colors, ['rgb(157, 105, 48)', 'rgb(238, 125, 0)']);
+  await t.shot('learn-compare-u');
+  assert.deepEqual(t.errors, []);
+  await t.context.close();
+});

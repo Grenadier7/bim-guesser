@@ -1,11 +1,20 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { distM, normName } from '../shared/geo.ts';
-import type { GameSettings, Line, NetMode, NetworkData, NetworkPublic, SlotId, Station, StationKind, StationRef } from '../shared/types.ts';
+import type { GameSettings, Headways, Line, NetMode, NetworkData, NetworkPublic, SlotId, Station, StationKind, StationRef } from '../shared/types.ts';
 import { distanceRange, linePatterns } from '../shared/rules.ts';
 import { inStationKinds } from '../shared/pools.ts';
 import type { EfaPoint } from './efa.ts';
 import { STATE_DIR } from './paths.ts';
+
+/** Ø-Takt je Linie (optional – fehlt die Datei, zeigt der Steckbrief einfach keinen Takt) */
+function loadHeadways(): Headways['lines'] | undefined {
+  try {
+    return (JSON.parse(readFileSync(path.join(path.dirname(FILE), 'headways.json'), 'utf8')) as Headways).lines;
+  } catch {
+    return undefined;
+  }
+}
 
 /** Kein Start/Ziel-Paar möglich (Einstellungen zu eng) – wird im Spiel zur verständlichen Meldung */
 export class NoPairError extends Error {}
@@ -79,7 +88,7 @@ export class Network {
 
   publicData(): NetworkPublic {
     const { efaIds: _omit, ...pub } = this.data;
-    return pub;
+    return { ...pub, headways: loadHeadways() };
   }
 
   station(id: string): Station {

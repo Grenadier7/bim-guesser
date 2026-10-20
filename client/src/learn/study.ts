@@ -13,6 +13,7 @@ import {
   setBox,
   type LineProfile,
   type SketchResult,
+  headwayText,
 } from './model.ts';
 import type { Scope } from './model.ts';
 
@@ -82,6 +83,7 @@ export function studyView(ctx: LearnCtx) {
     return `
       <div class="learn-line">${lineChip(prof.line.mode, prof.line.id, prof.line.color)}<span>${prof.stopCount} Stationen</span></div>
       <p class="sentence">${esc(prof.sentence)}</p>
+      ${headwayText(prof.line.id) ? `<p class="headway"><b>⏱ Takt:</b> ${esc(headwayText(prof.line.id)!)}</p>` : ''}
       ${prof.districts.length ? `<p><b>Bezirke:</b> ${prof.districts.map((d) => `${d.id}. ${esc(d.name)}`).join(' → ')}</p>` : ''}
       ${transfers ? `<p><b>Umstieg zu U-/S-Bahn:</b></p><div class="transfers">${transfers}</div>` : ''}
       ${stopListHtml(prof)}`;

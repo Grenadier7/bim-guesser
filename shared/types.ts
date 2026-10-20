@@ -61,6 +61,14 @@ export interface NetworkPublic {
   stations: Station[];
   lines: Line[];
   districts: District[];
+  /** Ø-Takt je Linie in Minuten (Schlüssel wd7, wd12, wd20, sa12, su12; null = fährt da nicht) – aus data/headways.json */
+  headways?: Record<string, Record<string, number | null>>;
+}
+
+/** data/headways.json (scripts/build-headways.ts) */
+export interface Headways {
+  generatedAt: string;
+  lines: Record<string, Record<string, number | null>>;
 }
 
 /** Server-Variante: zusätzlich EFA-Haltestellen-IDs je Station */

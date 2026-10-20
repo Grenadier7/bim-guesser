@@ -5,12 +5,11 @@ import { distM } from '../net.ts';
 import { netLayer, netView, type Kind } from '../netmap.ts';
 import { app, setMapBig } from '../store.ts';
 import { esc, lineChip } from '../ui.ts';
-import { DAY_SCOPE, addMine, departuresFrom, isMine, isSpecialLine, lineProfile, linesAt, myLines, patternsOf, servedStations, setMine } from './model.ts';
+import { addMine, COMPARE_MAX, compareColors, headwayText, DAY_SCOPE, departuresFrom, isMine, isSpecialLine, lineProfile, linesAt, myLines, patternsOf, servedStations, setMine } from './model.ts';
 
 export type AtlasSel = { kind: 'line'; id: string } | { kind: 'station'; id: string } | { kind: 'compare'; ids: string[] } | null;
 
 /** Farben beim Vergleich: gut unterscheidbar, egal welches Verkehrsmittel – so viele Linien gehen höchstens */
-const CMP = ['#e8590c', '#7048e8', '#0ca678', '#d6336c', '#1c7ed6', '#a07400'];
 
 const norm = (x: string) =>
   x
@@ -46,6 +45,7 @@ export function lineHtml(l: Line, compare = true): string {
   return `<div class="learn-card atlas-card">
     <div class="learn-line">${chipOf(l)}<span>${prof.stopCount} Stationen</span>${starBtn(l.id)}</div>
     <p class="sentence">${esc(prof.sentence)}</p>
+    ${headwayText(l.id) ? `<p class="headway"><b>⏱ Takt:</b> ${esc(headwayText(l.id)!)}</p>` : ''}
     ${prof.districts.length ? `<p><b>Bezirke:</b> ${prof.districts.map((d) => `${d.id}. ${esc(d.name)}`).join(' → ')}</p>` : ''}
     ${transfers ? `<p><b>Umstieg zu U-/S-Bahn:</b></p><div class="transfers">${transfers}</div>` : ''}
     ${prof.trams.length ? `<p><b>Unterwegs kreuzt du die Bim:</b></p><div class="chips">${mini(prof.trams)}</div>` : ''}
@@ -57,7 +57,7 @@ export function lineHtml(l: Line, compare = true): string {
             ${loc.trams.length || loc.buses.length ? `<span class="stop-transfers">${mini(loc.trams)}${mini(loc.buses)}</span>` : ''}</li>`;
         })
         .join('')}</ol></details>
-    <div class="atlas-actions"><button class="btn btn-ghost" id="compare">⇄ Mit anderer Linie vergleichen</button></div></div>`;
+    ${compare ? '<div class="atlas-actions"><button class="btn btn-ghost" id="compare">⇄ Mit anderer Linie vergleichen</button></div>' : ''}</div>`;
 }
 
 /** „Von hier fährst du mit …“ (auch in Kursen benutzt) */
@@ -135,7 +135,7 @@ export function atlasView(panel: HTMLElement, onBack: () => void, opts: { query?
   function go(next: AtlasSel) {
     // Vergleich angefangen: die nächste Linie kommt dazu
     if (comparing && next?.kind === 'line' && !comparing.includes(next.id)) {
-      next = { kind: 'compare', ids: [...comparing, next.id].slice(0, CMP.length) };
+      next = { kind: 'compare', ids: [...comparing, next.id].slice(0, COMPARE_MAX) };
       comparing = null;
     }
     if (sel && !same(sel, next)) history.push(sel);
@@ -178,7 +178,7 @@ export function atlasView(panel: HTMLElement, onBack: () => void, opts: { query?
     } else if (sel?.kind === 'compare') {
       const { ids } = sel;
       const stops = [...new Set(ids.flatMap((id) => patternsOf(line(id)).flat()))].map((id) => net.station(id));
-      const colors = Object.fromEntries(ids.map((id, i) => [id, CMP[i]]));
+      const colors = compareColors(ids.map(line));
       const pts = layer.render(netView({ ...common, focus: new Set(ids), colors, marks: meetings(ids).slice(0, 6).map((m) => m.station), stops }));
       if (fit && pts.length) app.map.fitPoints(pts, 14);
     } else if (sel?.kind === 'station') {
@@ -209,12 +209,13 @@ export function atlasView(panel: HTMLElement, onBack: () => void, opts: { query?
   function compareHtml(ids: string[]): string {
     const ls = ids.map(line);
     const ps = ls.map((l) => lineProfile(l));
-    const col = (l: Line, i: number) => `<button class="chip-btn" data-line="${esc(l.id)}">${chipOf(l, CMP[i])}</button>`;
+    const cc = compareColors(ls);
+    const col = (l: Line) => `<button class="chip-btn" data-line="${esc(l.id)}">${chipOf(l, cc[l.id])}</button>`;
     const ends = (p: (typeof ps)[number]) => `${esc(net.station(p.main[0]).name)} ↔ ${esc(net.station(p.main[p.main.length - 1]).name)}`;
     // Kopf: Linien in ihren Vergleichsfarben, je mit ×, dazu ein kleines + für eine weitere Linie
     const head = `<div class="compare-head">${ls
-      .map((l, i) => `<span class="cmp-item">${col(l, i)}<button class="cmp-x" data-cmp-rm="${esc(l.id)}" title="${esc(l.id)} aus dem Vergleich nehmen">×</button></span>`)
-      .join('<span class="cmp-sep">⇄</span>')}${ids.length < CMP.length ? '<button class="cmp-add" id="cmp-add" title="weitere Linie vergleichen">+</button>' : ''}</div>`;
+      .map((l) => `<span class="cmp-item">${col(l)}<button class="cmp-x" data-cmp-rm="${esc(l.id)}" title="${esc(l.id)} aus dem Vergleich nehmen">×</button></span>`)
+      .join('<span class="cmp-sep">⇄</span>')}${ids.length < COMPARE_MAX ? '<button class="cmp-add" id="cmp-add" title="weitere Linie vergleichen">+</button>' : ''}</div>`;
     const meet = meetings(ids);
     if (ids.length === 2) {
       const [pa, pb] = ps;
@@ -244,14 +245,14 @@ export function atlasView(panel: HTMLElement, onBack: () => void, opts: { query?
     // ab 3 Linien: knapp – Strecke, Stationen, Bezirke und wo sich die Linien treffen
     return `<div class="learn-card atlas-card">${head}
       <table class="course-table compare-table compare-many">
-        ${ls.map((l, i) => `<tr><td>${col(l, i)}</td><td>${ends(ps[i])}<br><small class="muted">${ps[i].stopCount} Stationen · Bezirke ${ps[i].districts.map((d) => d.id).join(', ')}</small></td></tr>`).join('')}
+        ${ls.map((l, i) => `<tr><td>${col(l)}</td><td>${ends(ps[i])}<br><small class="muted">${ps[i].stopCount} Stationen · Bezirke ${ps[i].districts.map((d) => d.id).join(', ')}</small></td></tr>`).join('')}
       </table>
       <p><b>Treffpunkte</b> <small class="muted">(mindestens zwei der Linien)</small></p>
       ${
         meet.length
           ? `<ul class="meetings">${meet
               .slice(0, 10)
-              .map((m) => `<li><button class="link" data-st="${m.station.id}">${esc(m.station.name)}</button> ${m.lines.map((id) => chipOf(line(id), CMP[ids.indexOf(id)])).join('')}</li>`)
+              .map((m) => `<li><button class="link" data-st="${m.station.id}">${esc(m.station.name)}</button> ${m.lines.map((id) => chipOf(line(id), cc[id])).join('')}</li>`)
               .join('')}</ul>${meet.length > 10 ? `<small class="muted">… und ${meet.length - 10} weitere</small>` : ''}`
           : '<p class="muted">Keine gemeinsame Station.</p>'
       }
