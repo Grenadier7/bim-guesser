@@ -33,7 +33,7 @@ import { api } from '../api.ts';
 import { app, routeState, endSession, inviteLink, isHost, savePrefs, setMobileMap } from '../store.ts';
 import { distM } from '../net.ts';
 import { esc, toast } from '../ui.ts';
-import { infoTip, seg, toggleInfo } from '../widgets.ts';
+import { deferWhileEditing, infoTip, patchQueue, seg, toggleInfo } from '../widgets.ts';
 import type { Screen } from './screen.ts';
 
 /**
@@ -105,15 +105,12 @@ const fmtKm = (m: number) => `${(m / 1000).toLocaleString('de-AT')} km`;
 export function lobbyScreen(panel: HTMLElement): Screen {
   app.map.clear();
   app.map.overview();
-  let pending = false;
   let tapEnabled: boolean | null = null;
   let advancedOpen = false;
   let advTab: AdvTab = 'diff';
   let fineOpen = false;
 
-  const send = async (patch: Partial<GameSettings>) => {
-    if (pending) return;
-    pending = true;
+  const send = patchQueue(async (patch: Partial<GameSettings>) => {
     try {
       const st = (await api.settings(app.session!, patch)) as GameState;
       // Netz und Fokus-Kreis nicht für die nächste Lobby merken – die starten immer mit dem Standard
@@ -123,10 +120,8 @@ export function lobbyScreen(panel: HTMLElement): Screen {
       savePrefs();
     } catch (e) {
       toast((e as Error).message);
-    } finally {
-      pending = false;
     }
-  };
+  });
 
   /** Fokus ändern; fehlende Werte vom aktuellen Fokus bzw. Standard (Stephansplatz, 2,5 km, 50 %) */
   function sendFocus(patch: Partial<FocusArea>) {
@@ -411,7 +406,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
 
   render();
   return {
-    update: render,
+    update: deferWhileEditing(panel, render),
     destroy: () => app.map.onTap(null),
   };
 }

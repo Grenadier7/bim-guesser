@@ -5,7 +5,7 @@ import { DEFAULT_QUIZ_SETTINGS, FREQUENCY_LABELS, QUIZ_QUESTION_COUNTS, QUIZ_TIM
 import { api } from '../../api.ts';
 import { app, endSession, inviteLink, isHost, quizState, savePrefs } from '../../store.ts';
 import { esc, toast } from '../../ui.ts';
-import { seg } from '../../widgets.ts';
+import { deferWhileEditing, patchQueue, seg } from '../../widgets.ts';
 import type { Screen } from '../screen.ts';
 import { areaOf, playersHtml } from './common.ts';
 
@@ -17,23 +17,18 @@ function freqLabel(v: number): string {
 
 export function quizLobbyScreen(panel: HTMLElement): Screen {
   app.map.clear();
-  let pending = false;
   let advancedOpen = false;
   let lastArea = -1;
 
-  const send = async (patch: Partial<QuizSettings>) => {
-    if (pending) return;
-    pending = true;
+  const send = patchQueue(async (patch: Partial<QuizSettings>) => {
     try {
       const st = (await api.settings(app.session!, patch)) as QuizState;
       app.prefs.quiz = st.settings;
       savePrefs();
     } catch (e) {
       toast((e as Error).message);
-    } finally {
-      pending = false;
     }
-  };
+  });
 
   function render() {
     const st = quizState();
@@ -142,5 +137,5 @@ export function quizLobbyScreen(panel: HTMLElement): Screen {
   }
 
   render();
-  return { update: render };
+  return { update: deferWhileEditing(panel, render) };
 }

@@ -275,3 +275,40 @@ test('Gast verlässt das laufende Quiz → Quiz läuft für den Rest weiter', as
   noErrors(a.t);
   await a.t.context.close();
 });
+
+test('Regression M-10: schnell hintereinander geänderte Einstellungen kommen alle an (langsamer Server)', async () => {
+  const a = await host('Schnell', 'route');
+  await a.t.page.route(/\/settings$/, async (r) => {
+    await new Promise((x) => setTimeout(x, 300));
+    await r.continue();
+  });
+  await a.t.page.locator('[data-k="rounds"][data-v="3"]').click();
+  await a.t.page.locator('[data-k="limit"][data-v="600"]').click();
+  await a.t.page.locator('[data-k="rounds"][data-v="10"]').click();
+  await a.t.page.waitForTimeout(1500);
+  const st = (await (await fetch(`${app.base}/api/games/${a.s.code}?token=${a.s.token}`)).json()).state;
+  assert.deepEqual([st.settings.rounds, st.settings.roundTimeLimitSec], [10, 600]);
+  noErrors(a.t);
+  await a.t.context.close();
+});
+
+test('Regression M-10: während der Host einen Regler zieht, zeichnet ein Beitritt die Lobby nicht neu – danach schon', async () => {
+  const a = await host('Zieher', 'route');
+  const p = a.t.page;
+  await p.locator('details.advanced summary').click();
+  const range = p.locator('input[data-k="minTransfers"]');
+  await p.waitForTimeout(500);
+  await range.scrollIntoViewIfNeeded();
+  const box = (await range.boundingBox())!;
+  await p.mouse.move(box.x + 2, box.y + box.height / 2);
+  await p.mouse.down();
+  // erst jetzt festhalten: ab dem Drücken darf der Regler nicht mehr ersetzt werden
+  const handle = await range.elementHandle();
+  await fetch(`${app.base}/api/games/${a.s.code}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ playerName: 'Gast' }) });
+  await p.waitForTimeout(800);
+  assert.equal(await handle!.evaluate((el) => el.isConnected), true, 'Regler wurde während des Ziehens neu gezeichnet');
+  await p.mouse.up();
+  await p.locator('ul.players li', { hasText: 'Gast' }).waitFor({ timeout: 3000 });
+  noErrors(a.t);
+  await a.t.context.close();
+});
