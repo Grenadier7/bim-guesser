@@ -9,7 +9,8 @@ import type { LatLon, Mode } from '../shared/types.ts';
 const BASE = 'https://www.wienerlinien.at/ogd_routing';
 const CACHE_DIR = path.join(STATE_DIR, 'cache');
 const CACHE_TTL_MS = 3 * 24 * 3600 * 1000;
-const MAX_PARALLEL = 4;
+/** gleichzeitige Abfragen an die Auskunft – 6 hält einen Spielstart unter ~5 s, ohne die API zu überlasten */
+const MAX_PARALLEL = 6;
 
 // ---------------------------------------------------------------- Zeit
 // Zeiten sind "naive" Wiener Lokalzeit in Minuten seit 1970 (ohne Zeitzone),

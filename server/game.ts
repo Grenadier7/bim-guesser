@@ -204,13 +204,15 @@ export class Game extends Lobby {
         if (round.restriction === 'banLines') {
           // erst normal rechnen, dann eine Linie der schnellsten Verbindung sperren und neu rechnen
           round.bannedLines = [];
-          const free = await topRoutes(this.net, a.id, b.id, round.time, this.query(round));
+          const free = await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), sampleOnly: true });
           if (!free.length || free[0].key === 'walk') continue;
           round.bannedLines = this.pickBan(free[0]);
           if (!round.bannedLines.length) continue;
         }
         // bei "beste Route" nach Zeit + Umstiegen sortieren – routes[0] ist dann die beste (auch für Tipps)
-        routes = sortRoutes(await topRoutes(this.net, a.id, b.id, round.time, this.query(round)), this.settings);
+        // Mindest-Umstiege schon nach den Stichproben prüfen (nach vielen Versuchen gelockert, siehe unten)
+        const minTransfers = attempt < 12 ? this.settings.minTransfers : 0;
+        routes = sortRoutes(await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), minTransfers }), this.settings);
       } catch (e) {
         if (e instanceof EfaUnavailableError) throw new GameError('Die Wiener-Linien-Auskunft antwortet gerade nicht – bitte in einer Minute nochmal starten.', 503);
         throw e;

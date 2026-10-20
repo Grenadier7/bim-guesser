@@ -12,7 +12,7 @@
 //     Ein zufällig perfekter Anschluss (an um 16:32, S-Bahn um 16:34) bringt so keinen Vorteil mehr –
 //     eine S-Bahn alle 15 min kostet im Schnitt 7,5 min Warten, eine U-Bahn alle 4 min nur 2.
 import type { LatLon, Mode, NetMode, Restriction, RouteLeg, RouteOption, RouteStep, UserLeg } from '../shared/types.ts';
-import { lineColor, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs } from '../shared/rules.ts';
+import { lineColor, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
 import * as efa from './efa.ts';
 import { distM, type Network } from './network.ts';
 
@@ -102,6 +102,13 @@ export interface RouteQuery {
   banned?: string[];
   /** Wartezeiten als Durchschnitt (halber Takt) statt verketteter Fahrplan */
   avgWait?: boolean;
+  /**
+   * Spielvorbereitung: Paar früh verwerfen, wenn keine der besten Stichproben-Verbindungen so viele Umstiege hat –
+   * dann hätte auch die nachgerechnete beste Verbindung zu wenige (spart ~30 Fahrplan-Abfragen je verworfenem Paar).
+   */
+  minTransfers?: number;
+  /** nur Stichproben (ohne Nachrechnen) – z.B. um die Linie für „Linie gesperrt“ zu bestimmen */
+  sampleOnly?: boolean;
 }
 
 /** EFA-Parameter für eine Einschränkung */
@@ -117,8 +124,13 @@ function restrictionQuery(r: Restriction | null): { mots?: number[]; maxChanges?
 /** Abfahrten "direkt von A nach B mit diesem Verkehrsmittel" – jede gleichwertige Linie zählt */
 class LegTimetable {
   private legs: efa.EfaLeg[] = [];
-  private coveredUntil = -Infinity;
-  private coveredFrom = Infinity;
+  /**
+   * Zeitbereiche [von, bis], in denen ALLE Abfahrten bekannt sind (sortiert, ohne Überlappung). Eine Abfrage ab T
+   * liefert die nächsten Fahrten ab T – also lückenlos bis zur letzten gelieferten Abfahrt. Zwischen zwei Bereichen
+   * kann etwas fehlen: dort wird gezielt nachgeladen (früher galt alles zwischen erster und letzter Abfrage als
+   * bekannt → falsche Wartezeiten, Befund H-03).
+   */
+  private covered: [number, number][] = [];
   /** welche EFA-Haltestellen der Station-Gruppen funktionieren (z.B. Bim-Steig statt U-Bahn) */
   private ids: [string, string] | null = null;
   /**
@@ -138,31 +150,47 @@ class LegTimetable {
     this.banned = new Set(banned);
   }
 
-  async firstAfter(t: number): Promise<efa.EfaLeg | null> {
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const hit = this.legs.find((l) => l.dep >= t);
-      if (hit && hit.dep <= this.coveredUntil) return hit;
-      const before = this.legs.length;
-      await this.fetch(Math.max(t, this.coveredUntil));
-      if (this.legs.length === before) return this.legs.find((l) => l.dep >= t) ?? null;
-    }
-    return this.legs.find((l) => l.dep >= t) ?? null;
+  /** Ende des lückenlos bekannten Bereichs, der t enthält (null = t ist nicht abgedeckt) */
+  private coveredUntil(t: number): number | null {
+    return this.covered.find(([a, b]) => a <= t && t <= b)?.[1] ?? null;
   }
 
-  /**
-   * Alle Abfahrten in einem Fenster von `len` Minuten ab `from` – lädt bei Bedarf nach.
-   * Sind Abfahrten erst ab später lückenlos bekannt, verschiebt sich das Fenster entsprechend.
-   */
-  async departures(from: number, len: number): Promise<efa.EfaLeg[]> {
-    if (this.coveredFrom === Infinity) await this.fetch(from);
-    const start = Math.max(from, this.coveredFrom);
-    const until = start + len;
-    for (let i = 0; i < 8 && this.coveredUntil < until; i++) {
-      const before = this.legs.length;
-      await this.fetch(Math.max(start, this.coveredUntil));
-      if (this.legs.length === before) break;
+  private markCovered(a: number, b: number) {
+    const all = [...this.covered, [a, b] as [number, number]].sort((x, y) => x[0] - y[0]);
+    const out: [number, number][] = [];
+    for (const r of all) {
+      const last = out[out.length - 1];
+      if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+      else out.push([r[0], r[1]]);
     }
-    return this.legs.filter((l) => l.dep >= start && l.dep < until);
+    this.covered = out;
+  }
+
+  /** nächste Abfahrt ab t (lückenlos geprüft) */
+  async firstAfter(t: number, maxFetches = 4): Promise<efa.EfaLeg | null> {
+    for (let i = 0; i <= maxFetches; i++) {
+      const until = this.coveredUntil(t);
+      if (until != null) {
+        const hit = this.legs.find((l) => l.dep >= t && l.dep <= until);
+        if (hit) return hit;
+      }
+      if (i === maxFetches) break;
+      if (!(await this.fetch(until ?? t))) break;
+    }
+    return null;
+  }
+
+  /** alle Abfahrten in [from, from + len) – lückenlos nachgeladen */
+  async departures(from: number, len: number): Promise<efa.EfaLeg[]> {
+    const until = from + len;
+    for (let i = 0; i < 10; i++) {
+      const c = this.coveredUntil(from);
+      // erste nicht abgedeckte Stelle im Fenster
+      const gap = c == null ? from : c < until ? c : null;
+      if (gap == null) break;
+      if (!(await this.fetch(gap))) break;
+    }
+    return this.legs.filter((l) => l.dep >= from && l.dep < until);
   }
 
   private matches(l: efa.EfaLeg): boolean {
@@ -172,7 +200,8 @@ class LegTimetable {
     return modeGroup(l.mode) === modeGroup(this.mode);
   }
 
-  private async query(from: string, to: string, time: number): Promise<efa.EfaLeg[]> {
+  /** passende Fahrten ab `time` und bis wohin die Antwort lückenlos ist (letzte gelieferte Abfahrt) */
+  private async query(from: string, to: string, time: number): Promise<{ out: efa.EfaLeg[]; until: number | null }> {
     const t5 = Math.floor(time / 5) * 5;
     const ask = async (via?: string) => {
       const trips = await efa.trip({ from, to, time: t5, mots: efa.motsForModes([this.mode]), maxChanges: 0, count: 8, via });
@@ -181,21 +210,21 @@ class LegTimetable {
         const leg = singleLeg(t.legs.filter((l) => l.mode !== 'W'));
         if (leg && this.matches(leg)) out.push(leg);
       }
-      return { trips, out };
+      return { trips, out, until: trips.length ? Math.max(...trips.map((t) => t.dep)) : null };
     };
-    if (this.via) return (await ask(this.via)).out;
+    if (this.via) return ask(this.via);
     const plain = await ask();
     // nur eine andere Linie gefunden (z.B. U1 statt U2)? → über Zwischenhalte der gewählten Linie fragen
-    if (plain.out.length || !plain.trips.length || this.via === null) return plain.out;
+    if (plain.out.length || !plain.trips.length || this.via === null) return plain;
     for (const via of this.viaCandidates()) {
       const r = await ask(via);
       if (r.out.length) {
         this.via = via;
-        return r.out;
+        return r;
       }
     }
     this.via = null; // nichts gefunden – nicht bei jeder Abfrage erneut probieren
-    return plain.out;
+    return plain;
   }
 
   /** EFA-Ids von Zwischenhalten der Linie zwischen Ein- und Ausstieg (Mitte zuerst) */
@@ -213,27 +242,31 @@ class LegTimetable {
     return [];
   }
 
-  private async fetch(time: number) {
-    this.coveredFrom = Math.min(this.coveredFrom, Math.floor(time / 5) * 5);
-    let found: efa.EfaLeg[] = [];
-    if (this.ids) found = await this.query(this.ids[0], this.ids[1], time);
+  /** ab `time` nachladen; false = es kam nichts Neues hinzu (Betriebsschluss o.ä.) */
+  private async fetch(time: number): Promise<boolean> {
+    const t5 = Math.floor(time / 5) * 5;
+    let res: { out: efa.EfaLeg[]; until: number | null } = { out: [], until: null };
+    if (this.ids) res = await this.query(this.ids[0], this.ids[1], time);
     else {
       // Station-Gruppen können mehrere Haltestellen haben (U-Bahn, Bim, Bus) – die passende suchen
       const froms = this.net.data.efaIds[this.leg.from].slice(0, 3);
       const tos = this.net.data.efaIds[this.leg.to].slice(0, 3);
       outer: for (const f of froms)
         for (const t of tos) {
-          found = await this.query(f, t, time);
-          if (found.length) {
+          res = await this.query(f, t, time);
+          if (res.out.length) {
             this.ids = [f, t];
             break outer;
           }
         }
     }
-    for (const l of found) if (!this.legs.some((x) => x.dep === l.dep && x.arr === l.arr)) this.legs.push(l);
+    const before = this.legs.length;
+    for (const l of res.out) if (!this.legs.some((x) => x.dep === l.dep && x.arr === l.arr)) this.legs.push(l);
     this.legs.sort((a, b) => a.dep - b.dep);
-    const last = this.legs[this.legs.length - 1];
-    this.coveredUntil = Math.max(this.coveredUntil, last ? last.dep : time + 60);
+    // ohne Fahrten: in der nächsten Stunde fährt nichts (die Antwort wäre sonst nicht leer)
+    const prev = this.coveredUntil(t5) ?? -Infinity;
+    this.markCovered(t5, Math.max(res.until ?? t5 + 60, t5));
+    return this.legs.length > before || (this.coveredUntil(t5) ?? -Infinity) > prev;
   }
 }
 
@@ -379,7 +412,10 @@ async function averagedRoute(
     // Erwartete Wartezeit: für jede Ankunftsminute der nächsten Stunde die Zeit bis zur nächsten echten
     // Abfahrt, gemittelt. Stimmt auch bei unregelmäßigem Takt (50B: 12:35, 13:15, 13:55, 14:45 …) und springt
     // nicht, wenn man 2 min früher oder später ankommt – das Zählen von Abfahrten im Fenster tat das.
-    const deps = await tables[i].departures(t, HEADWAY_WINDOW + MAX_GAP);
+    // Fenster + die erste Abfahrt danach (für die Wartezeit am Fensterende) – statt pauschal 3 h zu laden
+    const deps = await tables[i].departures(t, HEADWAY_WINDOW);
+    const after = await tables[i].firstAfter(t + HEADWAY_WINDOW, Math.ceil(MAX_GAP / 30));
+    if (after && after.dep < t + HEADWAY_WINDOW + MAX_GAP) deps.push(after);
     const meanWait = expectedWait(
       deps.map((d) => d.dep),
       t,
@@ -473,6 +509,8 @@ export async function topRoutes(net: Network, fromId: string, toId: string, slot
 
   // 2. Die besten genau nachrechnen – gleiches Verfahren wie bei der User-Route
   const top = candidates.slice(0, CHAIN_TOP);
+  if (q.minTransfers && !top.some((c) => transfersOf(c.option) >= q.minTransfers!)) return [];
+  if (q.sampleOnly) return top.map((c) => c.option);
   const chained = await Promise.all(
     top.map(async (c) => {
       if (c.key === 'walk') return c.option;
