@@ -179,7 +179,8 @@ test('Doppelklick „Starten“ und „Nächste Frage“: kein Fehler, keine üb
     a.t.page.once('dialog', (d) => void d.accept());
     await a.t.page.locator('.hb-cancel').click();
   }
-  await a.t.page.locator('.result-card').waitFor({ timeout: 30_000 });
+  // beantwortet → Ergebnis-Karte; übersprungen → „Frage übersprungen“ (ohne Karte)
+  await a.t.page.locator('.result-card, .cancelled').first().waitFor({ timeout: 30_000 });
   await a.t.page.locator('.btn-big', { hasText: 'Nächste Frage' }).dblclick();
   await a.t.page.locator('.quiz-q h2').waitFor();
   await a.t.page.waitForTimeout(800);
@@ -271,7 +272,7 @@ test('Gast verlässt das laufende Quiz → Quiz läuft für den Rest weiter', as
     a.t.page.once('dialog', (d) => void d.accept());
     await a.t.page.locator('.hb-cancel').click();
   }
-  await a.t.page.locator('.result-card').waitFor({ timeout: 70_000 });
+  await a.t.page.locator('.result-card, .cancelled').first().waitFor({ timeout: 70_000 });
   noErrors(a.t);
   await a.t.context.close();
 });
