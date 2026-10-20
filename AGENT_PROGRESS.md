@@ -4,7 +4,7 @@ Gedächtnis des Agenten. Bei Kontextverlust zuerst lesen.
 
 ## Aktueller Stand
 
-- **Phase:** 2 – Analyse (Testmatrix, Algorithmen, UX, Sicherheit)
+- **Phase:** 3 – Fixes (danach STOPP vor Phase 4 – Nutzer-Anweisung 2026-10-20)
 - **Aktiver Branch:** `refactor/structure`
 
 ## Branches (max. ~7, alles lokal, nichts gepusht)
@@ -24,6 +24,7 @@ Geplant (Phase 4/6): `feature/accounts` (Basis: Phase-3-Stand) und höchstens 4 
 | E1 | `master` gilt als „main“ | `origin/main` enthält nur einen leeren „Initial commit“; alle Arbeit und Releases laufen über `master`. Auf `master` wird nichts committet. |
 | E2 | Phase 1–3 auf einem Branch (`refactor/structure`), kein extra `fix/analysis-findings` | Branch-Limit ~7; Fixes bauen direkt auf dem Umbau auf. |
 | E4 | Fehler, die die Testsuite zufällig rot machen, sofort als `fix:` beheben (auch vor Phase 3) | Regel „alle Tests grün“ gilt auf jedem Branch; Beispiel: 71E-Umstiegsfrage `e78d6d5`. |
+| E5 | Keine Subagenten mehr; nach Phase 3 anhalten, Wünsche N-1…N-6 in Phase 3 | Nutzer-Anweisung 2026-10-20 (Subagenten liefen ins Sitzungslimit). |
 | E3 | Accounts: SQLite über das eingebaute `node:sqlite`, Passwort-Hash mit eingebautem `crypto.argon2` (Argon2id) | Keine nativen Abhängigkeiten (Windows-Laptop + Alpine-Image), DB-Datei im vorhandenen `STATE_DIR`-Volume → persistent, Ditto-Deployment bleibt einfach. Node 24.15 bietet beides. |
 
 ## Phase 0 – Ausgangslage (Referenz)
@@ -152,10 +153,12 @@ Algorithmus-/Deploy-Review (Agent, Repro-Skripte in docs/analysis/evidence/agent
       CENTER, docker-compose.yml (geprüft: startet, health ok). 67 Tests + 6 E2E + Smoke grün. Fix 71E-Umstiegsfrage (E4).
 - R-5 (gefunden, behoben `e78d6d5`): Quiz-Umstiegsfrage nahm Sonderlinie als Ziellinie
 
+- [x] Phase 2: `02-befunde.md` (K-01, H-01…H-07, M-01…M-12, U-01…U-06, L-01…L-12, N-1…N-6), `03-ideen.md`;
+      Tests: matrix.e2e (26 Zeilen), multiplayer.e2e (13), a11y.e2e (14), security.test (18, davon 9 todo)
+
 ## Offen / Nächste Schritte
 
-1. Phase 2a: Testmatrix als E2E (alle Modi × Einstellungen inkl. Grenzwerte, Mehrspieler, Abbruch/Reload/Zurück/2 Tabs/Doppelklick/Namen)
-2. Phase 2b: Algorithmen – Wertung mit handgerechneten Werten, property-based; Routing mit gemockter Auskunft (synth2)
-3. Phase 2c: UX/a11y – Screenshots 3 Größen, Kontrast-Messung, Tastatur, Labels
-4. Phase 2d: Sicherheit/Performance/Logging
-5. → `docs/analysis/02-befunde.md`, `03-ideen.md`
+1. Phase 3: kritisch/hoch zuerst (K-01, H-01/N-6, H-02, H-05, H-03, H-04, H-06, H-07), dann N-1…N-5, dann mittel/niedrig.
+   Jeder Fix: Regressionstest (todo → normal), Commit in 02-befunde.md eintragen.
+2. Matrix erneut laufen lassen, compose prüfen.
+3. STOPP – Nutzer fragt vor Phase 4.
