@@ -1,7 +1,7 @@
 // Client für die offizielle Wiener-Linien-Routing-API (EFA, ogd_routing).
 // Doku: https://www.wienerlinien.at/open-data
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { STATE_DIR } from './paths.ts';
 import type { LatLon, Mode } from '../shared/types.ts';
@@ -89,8 +89,38 @@ async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * Antworten im Speicher (zuletzt benutzte zuerst behalten). Eine Antwort ist roh ~100 KB groß – 500 Einträge ≈ 50 MB,
+ * passt in den Container (mem_limit 384m). Vorher 5000 Einträge ≈ 500 MB (Befund H-04).
+ */
+const MEM_MAX = 500;
 const memCache = new Map<string, Promise<any>>();
+export const memCacheSize = () => memCache.size;
 export let requestCount = 0;
+
+/** abgelaufene Dateien im Auskunfts-Cache löschen (wächst sonst unbegrenzt, Befund M-05); liefert die Anzahl */
+export async function cleanDiskCache(now = Date.now()): Promise<number> {
+  let removed = 0;
+  let files: string[];
+  try {
+    files = await readdir(CACHE_DIR);
+  } catch {
+    return 0;
+  }
+  for (const f of files) {
+    if (!f.endsWith('.json')) continue;
+    const file = path.join(CACHE_DIR, f);
+    try {
+      if (now - (await stat(file)).mtimeMs > CACHE_TTL_MS) {
+        await unlink(file);
+        removed++;
+      }
+    } catch {
+      /* gleichzeitig gelöscht o.ä. */
+    }
+  }
+  return removed;
+}
 
 /** Fehlertext inkl. Ursache (fetch packt den eigentlichen Grund in .cause, z.B. ENOTFOUND, ECONNRESET) */
 function errText(e: unknown): string {
@@ -115,7 +145,12 @@ async function efaGet(endpoint: string, params: Record<string, string>): Promise
   });
   const url = `${BASE}/${endpoint}?${qs}`;
   const hit = memCache.get(url);
-  if (hit) return hit;
+  if (hit) {
+    // als zuletzt benutzt ans Ende
+    memCache.delete(url);
+    memCache.set(url, hit);
+    return hit;
+  }
 
   const p = (async () => {
     const hash = createHash('sha1').update(url).digest('hex');
@@ -153,7 +188,7 @@ async function efaGet(endpoint: string, params: Record<string, string>): Promise
   })();
   memCache.set(url, p);
   p.catch(() => memCache.delete(url));
-  if (memCache.size > 5000) memCache.delete(memCache.keys().next().value!);
+  while (memCache.size > MEM_MAX) memCache.delete(memCache.keys().next().value!);
   return p;
 }
 
