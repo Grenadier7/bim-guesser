@@ -37,6 +37,11 @@ export abstract class Lobby extends EventEmitter {
   readonly id: string;
   phase: GamePhase = 'lobby';
   hostId = '';
+  /** IP, von der die Lobby erstellt wurde (Limit je IP) */
+  creatorIp = '';
+  readonly createdAt = Date.now();
+  /** war je ein Spieler live verbunden? (sonst darf die Lobby bei vollem Server zuerst Platz machen) */
+  everConnected = false;
   lastActivity = Date.now();
   protected players = new Map<string, Player>();
   protected byToken = new Map<string, Player>();
@@ -131,6 +136,7 @@ export abstract class Lobby extends EventEmitter {
     const p = this.byToken.get(String(token));
     if (!p || p.connections >= MAX_STREAMS_PER_PLAYER) return false;
     p.connections++;
+    this.everConnected = true;
     p.lastSeen = Date.now();
     this.emitState();
     return true;

@@ -44,7 +44,7 @@ export function gameRoutes(app: Express, games: GameManager) {
     limitCreate,
     h((req): JoinResponse => {
       const body = req.body as CreateGameRequest;
-      const g = games.create(body?.mode === 'quiz' ? 'quiz' : 'route', body?.settings);
+      const g = games.create(body?.mode === 'quiz' ? 'quiz' : 'route', body?.settings, req.ip ?? '');
       const p = g.addPlayer(body?.playerName);
       return { playerId: p.id, token: p.token, state: g.state() };
     }),

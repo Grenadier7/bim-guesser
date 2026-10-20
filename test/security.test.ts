@@ -374,7 +374,7 @@ function defineTests() {
       }
     });
 
-    test('Lobby-Limit: 100 Lobbys sperren den Server nicht für alle anderen', { todo: 'Befund D-02: 10 IPs × 10 Lobbys → 503 für alle (bis zu 20 min, verlängerbar)' }, async (t) => {
+    test('Regression M-02: 100 Lobbys von wenigen Adressen sperren den Server nicht für alle anderen', async (t) => {
       // echte Limits (10 Lobbys / 10 min / IP); verschiedene IPs per X-Forwarded-For (trust proxy = loopback)
       const s = await spawnServer({ env: { RATE_LIMIT_SCALE: '1' } });
       try {

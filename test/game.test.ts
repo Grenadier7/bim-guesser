@@ -75,3 +75,17 @@ test('Regression L-13: Tipp „Linien am Start“ zeigt tagsüber keine Nachtlin
   }
   assert.ok(checked, 'keine Start-Station mit Nachtlinien gezogen');
 });
+
+test('Regression M-02: max. 20 Lobbys je IP; voller Server räumt nie verbundene Lobbys statt alle abzuweisen', async () => {
+  const { GameManager, MAX_GAMES_PER_IP } = await import('../server/manager.ts');
+  const m = new GameManager(net);
+  for (let i = 0; i < MAX_GAMES_PER_IP; i++) m.create('quiz', {}, '203.0.113.1').addPlayer('A');
+  assert.throws(() => m.create('quiz', {}, '203.0.113.1'), (e: Error & { status?: number }) => e.status === 429);
+  // Server bis zum Limit füllen (viele Adressen), alle Lobbys „alt“ und nie verbunden
+  for (let i = 0; m.lobbyCount < 500; i++) m.create('quiz', {}, `198.51.100.${i % 250}.${Math.floor(i / 250)}`).addPlayer('B');
+  for (const code of (m as unknown as { games: Map<string, { createdAt: number }> }).games.keys())
+    Object.defineProperty((m as unknown as { games: Map<string, object> }).games.get(code)!, 'createdAt', { value: Date.now() - 60_000 });
+  const fresh = m.create('route', {}, '192.0.2.7');
+  assert.ok(fresh, 'neue Lobby trotz vollem Server');
+  assert.equal(m.lobbyCount, 500);
+});
