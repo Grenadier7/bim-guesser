@@ -100,7 +100,7 @@ test('Host verlässt die Lobby → nächster Spieler wird Host und sieht „Star
   await closeAll(a.t, b.t);
 });
 
-test('Host schließt den Tab (Verbindungsabbruch) → Gast bleibt in der Lobby, Host wird als offline markiert', { todo: 'Befund M-01: getrennter Host bleibt Host – Gast kann nicht starten' }, async () => {
+test('Host schließt den Tab (Verbindungsabbruch) → offline markiert, Gast wird Host und kann starten', async () => {
   const a = await host('Weg');
   const b = await joinByCode(a.s.code, 'Bleibt');
   await a.t.context.close();
@@ -112,9 +112,14 @@ test('Host schließt den Tab (Verbindungsabbruch) → Gast bleibt in der Lobby, 
   }
   const gone = st.players.find((p) => p.name === 'Weg');
   assert.equal(gone?.connected, false, 'Host nach Tab-Schließen nicht als offline markiert');
-  // Dokumentiert: bleibt der getrennte Spieler Host? (Gast kann sonst nicht starten)
+  // Host geht kurz danach (Prüfung 15,5 s nach dem Abbruch) an den verbundenen Spieler
+  for (let i = 0; i < 20 && st.players.find((p) => p.isHost)?.name !== 'Bleibt'; i++) {
+    await new Promise((r) => setTimeout(r, 250));
+    st = await state(b.s);
+  }
   const hostNow = st.players.find((p) => p.isHost)?.name;
   assert.equal(hostNow, 'Bleibt', `nach Verbindungsabbruch ist weiter „${hostNow}“ Host – Gast kann nicht starten`);
+  await b.t.page.locator('#start').waitFor({ timeout: 5000 });
   noErrors(b.t);
   await b.t.context.close();
 });
@@ -140,14 +145,19 @@ test('lange Namen, Sonderzeichen, HTML und Emojis werden sicher und unbeschädig
   assert.ok(st.players.some((p) => p.name.includes('👨‍👩‍👧')), `Familien-Emoji (ZWJ) zerlegt: ${JSON.stringify(st.players.map((p) => p.name))}`);
 });
 
-test('Doppelklick „Beitreten“ und Enter+Klick: nur EIN Spieler kommt dazu', async () => {
+test('Regression M-09: mehrfach Enter + Klick auf „Beitreten“: nur EIN Spieler kommt dazu', async () => {
   const a = await host('Host');
   const t = await app.page();
   await t.page.goto(app.base);
   await setName(t.page, 'Doppelt');
   await t.page.locator('#code').fill(a.s.code);
-  await t.page.locator('#code').press('Enter');
-  await t.page.locator('#join').click({ force: true }).catch(() => {});
+  // dreimal Enter schnell hintereinander + Klick, bevor die erste Antwort da ist
+  await t.page.route(/\/join$/, async (r) => {
+    await new Promise((x) => setTimeout(x, 400));
+    await r.continue();
+  });
+  for (let i = 0; i < 3; i++) await t.page.locator('#code').press('Enter');
+  await t.page.locator('#join').click({ force: true, timeout: 500 }).catch(() => {});
   await t.page.waitForTimeout(1500);
   const st = await state(a.s);
   noErrors(a.t, t);

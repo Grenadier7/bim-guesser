@@ -75,9 +75,15 @@ export function homeScreen(panel: HTMLElement): Screen {
     savePrefs();
     return app.prefs.name;
   };
-  const busy = (b: boolean) => el.querySelectorAll('button').forEach((x) => ((x as HTMLButtonElement).disabled = b));
+  // Enter im Eingabefeld ist kein Knopf – deshalb zusätzlich ein Merker gegen doppelte Anfragen (Befund M-09)
+  let pending = false;
+  const busy = (b: boolean) => {
+    pending = b;
+    el.querySelectorAll('button').forEach((x) => ((x as HTMLButtonElement).disabled = b));
+  };
 
   async function createLobby(mode: GameMode) {
+    if (pending) return;
     busy(true);
     try {
       const res = await api.create(name(), mode, mode === 'quiz' ? app.prefs.quiz : app.prefs.settings);
@@ -101,6 +107,7 @@ export function homeScreen(panel: HTMLElement): Screen {
   const join = async () => {
     const code = codeIn.value.trim().toUpperCase();
     if (code.length < 5) return toast('Bitte den 5-stelligen Lobby-Code eingeben.');
+    if (pending) return;
     busy(true);
     try {
       const res = await api.join(code, name());
