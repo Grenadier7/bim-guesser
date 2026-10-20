@@ -29,6 +29,7 @@ async function runMockServer() {
   const efa2st = new Map<string, string>();
   for (const [sid, ids] of Object.entries(net.data.efaIds)) for (const id of ids) efa2st.set(id, sid);
   let fail = false;
+  let slowMs = 0;
   let calls = 0;
   const p2 = (n: number) => String(n).padStart(2, '0');
   const point = (sid: string, min: number) => {
@@ -43,6 +44,7 @@ async function runMockServer() {
   globalThis.fetch = (async (input: string | URL | Request) => {
     calls++;
     if (fail) throw new TypeError('fetch failed (Attrappe: Auskunft nicht erreichbar)');
+    if (slowMs) await new Promise((r) => setTimeout(r, slowMs));
     const url = new URL(input instanceof Request ? input.url : String(input));
     const q = url.searchParams;
     if (!url.pathname.endsWith('XML_TRIP_REQUEST2')) return new Response(JSON.stringify({ departureList: [] }));
@@ -62,6 +64,7 @@ async function runMockServer() {
   const server = http.createServer((req, res) => {
     if (req.url === '/__mock/fail') return void ((fail = true), res.end('fail'));
     if (req.url === '/__mock/calls') return void res.end(String(calls));
+    if (req.url === '/__mock/slow') return void ((slowMs = 400), res.end('slow'));
     app(req, res);
   });
   server.listen(Number(process.env.PORT));
@@ -415,8 +418,43 @@ function defineTests() {
       assert.equal(st.body.rounds[0].from.lat, undefined, 'from.lat im Zustand');
     });
 
+    test('Regression M-04: „Zurück zur Lobby“ während der Auswertung → keine Punkte ins neue Spiel', async () => {
+      const net = (await s.call('GET', '/api/network')).body;
+      const u1 = net.lines.find((l: { id: string }) => l.id === 'U1').patterns[0] as string[];
+      // mit „Wo liegt das?“: genaue Tipps bringen Punkte, egal wie die Route ausgewertet wird
+      const h = await s.call('POST', '/api/games', { mode: 'route', playerName: 'A', settings: { ...base, locate: true } });
+      const code = h.body.state.id;
+      const b = await s.call('POST', `/api/games/${code}/join`, { playerName: 'B' });
+      const st0 = await s.call('POST', `/api/games/${code}/start`, { token: h.body.token });
+      assert.equal(st0.status, 200);
+      const at = (ref: { name: string }) => {
+        const x = net.stations.find((y: { name: string }) => y.name === ref.name);
+        return [x.lat, x.lon];
+      };
+      const guesses = { from: at(st0.body.rounds[0].from), to: at(st0.body.rounds[0].to) };
+      await s.call('POST', `/api/games/${code}/rounds/0/submit`, { token: h.body.token, legs: [{ line: 'U1', from: u1[2], to: u1[6] }], guesses });
+      await s.call('GET', '/__mock/slow');
+      // B geht → Auswertung läuft (langsam); währenddessen schickt der Host alle zurück in die Lobby
+      await s.call('POST', `/api/games/${code}/leave`, { token: b.body.token });
+      await sleep(200);
+      const mid = await s.call('GET', `/api/games/${code}?token=${h.body.token}`);
+      assert.equal(mid.body.state.rounds[0].status, 'open', 'Auswertung schon fertig – Test prüft nichts');
+      const lob = await s.call('POST', `/api/games/${code}/lobby`, { token: h.body.token });
+      assert.equal(lob.status, 200, lob.text);
+      // warten, bis die Auswertung im Hintergrund fertig ist (keine neuen Auskunfts-Abfragen mehr)
+      for (let i = 0, last = -1; i < 60; i++) {
+        const n = Number((await s.call('GET', '/__mock/calls')).text);
+        if (n === last) break;
+        last = n;
+        await sleep(1500);
+      }
+      const st = await s.call('GET', `/api/games/${code}?token=${h.body.token}`);
+      assert.equal(st.body.state.phase, 'lobby');
+      assert.equal(st.body.state.players[0].score, 0, 'Punkte der abgebrochenen Runde im neuen Spiel');
+    });
+
     // muss der letzte Test sein: schaltet die Attrappe auf „Auskunft weg“
-    test('Auskunft fällt während der Auflösung aus → Server läuft weiter', { todo: 'Befund D-01: unbehandelte Promise-Ablehnung in reveal() beendet den Prozess' }, async () => {
+    test('Regression K-01: Auskunft fällt während der Auflösung aus → Server läuft weiter, Runde wird aufgelöst', async () => {
       const net = (await s.call('GET', '/api/network')).body;
       const u1 = net.lines.find((l: { id: string }) => l.id === 'U1').patterns[0] as string[];
       const h = await s.call('POST', '/api/games', { mode: 'route', playerName: 'A', settings: base });
@@ -432,6 +470,16 @@ function defineTests() {
       assert.equal((await s.call('POST', `/api/games/${code}/leave`, { token: b.body.token })).status, 200);
       for (let i = 0; i < 40 && s.exitCode() === undefined; i++) await sleep(100);
       assert.equal(s.exitCode(), undefined, `Server beendet (Exit ${s.exitCode()}):\n${s.log().slice(-600)}`);
+      // Runde ist aufgelöst; die nicht nachrechenbare Route bekommt eine Erklärung statt eines Absturzes
+      let st = await s.call('GET', `/api/games/${code}?token=${h.body.token}`);
+      for (let i = 0; i < 40 && st.body.state.rounds[0].status !== 'revealed'; i++) {
+        await sleep(100);
+        st = await s.call('GET', `/api/games/${code}?token=${h.body.token}`);
+      }
+      assert.equal(st.body.state.rounds[0].status, 'revealed');
+      const rev = await s.call('GET', `/api/games/${code}/rounds/0/reveal?token=${h.body.token}`);
+      const a = rev.body.evaluations.find((e: { playerName: string }) => e.playerName === 'A');
+      assert.match(a.error, /nicht nachgerechnet/);
     });
   });
 }

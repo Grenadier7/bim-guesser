@@ -82,7 +82,7 @@ export class Game extends Lobby {
 
   protected onPresenceChange() {
     const round = this.rounds[this.currentRound];
-    if (round?.status === 'open') this.maybeReveal(round);
+    if (round?.status === 'open') this.background(this.maybeReveal(round));
   }
 
   // -------------------------------------------------------------- Lobby
@@ -262,7 +262,7 @@ export class Game extends Lobby {
     round.timer = null;
     if (!round.deadline) return;
     round.timer = setTimeout(() => {
-      if (round.status === 'open' && !round.pausedAt) void this.reveal(round);
+      if (round.status === 'open' && !round.pausedAt) this.background(this.reveal(round));
     }, Math.max(0, round.deadline - Date.now()) + DEADLINE_GRACE_MS);
     round.timer.unref();
   }
@@ -361,6 +361,7 @@ export class Game extends Lobby {
     const playerId = this.auth(token).id;
     const round = this.openRoundAt(roundIdx);
     if (round.submissions.has(playerId)) throw new GameError('Schon abgegeben');
+    if (this.revealing.has(`${this.generation}:${round.index}`)) throw new GameError('Die Runde wird gerade ausgewertet.', 409);
     const now = Date.now();
     if (round.deadline && now > round.deadline + DEADLINE_GRACE_MS) throw new GameError('Zeit abgelaufen');
     if (round.pausedAt) throw new GameError('Die Runde ist gerade pausiert.', 409);
@@ -391,8 +392,30 @@ export class Game extends Lobby {
 
   private revealing = new Map<string, Promise<RoundReveal>>();
 
+  /** Auflösung ohne wartenden Request (Zeitablauf, Spieler geht): Fehler nur loggen – nie den Prozess beenden */
+  private background(p: Promise<unknown> | null) {
+    p?.catch((e) => console.error(`[${new Date().toISOString()}] Auflösung in Lobby ${this.id} fehlgeschlagen:`, e));
+  }
+
+  /** Eine Spieler-Route nachrechnen; fällt die Auskunft aus, ist nur diese Route betroffen (nicht die ganze Runde) */
+  private async evaluate(round: Round, legs: UserLeg[], q: RouteQuery, routes: RouteOption[]) {
+    try {
+      return await evaluateUserRoute(this.net, legs, round.from!.id, round.to!.id, round.time, this.settings.network, q, routes);
+    } catch (e) {
+      console.warn(`[${new Date().toISOString()}] Route in Lobby ${this.id} nicht auswertbar: ${(e as Error).message}`);
+      return {
+        route: null,
+        durationMin: null,
+        matchedRank: null,
+        source: 'none' as const,
+        error: 'Deine Route konnte gerade nicht nachgerechnet werden – die Wiener-Linien-Auskunft hat nicht geantwortet.',
+      };
+    }
+  }
+
   private reveal(round: Round): Promise<RoundReveal> {
-    const key = `${this.generation}:${round.index}`;
+    const gen = this.generation;
+    const key = `${gen}:${round.index}`;
     let p = this.revealing.get(key);
     if (p) return p;
     if (round.timer) clearTimeout(round.timer);
@@ -413,7 +436,7 @@ export class Game extends Lobby {
                 }
               : null;
           const r = sub?.legs.length
-            ? await evaluateUserRoute(this.net, sub.legs, round.from!.id, round.to!.id, round.time, this.settings.network, q, routes)
+            ? await this.evaluate(round, sub.legs, q, routes)
             : { route: null, durationMin: null, matchedRank: null, source: 'none' as const, error: sub ? 'Keine Route angegeben.' : 'Nicht rechtzeitig abgegeben.' };
           const costMin = r.durationMin == null ? null : routeCost(r.durationMin, r.route ? transfersOf(r.route) : 0, this.settings);
           const score = computeScore({
@@ -441,6 +464,8 @@ export class Game extends Lobby {
         }),
       );
       evaluations.sort((a, b) => b.score.total - a.score.total);
+      // während der Auswertung abgebrochen oder zurück in die Lobby: keine Punkte vergeben
+      if (gen !== this.generation || round.status !== 'open') return round.reveal ?? { index: round.index, routes, evaluations: [], cancelled: true };
       for (const ev of evaluations) {
         const pl = this.players.get(ev.playerId);
         if (pl) pl.score += ev.score.total;
@@ -453,6 +478,8 @@ export class Game extends Lobby {
       return round.reveal;
     })();
     this.revealing.set(key, p);
+    // fehlgeschlagen → nicht merken, sonst scheitert jede weitere Auflösung dieser Runde
+    p.catch(() => this.revealing.delete(key));
     return p;
   }
 

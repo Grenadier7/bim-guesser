@@ -3,6 +3,9 @@ import { createApp } from './app.ts';
 import { Network } from './network.ts';
 
 const PORT = Number(process.env.PORT ?? 3000);
+
+// Sicherheitsnetz: ein übersehener Fehler in einer Hintergrund-Aufgabe darf nicht alle laufenden Spiele beenden
+process.on('unhandledRejection', (e) => console.error(`[${new Date().toISOString()}] Unbehandelter Fehler:`, e));
 const net = Network.load();
 const { app } = createApp({ net, version: process.env.APP_VERSION ?? 'dev' });
 
