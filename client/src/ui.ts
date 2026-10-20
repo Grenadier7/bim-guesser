@@ -117,14 +117,28 @@ if (typeof document !== 'undefined')
 
 /** Listeneinträge per Klick auf-/zuklappen */
 export function makeExpandable(list: HTMLElement) {
+  // per Tastatur erreichbar: Tab → Enter/Leertaste klappt auf
+  for (const li of list.querySelectorAll<HTMLElement>('li.expandable')) {
+    li.tabIndex = 0;
+    li.setAttribute('role', 'button');
+    li.setAttribute('aria-expanded', String(li.classList.contains('open')));
+  }
+  const toggle = (li: HTMLElement) => li.setAttribute('aria-expanded', String(li.classList.toggle('open')));
   list.addEventListener('click', (e) => {
     const li = (e.target as HTMLElement).closest<HTMLElement>('li.expandable');
-    if (li && list.contains(li) && !(e.target as HTMLElement).closest('.rdetail')) li.classList.toggle('open');
+    if (li && list.contains(li) && !(e.target as HTMLElement).closest('.rdetail')) toggle(li);
+  });
+  list.addEventListener('keydown', (e) => {
+    const li = e.target as HTMLElement;
+    if ((e.key === 'Enter' || e.key === ' ') && li.matches('li.expandable')) {
+      e.preventDefault();
+      toggle(li);
+    }
   });
 }
 
 export function toast(msg: string, kind: 'error' | 'info' = 'error') {
-  const el = h('div', { class: `toast toast-${kind}` }, esc(msg));
+  const el = h('div', { class: `toast toast-${kind}`, role: kind === 'error' ? 'alert' : 'status', 'aria-live': kind === 'error' ? 'assertive' : 'polite' }, esc(msg));
   document.body.append(el);
   setTimeout(() => el.classList.add('hide'), 3800);
   setTimeout(() => el.remove(), 4400);

@@ -2,7 +2,8 @@
   --bg: #eef0f3;
   --panel: #ffffff;
   --ink: #1b1e23;
-  --muted: #6b7280;
+  /* 5,0:1 auf #eef0f3, 5,9:1 auf Weiß (vorher #6b7280: 4,2:1, Befund U-02) */
+  --muted: #5b6170;
   --line: #e3e6ea;
   --accent: #e3000f;
   --accent-ink: #ffffff;
@@ -1218,6 +1219,7 @@ small {
 .leave {
   display: block;
   margin: 12px auto 0;
+  padding: 8px 12px;
 }
 
 /* ---------------------------------------------------------------- Runde */
@@ -1676,7 +1678,7 @@ input[type='range'] {
   padding: 5px 11px;
   cursor: pointer;
   font-size: 13px;
-  opacity: 0.55;
+  color: var(--muted);
 }
 
 .quiz-modes button.on {
@@ -2796,7 +2798,6 @@ div.wait-note ul {
   color: var(--muted);
   font: inherit;
   cursor: pointer;
-  opacity: 0.6;
   position: relative;
   z-index: 1;
 }
@@ -2808,6 +2809,10 @@ div.wait-note ul {
 .sc-box small {
   font-size: 11.5px;
   font-weight: 700;
+}
+
+.sc-col:not(.on) .sc-box {
+  border-style: dashed;
 }
 
 .sc-col.on .sc-box {
@@ -2953,8 +2958,8 @@ div.wait-note ul {
   position: relative;
   display: inline-grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   margin-left: 4px;
   padding: 0;
   border: 0;

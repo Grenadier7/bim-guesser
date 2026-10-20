@@ -1,6 +1,6 @@
 // Barrierefreiheit & Layout (Phase 2c): axe-core (WCAG 2 A/AA) auf allen Hauptbildschirmen, Handy und Desktop,
 // dazu horizontales Scrollen und zu kleine Touch-Ziele. Ergebnis: test/e2e/artifacts/a11y.json + Screenshots.
-// Harte Prüfung nur für „keine kritischen axe-Verstöße“ und „kein horizontales Scrollen“ – der Rest ist Messwert.
+// Hart geprüft: keine kritischen/ernsten axe-Verstöße (außer bewusst akzeptierten) und kein horizontales Scrollen.
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -102,7 +102,7 @@ const SCREENS: { name: string; go: (p: Page) => Promise<void> }[] = [
 
 for (const vp of ['phone', 'desktop'] as const)
   for (const s of SCREENS)
-    test(`${s.name} (${vp} ${VIEWPORTS[vp].width}px)`, { todo: s.name === 'quiz-lobby' ? 'Befund U-01: Bezirksauswahl ohne Beschriftung' : undefined }, async () => {
+    test(`${s.name} (${vp} ${VIEWPORTS[vp].width}px)`, async () => {
       const t = await app.page({ viewport: vp });
       await t.page.goto(app.base);
       await s.go(t.page);
@@ -112,6 +112,9 @@ for (const vp of ['phone', 'desktop'] as const)
       assert.deepEqual(t.errors, []);
       await t.context.close();
       assert.ok(layout.scrollX <= 1, `horizontales Scrollen: ${layout.scrollX}px`);
-      const critical = v.filter((x) => x.impact === 'critical');
-      assert.deepEqual(critical.map((x) => `${x.id}: ${x.nodes.map((n) => n.target.join(' ')).join(', ')}`), []);
+      // erlaubt (bewusst, siehe 02-befunde.md): Linienfarben der Wiener Linien (U-06) und der Leaflet-Link im Kartenfuß
+      const accepted = (x: Violation, n: Violation['nodes'][number]) =>
+        (x.id === 'color-contrast' && /chip-|leaflet/.test(n.target.join(' '))) || (x.id === 'link-in-text-block' && /leaflet/.test(n.target.join(' ')));
+      const bad = v.flatMap((x) => (x.impact === 'critical' || x.impact === 'serious' ? x.nodes.filter((n) => !accepted(x, n)).map((n) => `${x.id}: ${n.target.join(' ')}`) : []));
+      assert.deepEqual(bad, []);
     });

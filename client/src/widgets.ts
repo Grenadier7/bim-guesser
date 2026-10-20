@@ -11,7 +11,7 @@ export function seg(key: string, opts: Opt[], current: string, disabled: boolean
   return `<div class="seg seg-wide">${opts
     .map(
       (o) =>
-        `<button data-k="${key}" data-v="${esc(o.value)}" class="${o.value === current ? 'on' : ''}" ${o.title ? `title="${esc(o.title)}"` : ''} ${disabled ? 'disabled' : ''}>${o.label}</button>`,
+        `<button data-k="${key}" data-v="${esc(o.value)}" class="${o.value === current ? 'on' : ''}" aria-pressed="${o.value === current}" ${o.title ? `title="${esc(o.title)}"` : ''} ${disabled ? 'disabled' : ''}>${o.label}</button>`,
     )
     .join('')}</div>`;
 }

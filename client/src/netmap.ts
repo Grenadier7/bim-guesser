@@ -167,7 +167,7 @@ export class NetMapLayer {
     const poly = (path: LL[], o: L.PolylineOptions) =>
       this.group.addLayer(L.polyline(path, { renderer: r, interactive: false, lineCap: 'round', lineJoin: 'round', ...o }));
     const tag = (at: LL, html: string, className: string, z = 300) =>
-      this.group.addLayer(L.marker(at, { pane: 'netLabels', interactive: false, zIndexOffset: z, icon: L.divIcon({ className, html, iconSize: undefined }) }));
+      this.group.addLayer(L.marker(at, { pane: 'netLabels', interactive: false, keyboard: false, zIndexOffset: z, icon: L.divIcon({ className, html, iconSize: undefined }) }));
 
     // 1. Konzept-Bänder unter allem
     for (const [key, band] of Object.entries(BANDS) as [keyof NetView['bands'], (typeof BANDS)['ring']][]) {

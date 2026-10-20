@@ -66,7 +66,7 @@ export function quizLobbyScreen(panel: HTMLElement): Screen {
         <div class="setting"><span>Zeit pro Frage</span>${seg('timeSec', QUIZ_TIMES.map((n) => ({ value: String(n), label: `${n} s` })), String(s.timeSec), ro)}
           <small class="hint">Richtig gibt 500–1000 Punkte – je schneller, desto mehr.</small></div>
         <div class="setting"><span>Gebiet</span>
-          <select id="area" ${ro ? 'disabled' : ''}><option value="0">Ganz Wien</option>${app.net.data.districts.map((d) => `<option value="${d.id}" ${d.id === s.area ? 'selected' : ''}>${d.id}. ${esc(d.name)}</option>`).join('')}</select></div>
+          <select id="area" aria-label="Gebiet" ${ro ? 'disabled' : ''}><option value="0">Ganz Wien</option>${app.net.data.districts.map((d) => `<option value="${d.id}" ${d.id === s.area ? 'selected' : ''}>${d.id}. ${esc(d.name)}</option>`).join('')}</select></div>
         <div class="setting"><span>Verkehrsmittel</span><div class="quiz-modes">${(['U', 'S', 'T', 'B', 'N'] as Mode[])
           .map((m) => `<button data-mode="${m}" class="${s.modes.includes(m) ? 'on' : ''}" ${ro ? 'disabled' : ''}>${MODE_ICON[m]} ${MODE_LABEL[m]}</button>`)
           .join('')}</div></div>
