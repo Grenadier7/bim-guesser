@@ -32,23 +32,37 @@ export function isHoliday(d: Date): boolean {
   return [1, 39, 50, 60].some((off) => e + off * 86400000 === d.getTime());
 }
 
-// Wiener Schulferien (Ferienfahrplan bei der U-Bahn)
-const SCHOOL_HOLIDAYS: [string, string][] = [
-  ['2025-12-24', '2026-01-06'],
-  ['2026-02-02', '2026-02-07'],
-  ['2026-03-28', '2026-04-06'],
-  ['2026-05-23', '2026-05-26'],
-  ['2026-07-04', '2026-09-06'],
-  ['2026-10-27', '2026-10-31'],
-  ['2026-12-24', '2027-01-06'],
-  ['2027-02-01', '2027-02-06'],
-  ['2027-03-20', '2027-03-29'],
-  ['2027-07-03', '2027-09-05'],
-];
+// Wiener Schulferien (Ferienfahrplan bei der U-Bahn) – nach den festen Regeln berechnet statt als Liste, die
+// irgendwann endet (Befund L-09: Pfingsten 2027 fehlte, Liste endete 2027-09):
+//   Semester: 1. Montag im Februar – Samstag · Ostern: Samstag vor Palmsonntag – Ostermontag
+//   Pfingsten: Samstag davor – Dienstag danach · Sommer: 1. Samstag im Juli – 1. Sonntag im September
+//   Herbst: 27.–31. Oktober · Weihnachten: 24.12. – 6.1.
+const DAY = 86400000;
+const utc = (y: number, m: number, d: number) => Date.UTC(y, m - 1, d);
+/** erster Wochentag `wd` (0 = So … 6 = Sa) ab dem Datum */
+const firstWeekday = (y: number, m: number, d: number, wd: number) => {
+  const t = utc(y, m, d);
+  return t + (((wd - new Date(t).getUTCDay()) + 7) % 7) * DAY;
+};
+
+export function schoolHolidays(y: number): [number, number][] {
+  const e = easter(y).getTime();
+  const pentecost = e + 49 * DAY;
+  const sem = firstWeekday(y, 2, 1, 1);
+  return [
+    [utc(y, 1, 1), utc(y, 1, 6)],
+    [sem, sem + 5 * DAY],
+    [e - 8 * DAY, e + DAY],
+    [pentecost - DAY, pentecost + 2 * DAY],
+    [firstWeekday(y, 7, 1, 6), firstWeekday(y, 9, 1, 0)],
+    [utc(y, 10, 27), utc(y, 10, 31)],
+    [utc(y, 12, 24), utc(y, 12, 31)],
+  ];
+}
 
 export function isSchoolHoliday(d: Date): boolean {
-  const iso = d.toISOString().slice(0, 10);
-  return SCHOOL_HOLIDAYS.some(([a, b]) => iso >= a && iso <= b);
+  const t = utc(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+  return schoolHolidays(d.getUTCFullYear()).some(([a, b]) => t >= a && t <= b);
 }
 
 /** Ist der Tag ein "normaler" Vertreter seines Tagestyps? */

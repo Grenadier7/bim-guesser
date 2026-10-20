@@ -35,7 +35,7 @@ export function createApp({ net, version = 'dev' }: AppOptions) {
 
   // Für Docker-Healthcheck und Update-Skript: läuft der Server, und laufen gerade Spiele?
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true, version, uptimeSec: Math.round((Date.now() - started) / 1000), lobbies: games.lobbyCount, activeGames: games.activeGames() });
+    res.json({ ok: true, version, uptimeSec: Math.round((Date.now() - started) / 1000), lobbies: games.lobbyCount, activeGames: games.activeGames(), warnings: net.referenceWarnings() });
   });
 
   app.get('/api/network', (_req, res) => {

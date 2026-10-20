@@ -66,16 +66,20 @@ export class Network {
   markUsed(...ids: string[]) {
     for (const id of ids) this.usage.set(id, (this.usage.get(id) ?? 0) + 1);
     if (this.usageSave) return;
-    this.usageSave = setTimeout(() => {
-      this.usageSave = null;
-      try {
-        writeFileSync(USAGE_FILE, JSON.stringify(Object.fromEntries(this.usage)));
-      } catch (e) {
-        // nur Statistik – aber melden, damit man fehlende Rechte am Volume bemerkt
-        console.warn(`Statistik ${USAGE_FILE} nicht beschreibbar: ${(e as Error).message}`);
-      }
-    }, 5000);
+    this.usageSave = setTimeout(() => this.saveUsage(), 5000);
     this.usageSave.unref();
+  }
+
+  /** Statistik sofort schreiben (auch beim Beenden des Servers, Befund L-11) */
+  saveUsage() {
+    if (this.usageSave) clearTimeout(this.usageSave);
+    this.usageSave = null;
+    try {
+      writeFileSync(USAGE_FILE, JSON.stringify(Object.fromEntries(this.usage)));
+    } catch (e) {
+      // nur Statistik – aber melden, damit man fehlende Rechte am Volume bemerkt
+      console.warn(`Statistik ${USAGE_FILE} nicht beschreibbar: ${(e as Error).message}`);
+    }
   }
 
   static load(): Network {
@@ -84,6 +88,19 @@ export class Network {
     } catch (e) {
       throw new Error(`data/network.json fehlt oder ist kaputt – zuerst "npm run build:data" ausführen. (${(e as Error).message})`);
     }
+  }
+
+  /**
+   * Referenztage zu alt? Die Auskunft kennt nur einige Monate zurück – danach liefert „Reguläres Netz“ nichts mehr
+   * (Befund M-07). Liefert Warntexte für Log und /api/health.
+   */
+  referenceWarnings(now = new Date()): string[] {
+    const out: string[] = [];
+    for (const [type, day] of Object.entries(this.data.regularDays)) {
+      const ageDays = (now.getTime() - new Date(`${day.date}T12:00:00Z`).getTime()) / 86400000;
+      if (ageDays > 150) out.push(`Referenztag ${type}=${day.date} ist ${Math.round(ageDays)} Tage alt – die Auskunft kennt ihn evtl. nicht mehr. Netzdaten neu bauen (npm run build:data).`);
+    }
+    return out;
   }
 
   publicData(): NetworkPublic {

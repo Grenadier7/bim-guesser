@@ -89,3 +89,19 @@ test('Regression M-02: max. 20 Lobbys je IP; voller Server räumt nie verbundene
   assert.ok(fresh, 'neue Lobby trotz vollem Server');
   assert.equal(m.lobbyCount, 500);
 });
+
+test('Regression M-07: Warnung, wenn die Referenztage zu alt für die Auskunft sind', () => {
+  const day = new Date(`${net.data.regularDays.wd.date}T12:00:00Z`);
+  assert.deepEqual(net.referenceWarnings(new Date(day.getTime() + 30 * 86400000)), []);
+  const old = net.referenceWarnings(new Date(day.getTime() + 200 * 86400000));
+  assert.ok(old.length >= 1 && /npm run build:data/.test(old[0]), old.join(' | '));
+});
+
+test('Regression L-11: Statistik lässt sich sofort sichern (beim Beenden des Servers)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const path = await import('node:path');
+  net.markUsed('s1', 's2');
+  net.saveUsage();
+  const saved = JSON.parse(readFileSync(path.join(process.env.STATE_DIR!, 'usage.json'), 'utf8'));
+  assert.ok(saved.s1 >= 1 && saved.s2 >= 1);
+});
