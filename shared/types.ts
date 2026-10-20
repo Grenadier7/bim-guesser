@@ -355,6 +355,8 @@ export interface QuizRevealPublic {
   explanation: string;
   revealStationId: string | null;
   revealLineId: string | null;
+  /** Linien, die in der Auflösung farbig gezeichnet werden (vorher nicht im Zustand – sie verraten die Lösung) */
+  drawLines?: string[];
   results: QuizAnswerResult[];
   cancelled: boolean;
 }

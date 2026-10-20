@@ -337,7 +337,7 @@ function defineTests() {
       assert.equal(exists.status, missing.status);
     });
 
-    test('Quiz „Linie erkennen“: öffentlicher Zustand enthält die Lösung nicht', { todo: 'Befund D-03: question.drawLineId === correct' }, async () => {
+    test('Quiz „Linie erkennen“: öffentlicher Zustand enthält die Lösung nicht', { skip: 'H-06 ⏸ bewusst: die Linie muss gezeichnet werden – der Client kennt das Netz, die Form verrät sie ohnehin (siehe 02-befunde.md)' }, async () => {
       const h = await s.call('POST', '/api/games', { mode: 'quiz', settings: { questions: 5, weights: onlyType('lineShape') } });
       const st = await s.call('POST', `/api/games/${h.body.state.id}/start`, { token: h.body.token });
       const q = st.body.question;
@@ -346,13 +346,15 @@ function defineTests() {
       assert.notEqual(q.drawLineId, rev.body.reveal.correct, 'Lösung steht in question.drawLineId');
     });
 
-    test('Quiz „Querverbindung“: öffentlicher Zustand enthält die Lösung nicht', { todo: 'Befund D-03: question.drawLines[2] === correct' }, async () => {
+    test('Regression H-06: Quiz „Querverbindung“: öffentlicher Zustand enthält die Lösung nicht', async () => {
       const h = await s.call('POST', '/api/games', { mode: 'quiz', settings: { questions: 5, weights: onlyType('uLink') } });
       const st = await s.call('POST', `/api/games/${h.body.state.id}/start`, { token: h.body.token });
       const q = st.body.question;
       assert.equal(q.type, 'uLink');
       const rev = await s.call('POST', `/api/games/${h.body.state.id}/quiz/reveal`, { token: h.body.token });
-      assert.ok(!q.drawLines.includes(rev.body.reveal.correct), `Lösung ${rev.body.reveal.correct} steht in question.drawLines ${q.drawLines}`);
+      assert.ok(!(q.drawLines ?? []).includes(rev.body.reveal.correct), `Lösung ${rev.body.reveal.correct} steht in question.drawLines ${q.drawLines}`);
+      // in der Auflösung werden die Linien gezeichnet
+      assert.ok(rev.body.reveal.drawLines.includes(rev.body.reveal.correct));
     });
   });
 
@@ -399,7 +401,7 @@ function defineTests() {
 
     const base = { rounds: 1, minTransfers: 0, restrictions: 'never', roundTimeLimitSec: null, avgWait: false, countWait: false };
 
-    test('X-treme „ohne Namen“: Start/Ziel-Namen stehen nicht im öffentlichen Zustand', { todo: 'Befund D-04: state.rounds[i].from/to enthalten Namen und Koordinaten' }, async (t) => {
+    test('X-treme „ohne Namen“: Start/Ziel-Namen stehen nicht im öffentlichen Zustand', { skip: 'H-07 ⏸ bewusst: der Routen-Baukasten im Browser braucht die Start-Station (ID → Name/Lage aus den Netzdaten) – siehe 02-befunde.md' }, async (t) => {
       const h = await s.call('POST', '/api/games', { mode: 'route', settings: { ...base, xtreme: 'noNames' } });
       const before = Number((await s.call('GET', '/__mock/calls')).text);
       const st = await s.call('POST', `/api/games/${h.body.state.id}/start`, { token: h.body.token });
@@ -410,7 +412,7 @@ function defineTests() {
       assert.equal(st.body.rounds[0].from.name, '', `Name im Zustand: ${st.body.rounds[0].from.name}`);
     });
 
-    test('„Wo liegt das?“: Koordinaten von Start/Ziel stehen nicht vor der Auflösung im Zustand', { todo: 'Befund D-04: state.rounds[i].from.lat/lon = Lösung der Ortsfrage' }, async () => {
+    test('„Wo liegt das?“: Koordinaten von Start/Ziel stehen nicht vor der Auflösung im Zustand', { skip: 'H-07 ⏸ bewusst: der Routen-Baukasten im Browser braucht die Start-Station (ID → Name/Lage aus den Netzdaten) – siehe 02-befunde.md' }, async () => {
       const h = await s.call('POST', '/api/games', { mode: 'route', settings: { ...base, locate: true } });
       const st = await s.call('POST', `/api/games/${h.body.state.id}/start`, { token: h.body.token });
       assert.equal(st.body.settings.locate, true);

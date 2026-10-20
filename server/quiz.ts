@@ -251,6 +251,7 @@ export class QuizGame extends Lobby {
       explanation: q.explanation,
       revealStationId: q.revealStationId ?? q.stationId ?? null,
       revealLineId: q.revealLineId ?? q.drawLineId ?? null,
+      drawLines: q.drawLines,
       results,
       cancelled,
     };

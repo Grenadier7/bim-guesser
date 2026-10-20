@@ -32,7 +32,7 @@ export function quizRevealScreen(panel: HTMLElement): Screen {
     if (!r) return;
     app.map.clear();
     app.map.showLearnArea(areaOf(st0.settings), false);
-    if (q.drawLines?.length) drawLinesColored(q.drawLines, true);
+    if (r.drawLines?.length) drawLinesColored(r.drawLines, true);
     else if (q.type === 'district' && r.revealStationId) drawLinesColored(linesAt(r.revealStationId).map((l) => l.id), true);
     else if (r.revealLineId) drawLine(r.revealLineId, true, true);
     if (q.type === 'draw') {

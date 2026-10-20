@@ -122,7 +122,8 @@ export interface QuizQuestion extends QuizQuestionPublic {
 }
 
 export function publicQuestion(q: QuizQuestion): QuizQuestionPublic {
-  const { correct: _c, explanation: _e, revealStationId: _s, revealLineId: _l, tolM: _t, ...pub } = q;
+  // drawLines zeigt die Lösung (z.B. „Querverbindung“) – kommt erst mit der Auflösung (Befund H-06)
+  const { correct: _c, explanation: _e, revealStationId: _s, revealLineId: _l, tolM: _t, drawLines: _d, ...pub } = q;
   return pub;
 }
 

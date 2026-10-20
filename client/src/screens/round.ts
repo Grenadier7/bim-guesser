@@ -279,16 +279,8 @@ export function roundScreen(panel: HTMLElement): Screen {
     try {
       await api.submit(auth, idx, legs, s.settings.locate ? guesses : null);
     } catch (e) {
-      // Zeit abgelaufen: Auflösung kommt trotzdem über den Live-Kanal
-      if (auto) return;
-      toast((e as Error).message);
-      // sonst (Netzfehler, Server kurz weg …): nicht auf „Abgegeben“ hängen bleiben – nochmal abgeben können (H-05)
-      if (currentRound()?.submitted.includes(playerId)) return;
-      submitting = false;
-      submittedAt = null;
-      b.unlock();
-      view = 'route';
-      render();
+      // Zeit abgelaufen o.ä.: Auflösung kommt trotzdem über den Live-Kanal
+      if (!auto) toast((e as Error).message);
     }
   }
 
