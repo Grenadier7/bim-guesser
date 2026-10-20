@@ -90,10 +90,11 @@ async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Antworten im Speicher (zuletzt benutzte zuerst behalten). Eine Antwort ist roh ~100 KB groß – 500 Einträge ≈ 50 MB,
- * passt in den Container (mem_limit 384m). Vorher 5000 Einträge ≈ 500 MB (Befund H-04).
+ * Antworten im Speicher (zuletzt benutzte zuerst behalten). Eine Antwort ist ~100 KB groß – 1500 Einträge ≈ 160 MB,
+ * passt in den Container (mem_limit 768m). Vorher unbegrenzt bis 5000 ≈ 500 MB (Befund H-04).
+ * Einstellbar über EFA_MEM_CACHE (Anzahl Antworten), z.B. kleiner bei wenig RAM.
  */
-const MEM_MAX = 500;
+const MEM_MAX = Math.max(50, Number(process.env.EFA_MEM_CACHE) || 1500);
 const memCache = new Map<string, Promise<any>>();
 export const memCacheSize = () => memCache.size;
 export let requestCount = 0;

@@ -6,7 +6,7 @@ services:
     image: bimguesser:local
     init: true # Signale sauber weiterreichen (schnelles docker stop)
     restart: unless-stopped
-    mem_limit: 384m
+    mem_limit: 768m
     ports:
       - '${PORT:-3000}:3000'
     environment:

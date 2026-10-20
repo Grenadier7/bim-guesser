@@ -5,6 +5,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { installEfaMock } from './support/efa-mock.ts';
 
+process.env.EFA_MEM_CACHE = '500';
 await installEfaMock();
 const efa = await import('../server/efa.ts');
 const { Network } = await import('../server/network.ts');

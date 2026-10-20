@@ -8,7 +8,7 @@
     image: ghcr.io/grenadier7/bim-guesser:latest
     container_name: oeffi-guesser
     restart: unless-stopped
-    mem_limit: 384m
+    mem_limit: 768m
     volumes:
       - ./services/oeffi-guesser/state:/app/state # Auskunfts-Cache + Statistik
     networks:
