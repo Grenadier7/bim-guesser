@@ -10,6 +10,12 @@ if (!['patch', 'minor', 'major'].includes(kind)) {
   console.error('Aufruf: npm run release [patch|minor|major]');
   process.exit(1);
 }
+// Releases nur von master – ein Tag auf einem Feature-Branch würde ungetesteten Stand als „latest“ ausliefern (Befund L-10)
+const current = git('rev-parse', '--abbrev-ref', 'HEAD');
+if (current !== 'master' && !process.argv.includes('--any-branch')) {
+  console.error(`✖ Releases nur von master (aktuell: ${current}). Bewusst anders? --any-branch`);
+  process.exit(1);
+}
 if (git('status', '--porcelain')) {
   console.error('✖ Es gibt nicht committete Änderungen – erst committen, dann releasen.');
   process.exit(1);
@@ -33,6 +39,12 @@ try {
   process.exit(1);
 }
 
+// Tags vom Server holen – sonst würde eine schon vergebene Versionsnummer nochmal erzeugt
+try {
+  git('fetch', '--tags', '--quiet');
+} catch {
+  console.warn('⚠ Tags konnten nicht geholt werden (offline?) – nehme die lokalen.');
+}
 const last = git('tag', '--list', 'v*', '--sort=-v:refname').split('\n').find((t) => /^v\d+\.\d+\.\d+$/.test(t)) ?? 'v0.0.0';
 const [maj, min, pat] = last.slice(1).split('.').map(Number);
 const next = kind === 'major' ? `v${maj + 1}.0.0` : kind === 'minor' ? `v${maj}.${min + 1}.0` : `v${maj}.${min}.${pat + 1}`;
