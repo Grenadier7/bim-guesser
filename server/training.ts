@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import type { GameSettings, RouteOption, Station, TrainingResult, TrainingRound } from '../shared/types.ts';
 import { GameError } from './game.ts';
 import { cleanLegs, sanitizeSettings } from './settings.ts';
-import type { Network, PastPair } from './network.ts';
+import { NoPairError, type Network, type PastPair } from './network.ts';
 import { EfaUnavailableError, evaluateUserRoute, topRoutes, type RouteQuery } from './routing.ts';
 import { describeSlotDate, slotTime } from './timeslots.ts';
 
@@ -40,6 +40,7 @@ export class TrainingService {
       return await this.createInner(rawSettings, pair);
     } catch (e) {
       if (e instanceof EfaUnavailableError) throw new GameError('Die Wiener-Linien-Auskunft antwortet gerade nicht – bitte gleich nochmal.', 503);
+      if (e instanceof NoPairError) throw new GameError(e.message, 422);
       throw e;
     }
   }
@@ -55,11 +56,14 @@ export class TrainingService {
     if (fixed) {
       from = this.net.station(String(pair!.from));
       to = this.net.station(String(pair!.to));
+      if (from.id === to.id) throw new GameError('Start und Ziel sind dieselbe Station.');
       routes = await topRoutes(this.net, from.id, to.id, time, this.query(settings));
     } else {
       for (let attempt = 0; attempt < 14 && !routes.length; attempt++) {
         [from, to] = this.net.randomPair(settings, new Set(), this.recent);
-        const r = await topRoutes(this.net, from.id, to.id, time, this.query(settings));
+        // wie im Spiel: Paare ohne genug Umstiege schon nach den Stichproben verwerfen
+        const minTransfers = attempt < 12 ? settings.minTransfers : 0;
+        const r = await topRoutes(this.net, from.id, to.id, time, { ...this.query(settings), minTransfers });
         if (!r.length || r[0].key === 'walk') continue;
         if (r[0].legs.filter((l) => l.mode !== 'W').length - 1 < settings.minTransfers && attempt < 12) continue;
         routes = r;
@@ -80,7 +84,12 @@ export class TrainingService {
   async evaluate(id: string, legs: unknown): Promise<TrainingResult> {
     const r = this.rounds.get(String(id));
     if (!r) throw new GameError('Trainingsrunde abgelaufen – bitte neue Strecke starten.', 404);
-    const res = await evaluateUserRoute(this.net, cleanLegs(legs), r.from.id, r.to.id, r.time, r.settings.network, this.query(r.settings), r.routes);
+    let res;
+    try {
+      res = await evaluateUserRoute(this.net, cleanLegs(legs), r.from.id, r.to.id, r.time, r.settings.network, this.query(r.settings), r.routes);
+    } catch {
+      throw new GameError('Die Wiener-Linien-Auskunft antwortet gerade nicht – bitte gleich nochmal auswerten.', 503);
+    }
     return { route: res.route, durationMin: res.durationMin, matchedRank: res.matchedRank, error: res.error };
   }
 

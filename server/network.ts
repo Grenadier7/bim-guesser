@@ -7,6 +7,9 @@ import { inStationKinds } from '../shared/pools.ts';
 import type { EfaPoint } from './efa.ts';
 import { STATE_DIR } from './paths.ts';
 
+/** Kein Start/Ziel-Paar möglich (Einstellungen zu eng) – wird im Spiel zur verständlichen Meldung */
+export class NoPairError extends Error {}
+
 export { distM };
 
 const FILE = path.resolve(import.meta.dirname, '../data/network.json');
@@ -152,7 +155,11 @@ export class Network {
    * `focus.share` aus dem Kreis gezogen, sonst aus ganz Wien.
    */
   randomPair(s: GameSettings, exclude: Set<string>, past: PastPair[] = []): [Station, Station] {
-    const pool = this.candidates(s.stations, s.slot, s.network).filter((x) => !exclude.has(x.id));
+    const all = this.candidates(s.stations, s.slot, s.network);
+    if (all.length < 2) throw new NoPairError('Mit diesen Einstellungen gibt es zu wenige Haltestellen – bitte mehr Haltestellen-Arten wählen.');
+    // bereits gespielte Stationen meiden – außer der Pool wäre dann zu klein (z.B. viele Runden mit wenigen Stationen)
+    const fresh = all.filter((x) => !exclude.has(x.id));
+    const pool = fresh.length >= 2 ? fresh : all;
     const inFocus = s.focus ? pool.filter((x) => distM(x, s.focus!) <= s.focus!.radiusM) : [];
     const [minD, maxD] = distanceRange(s.distance);
     // selten gezogene Stationen bevorzugen: Gewicht 1 / (1 + bisherige Ziehungen)²
@@ -194,6 +201,6 @@ export class Network {
       if (strict && similar) continue;
       return [a, b];
     }
-    throw new Error('Kein passendes Stationspaar gefunden');
+    throw new NoPairError('Kein passendes Stationspaar gefunden – bitte andere Entfernung oder mehr Haltestellen wählen.');
   }
 }

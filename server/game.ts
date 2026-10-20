@@ -27,7 +27,7 @@ import {
   difficultyMultiplier,
   scoreRoute,
 } from '../shared/rules.ts';
-import { distM, type Network, type PastPair } from './network.ts';
+import { distM, NoPairError, type Network, type PastPair } from './network.ts';
 import { EfaUnavailableError, evaluateUserRoute, topRoutes, type RouteQuery } from './routing.ts';
 import { DEADLINE_GRACE_MS, GameError, Lobby } from './lobby.ts';
 import { describeSlotDate, slotTime } from './timeslots.ts';
@@ -198,7 +198,13 @@ export class Game extends Lobby {
   private async prepare(round: Round, gen: number): Promise<RouteOption[]> {
     for (let attempt = 0; attempt < 14; attempt++) {
       if (gen !== this.generation) return [];
-      const [a, b] = this.net.randomPair(this.settings, this.usedStations, this.pastPairs);
+      let a: Station, b: Station;
+      try {
+        [a, b] = this.net.randomPair(this.settings, this.usedStations, this.pastPairs);
+      } catch (e) {
+        if (e instanceof NoPairError) throw new GameError(e.message, 422);
+        throw e;
+      }
       let routes: RouteOption[];
       try {
         if (round.restriction === 'banLines') {
@@ -238,14 +244,31 @@ export class Game extends Lobby {
     this.emitState();
     try {
       await round.ready;
-    } catch (e) {
-      if (gen === this.generation) {
-        this.phase = 'lobby';
-        this.rounds = [];
-        this.currentRound = -1;
+    } catch {
+      // ein zweiter Versuch (z.B. kurzer Aussetzer der Auskunft)
+      if (gen !== this.generation) return;
+      round.ready = this.prepare(round, gen);
+      try {
+        await round.ready;
+      } catch (e) {
+        if (gen !== this.generation) return;
+        if (i === 0) {
+          // noch nichts gespielt: zurück in die Lobby
+          this.phase = 'lobby';
+          this.rounds = [];
+          this.currentRound = -1;
+        } else {
+          // gespielte Runden und Punkte behalten: Spiel endet nach der letzten aufgelösten Runde (Befund H-02)
+          this.generation++; // Vorbereitung weiterer Runden im Hintergrund abbrechen
+          this.rounds = this.rounds.slice(0, i);
+          this.currentRound = i - 1;
+          this.phase = 'finished';
+          this.touch();
+        }
         this.emitState();
+        if (i > 0 && e instanceof GameError) throw new GameError(`${e.message} Das Spiel endet deshalb nach Runde ${i}.`, e.status);
+        throw e;
       }
-      throw e;
     }
     if (gen !== this.generation) return;
     round.status = 'open';
