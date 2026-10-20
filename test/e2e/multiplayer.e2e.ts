@@ -119,7 +119,7 @@ test('Host schließt den Tab (Verbindungsabbruch) → Gast bleibt in der Lobby, 
   await b.t.context.close();
 });
 
-test('lange Namen, Sonderzeichen, HTML und Emojis werden sicher und unbeschädigt angezeigt', { todo: 'Befund D-10: Familien-Emoji (ZWJ) wird zerlegt' }, async () => {
+test('lange Namen, Sonderzeichen, HTML und Emojis werden sicher und unbeschädigt angezeigt', async () => {
   const a = await host('a' + '😀'.repeat(15));
   const b = await joinByCode(a.s.code, '<img src=x onerror=alert(1)>');
   const c = await joinByCode(a.s.code, '👨‍👩‍👧 Familie Österreicher-Großmann');
@@ -131,7 +131,8 @@ test('lange Namen, Sonderzeichen, HTML und Emojis werden sicher und unbeschädig
   assert.equal(await a.t.page.locator('ul.players img').count(), 0);
   // Leerzeichen-Name → „Spieler N“
   assert.ok(st.players.some((p) => /^Spieler \d+$/.test(p.name)), JSON.stringify(st.players.map((p) => p.name)));
-  for (const p of st.players) assert.ok([...p.name].length <= 20, `Name zu lang: ${p.name}`);
+  const graphemes = new Intl.Segmenter('de', { granularity: 'grapheme' });
+  for (const p of st.players) assert.ok([...graphemes.segment(p.name)].length <= 20, `Name zu lang: ${p.name}`);
   noErrors(a.t, b.t, c.t, d.t);
   await closeAll(a.t, b.t, c.t, d.t);
   // Befund-Kandidaten am Ende prüfen, damit die übrigen Prüfungen oben immer laufen

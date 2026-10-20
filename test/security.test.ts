@@ -205,7 +205,7 @@ function defineTests() {
       assert.equal(({} as Record<string, unknown>).polluted, undefined);
     });
 
-    test('Typ-Verwirrung: Objekte mit kaputtem toString werden als 4xx abgelehnt, nicht als 500', { todo: 'Befund D-06: String()/Number() auf Request-Objekte wirft TypeError → 500 + Stacktrace im Log' }, async () => {
+    test('Regression M-08: Objekte mit kaputtem toString führen nicht zu 500/Stacktrace', async () => {
       const { body } = await s.call('POST', '/api/games', { mode: 'quiz', playerName: 'H' });
       const code = body.state.id;
       const bad = { toString: 1 };
@@ -255,7 +255,7 @@ function defineTests() {
       assert.equal(await name('a​b'), 'ab');
     });
 
-    test('Namen: 20-Zeichen-Schnitt zerteilt kein Emoji, unsichtbare/Zalgo-Namen werden abgefangen', { todo: 'Befund D-10: slice(0, 20) zählt UTF-16-Einheiten; U+3164/Zalgo bleiben' }, async () => {
+    test('Regression L-06: 20-Zeichen-Schnitt zerteilt kein Emoji, unsichtbare/Zalgo-Namen werden abgefangen', async () => {
       const name = async (n: string) => (await s.call('POST', '/api/games', { mode: 'quiz', playerName: n })).body.state.players[0].name as string;
       const emoji = await name('a' + '🚇'.repeat(15));
       assert.ok(emoji.isWellFormed(), `einzelnes Surrogat am Ende: ${JSON.stringify(emoji)}`);

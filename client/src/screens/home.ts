@@ -52,7 +52,7 @@ export function homeScreen(panel: HTMLElement): Screen {
      ${
        urlCode
          ? `<div class="invite-card"><div>📨 Du wurdest in die Lobby <b>${esc(urlCode)}</b> eingeladen.</div>
-              <label class="field"><span>Dein Name</span><input id="inviteName" maxlength="20" placeholder="z.B. Alex" value="${esc(app.prefs.name)}"></label>
+              <label class="field"><span>Dein Name</span><input id="inviteName" maxlength="40" placeholder="z.B. Alex" value="${esc(app.prefs.name)}"></label>
               <button class="btn btn-primary btn-big" id="joinInvite">Jetzt beitreten</button></div>`
          : ''
      }
@@ -62,7 +62,7 @@ export function homeScreen(panel: HTMLElement): Screen {
        .map((m) => tile(m, 'mode-small'))
        .join('')}</div>
      <div class="home-bottom">
-       <label class="field"><span>Dein Name</span><input id="name" maxlength="20" placeholder="z.B. Alex" value="${esc(app.prefs.name)}"></label>
+       <label class="field"><span>Dein Name</span><input id="name" maxlength="40" placeholder="z.B. Alex" value="${esc(app.prefs.name)}"></label>
        <div class="field join"><span>Mit Code beitreten</span>
          <div class="join-row"><input id="code" class="code-input" maxlength="5" placeholder="CODE" value="${esc(urlCode)}" autocomplete="off" spellcheck="false">
          <button class="btn btn-dark" id="join">Beitreten</button></div></div>

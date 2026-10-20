@@ -2,7 +2,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { errorHandler, MIN } from './http.ts';
+import { errorHandler, MIN, stripDangerousKeys } from './http.ts';
 import { GameManager } from './manager.ts';
 import type { Network } from './network.ts';
 import { gameRoutes } from './routes/games.ts';
@@ -31,6 +31,7 @@ export function createApp({ net, version = 'dev' }: AppOptions) {
   app.use(securityHeaders);
   app.use('/api', rateLimit('api', 600, MIN));
   app.use(express.json({ limit: '20kb' }));
+  app.use(stripDangerousKeys);
 
   // Für Docker-Healthcheck und Update-Skript: läuft der Server, und laufen gerade Spiele?
   app.get('/api/health', (_req, res) => {

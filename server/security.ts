@@ -80,12 +80,25 @@ export function closeStream(ip: string) {
 
 // ---------------------------------------------------------------- Eingaben
 
-/** Spielername: keine Steuerzeichen, kein HTML, max. 20 Zeichen */
+const graphemes = new Intl.Segmenter('de', { granularity: 'grapheme' });
+export const NAME_MAX = 20;
+
+/**
+ * Spielername: ohne Steuer-/Formatzeichen (außer ZWJ – sonst zerfällt 👨‍👩‍👧), ohne HTML-Zeichen und unsichtbare
+ * Füllzeichen, höchstens ein Zusatzzeichen je Buchstabe (gegen „Zalgo“), max. 20 sichtbare Zeichen – nie mitten
+ * im Emoji gekürzt (Befund L-06).
+ */
 export function cleanName(raw: unknown): string {
-  return String(raw ?? '')
+  const s = String(raw ?? '')
     .normalize('NFC')
-    .replace(/[\p{C}<>"'`&\\]/gu, '')
+    .replace(/[\u115F\u1160\u3164\uFFA0]/g, '')
+    .replace(/(?!\u200D)[\p{C}<>"'`&\\]/gu, '')
+    .replace(/(\p{M})\p{M}+/gu, '$1')
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 20);
+    .trim();
+  return [...graphemes.segment(s)]
+    .slice(0, NAME_MAX)
+    .map((g) => g.segment)
+    .join('')
+    .trim();
 }
