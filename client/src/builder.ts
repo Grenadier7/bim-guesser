@@ -170,6 +170,12 @@ export class RouteBuilder {
     this.el.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>('input, select, button').forEach((e) => (e.disabled = true));
   }
 
+  /** Abgabe ist fehlgeschlagen → weiter bearbeiten */
+  unlock() {
+    this.locked = false;
+    this.render();
+  }
+
   private resetForm() {
     this.pickedLine = null;
     this.board = null;

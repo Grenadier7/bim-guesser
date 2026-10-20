@@ -70,6 +70,14 @@ export function quizQuestionScreen(panel: HTMLElement): Screen {
       await api.quizAnswer(app.session!, index, answer);
     } catch (e) {
       toast((e as Error).message);
+      // Frage noch offen und Antwort nicht angekommen → nochmal antworten können (H-05)
+      const st = quizState();
+      if (st.current !== index || st.status !== 'open' || st.answered.includes(myId)) return;
+      sent = false;
+      app.map.clear();
+      setMapBig(q.type === 'locate' || q.type === 'draw');
+      setupMap(q);
+      render();
     }
   }
 
