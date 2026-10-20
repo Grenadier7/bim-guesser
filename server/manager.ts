@@ -33,6 +33,10 @@ export class GameManager {
     return g;
   }
 
+  has(code: string): boolean {
+    return this.games.has(String(code).trim().toUpperCase());
+  }
+
   get(code: string): Lobby {
     const g = this.games.get(String(code).trim().toUpperCase());
     if (!g) throw new GameError('Lobby nicht gefunden – Code prüfen.', 404);

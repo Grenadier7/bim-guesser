@@ -330,7 +330,7 @@ function defineTests() {
       assert.equal((await s.call('GET', `/api/games/${code}/events?token=${other.body.token}`)).status, 403);
     });
 
-    test('Lobby-Codes lassen sich nicht über 404/403 auskundschaften', { todo: 'Befund D-09: 404 = gibt es nicht, 403 = gibt es (GET ohne eigenes Rate-Limit)' }, async () => {
+    test('Regression L-07: Lobby-Codes lassen sich nicht über 404/403 auskundschaften', async () => {
       const { body } = await s.call('POST', '/api/games', { mode: 'quiz' });
       const exists = await s.call('GET', `/api/games/${body.state.id}?token=falsch`);
       const missing = await s.call('GET', `/api/games/ZZZZZ?token=falsch`);

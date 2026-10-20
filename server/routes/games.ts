@@ -15,7 +15,12 @@ export function gameRoutes(app: Express, games: GameManager) {
   const limitStart = rateLimit('start', 12, 10 * MIN, 'Zu viele Spielstarts – bitte kurz warten.');
   const limitEvents = rateLimit('events', 60, MIN);
 
-  const game = (req: Request) => games.get(param(req, 'code'));
+  // fehlende Lobby antwortet wie ein fremder Token (403) – sonst ließen sich Codes ausprobieren (Befund L-07).
+  // Nur „Beitreten“ sagt ausdrücklich „Lobby nicht gefunden“ (dort mit eigenem Rate-Limit).
+  const game = (req: Request) => {
+    if (!games.has(param(req, 'code'))) throw new GameError('Du bist nicht in dieser Lobby.', 403);
+    return games.get(param(req, 'code'));
+  };
   /** Nur Routenjagd bzw. nur Quiz */
   const routeGame = (req: Request) => {
     const g = game(req);
@@ -50,7 +55,7 @@ export function gameRoutes(app: Express, games: GameManager) {
     '/api/games/:code/join',
     limitJoin,
     h((req): JoinResponse => {
-      const g = game(req);
+      const g = games.get(param(req, 'code'));
       const p = g.addPlayer(req.body?.playerName);
       return { playerId: p.id, token: p.token, state: g.state() };
     }),
