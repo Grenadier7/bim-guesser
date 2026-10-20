@@ -1,7 +1,7 @@
 // Wertung: Routenpunkte, Tipps, Umstiegsaufschlag, Gesamtpunkte
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { computeScore, routeCost, scoreRoute, TIP_MIN_KEEP, TIPS, tipShareOf, transferPenalty } from '../shared/rules.ts';
+import { computeScore, fmtTimeLeft, routeCost, scoreRoute, TIP_MIN_KEEP, TIPS, tipShareOf, transferPenalty } from '../shared/rules.ts';
 import type { TipKind } from '../shared/types.ts';
 
 const near = (actual: number, expected: number, tol: number) => assert.ok(Math.abs(actual - expected) <= tol, `${actual} ≉ ${expected} (±${tol})`);
@@ -49,4 +49,11 @@ test('Gesamtpunkte = (Route nach Tipps + Zeitbonus + Verorten) × Multiplikator'
   assert.equal(s.total, Math.round((s.routeAfterTips + s.timeBonus + s.locate) * 1.5));
   const late = computeScore({ routePoints: 1000, tips: [], elapsedSec: 120, limitSec: 120, locateDist: null, multiplier: 1 });
   assert.equal(late.timeBonus, 0);
+});
+
+test('N-4: Restzeit statt benötigter Zeit', () => {
+  assert.equal(fmtTimeLeft(50, 180), '2:10 / 3:00 übrig');
+  assert.equal(fmtTimeLeft(200, 180), '0:00 / 3:00 übrig');
+  assert.equal(fmtTimeLeft(8, 15), '7 / 15 s übrig');
+  assert.equal(fmtTimeLeft(50, null), 'in 0:50');
 });

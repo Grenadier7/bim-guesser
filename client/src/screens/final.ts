@@ -1,5 +1,5 @@
 import type { RoundReveal } from '../../../shared/types.ts';
-import { fmtDuration, maxRoundPoints } from '../../../shared/rules.ts';
+import { fmtTimeLeft, maxRoundPoints } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import { app, routeState, endSession, getReveal, isHost } from '../store.ts';
 import { esc, toast } from '../ui.ts';
@@ -32,7 +32,7 @@ export function finalScreen(panel: HTMLElement): Screen {
         const ev = rv.evaluations.find((e) => e.playerId === myId);
         return `<tr><td>${rv.index + 1}</td><td>${esc(r.from?.name ?? '')} → ${esc(r.to?.name ?? '')}</td>
           <td>${rv.cancelled ? '<small>abgebrochen</small>' : `${ev?.durationMin ?? '–'} / ${rv.routes[0]?.medianMin ?? '–'} min`}</td>
-          <td>${ev?.elapsedSec != null ? fmtDuration(ev.elapsedSec) : '–'}</td><td><b>${ev?.score.total ?? 0}</b></td></tr>`;
+          <td>${ev?.elapsedSec != null ? fmtTimeLeft(ev.elapsedSec, r.limitSec).replace(' übrig', '') : '–'}</td><td><b>${ev?.score.total ?? 0}</b></td></tr>`;
       })
       .join('');
 
@@ -51,7 +51,7 @@ export function finalScreen(panel: HTMLElement): Screen {
                <p>${pct >= 0.75 ? 'Öffi-Profi! 🏆' : pct >= 0.5 ? 'Solide – du kennst dich aus.' : 'Da geht noch was – nächstes Mal vielleicht öfter die U-Bahn? 😉'}</p>`
         }
         <h3>Deine Runden</h3>
-        <table><thead><tr><th>#</th><th>Strecke</th><th>Du / Beste</th><th>⏱</th><th>Pkt.</th></tr></thead><tbody>${rows}</tbody></table>
+        <table><thead><tr><th>#</th><th>Strecke</th><th>Du / Beste</th><th title="Zeit übrig / Zeitlimit">⏱ übrig</th><th>Pkt.</th></tr></thead><tbody>${rows}</tbody></table>
         ${isHost() ? '<button class="btn btn-primary btn-big" id="again">Zurück zur Lobby</button>' : '<div class="waiting-host">Der Host kann eine neue Runde in derselben Lobby starten.</div>'}
         <button class="link leave" id="leave">Lobby verlassen</button>
       </div>`;

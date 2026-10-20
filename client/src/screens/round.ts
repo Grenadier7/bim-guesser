@@ -1,5 +1,5 @@
 import type { Guesses, LatLon, RoundPublic, Station, TipKind, TipResult } from '../../../shared/types.ts';
-import { RESTRICTIONS, TIPS, XTREME_LEVELS, baseLimitSec, fmtDuration, locatePoints, restrictionLabel, tipShare } from '../../../shared/rules.ts';
+import { RESTRICTIONS, TIPS, XTREME_LEVELS, baseLimitSec, fmtDuration, fmtTimeLeft, locatePoints, restrictionLabel, tipShare } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import { RouteBuilder } from '../builder.ts';
 import { distM, fmtDist } from '../net.ts';
@@ -241,7 +241,7 @@ export function roundScreen(panel: HTMLElement): Screen {
     body.innerHTML = `
       <div class="waiting">
         <div class="big-check">✓</div>
-        <h2>Abgegeben${elapsed != null ? ` nach ${fmtDuration(elapsed)}` : ''}</h2>
+        <h2>Abgegeben${elapsed != null ? ` <small>⏱ ${fmtTimeLeft(elapsed, r.limitSec)}</small>` : ''}</h2>
         ${
           open.length
             ? `<p>Warte auf ${open.map((p) => `<b>${esc(p.name)}</b>`).join(', ')} …</p>

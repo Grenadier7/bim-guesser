@@ -506,3 +506,14 @@ export function fmtDuration(sec: number): string {
   const s = Math.max(0, Math.round(sec));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
+
+/**
+ * Restzeit statt benötigter Zeit (Wunsch N-4): „2:10 / 3:00 übrig“ bzw. bei kurzen Limits „7 / 15 s übrig“.
+ * Ohne Zeitlimit gibt es keine Restzeit – dann die benötigte Zeit („in 0:50“).
+ */
+export function fmtTimeLeft(elapsedSec: number, limitSec: number | null | undefined): string {
+  if (!limitSec) return `in ${fmtDuration(elapsedSec)}`;
+  const left = Math.max(0, limitSec - elapsedSec);
+  if (limitSec < 60) return `${Math.round(left)} / ${limitSec} s übrig`;
+  return `${fmtDuration(left)} / ${fmtDuration(limitSec)} übrig`;
+}

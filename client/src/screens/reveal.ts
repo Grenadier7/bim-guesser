@@ -1,5 +1,5 @@
 import type { Evaluation, RoundReveal } from '../../../shared/types.ts';
-import { MODE_LABEL, RESTRICTIONS, TIPS, fmtDuration, maxRoundPoints, restrictionLabel, routeCostOf, transferPenalty, transfersOf } from '../../../shared/rules.ts';
+import { MODE_LABEL, RESTRICTIONS, TIPS, fmtTimeLeft, maxRoundPoints, restrictionLabel, routeCostOf, transferPenalty, transfersOf } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import type { PlayerRoute } from '../map.ts';
 import { netLayer, netView } from '../netmap.ts';
@@ -39,15 +39,28 @@ export function revealScreen(panel: HTMLElement): Screen {
   /** angetippte Route bleibt auf der Karte hervorgehoben */
   let pinned: string | null = null;
   const idx = currentRound()!.index;
+  /** Zeitlimit der Runde – für „Zeit übrig“ */
+  const limitSec = currentRound()!.limitSec;
   let reveal: RoundReveal | null = null;
   panel.innerHTML = loadingHtml('Lade Auflösung …');
 
-  getReveal(idx)
-    .then((r) => {
-      reveal = r;
-      render();
-    })
-    .catch((e) => toast((e as Error).message));
+  // Netzfehler: Meldung + Nochmal statt ewigem Spinner (Befund M-11)
+  function load() {
+    getReveal(idx)
+      .then((r) => {
+        reveal = r;
+        render();
+      })
+      .catch((e) => {
+        panel.innerHTML = `<div class="waiting"><p>Auflösung konnte nicht geladen werden: ${esc((e as Error).message)}</p>
+          <button class="btn btn-primary" id="retry-reveal">Nochmal laden</button></div>`;
+        panel.querySelector('#retry-reveal')!.addEventListener('click', () => {
+          panel.innerHTML = loadingHtml('Lade Auflösung …');
+          load();
+        });
+      });
+  }
+  load();
 
   function render() {
     if (!reveal) return;
@@ -88,7 +101,7 @@ export function revealScreen(panel: HTMLElement): Screen {
           (e) => `<li data-key="p:${e.playerId}" class="expandable ${e.playerId === myId ? 'is-me' : ''}">
             <span class="pname">${esc(e.playerName)}</span>
             <span class="pchain">${e.route ? chain(e.route.legs) : `<small>${esc(e.error ?? '–')}</small>`}</span>
-            <span class="pmin">${e.durationMin != null ? `${e.durationMin} min` : ''}${isBest && e.costMin != null && e.costMin !== e.durationMin ? ` <small>→ ${e.costMin}</small>` : ''}<small>${e.elapsedSec != null ? `⏱ ${fmtDuration(e.elapsedSec)}` : 'keine Abgabe'}</small></span>
+            <span class="pmin">${e.durationMin != null ? `${e.durationMin} min` : ''}${isBest && e.costMin != null && e.costMin !== e.durationMin ? ` <small>→ ${e.costMin}</small>` : ''}<small>${e.elapsedSec != null ? `⏱ ${fmtTimeLeft(e.elapsedSec, limitSec)}` : 'keine Abgabe'}</small></span>
             <b class="ppts">+${fmt(e.score.total)} <span class="chev">▾</span></b>
             <div class="rdetail">${e.route ? routeDetails(e.route, starMini) : ''}${breakdown(e)}</div></li>`,
         )
@@ -177,7 +190,7 @@ export function revealScreen(panel: HTMLElement): Screen {
     const card = h(
       'div',
       { class: `result-card ${ev.score.total >= max * 0.65 ? 'great' : ev.score.total >= max * 0.3 ? 'ok' : 'meh'}` },
-      `<div class="points">+${fmt(ev.score.total)}<small>/ ${fmt(max)}</small>${ev.elapsedSec != null ? `<small class="elapsed">⏱ ${fmtDuration(ev.elapsedSec)}</small>` : ''}</div>
+      `<div class="points">+${fmt(ev.score.total)}<small>/ ${fmt(max)}</small>${ev.elapsedSec != null ? `<small class="elapsed">⏱ ${fmtTimeLeft(ev.elapsedSec, limitSec)}</small>` : ''}</div>
        <div class="mine">
          ${ev.route ? `<div class="chainline">${chain(ev.route.legs)}<b>${ev.durationMin} min</b></div><details class="my-detail"><summary>Deine Route im Detail</summary>${routeDetails(ev.route, starMini)}</details>` : ''}
          ${isBest && ev.durationMin !== null && tr ? `<small>gewertet: ${ev.durationMin} min + ${tr} × ${penalty} min Umstieg = <b>${ev.costMin} min</b></small><br>` : ''}

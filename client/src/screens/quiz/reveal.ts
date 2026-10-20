@@ -1,6 +1,7 @@
 // Quiz – Auflösung einer Frage: Lösung, Punkte, Antworten aller
 import type { LatLon } from '../../../../shared/types.ts';
 import { QUIZ_TYPES, type QuizQuestionPublic } from '../../../../shared/quiz.ts';
+import { fmtTimeLeft } from '../../../../shared/rules.ts';
 import { api } from '../../api.ts';
 import { distM, fmtDist } from '../../net.ts';
 import { app, isHost, quizState } from '../../store.ts';
@@ -97,7 +98,7 @@ export function quizRevealScreen(panel: HTMLElement): Screen {
        <h2>${esc(q.prompt)}</h2>
        ${mine && !r.cancelled ? `<div class="result-card ${mine.base >= 0.99 ? 'great' : mine.base > 0 ? 'ok' : 'meh'}"><div class="points">+${mine.points}<small>${Math.round(mine.base * 100)} % richtig</small></div>
           <div class="mine">${q.type === 'locate' ? `Dein Tipp: ${answerText(q, mine.answer, correct)}` : mine.answer == null ? 'Keine Antwort' : mine.base >= 0.99 ? 'Richtig! 🎉' : mine.base > 0 ? 'Teilweise richtig' : 'Leider falsch'}
-          ${mine.elapsedSec != null ? `<small> · ⏱ ${mine.elapsedSec.toLocaleString('de-AT')} s</small>` : ''}</div></div>` : ''}
+          ${mine.elapsedSec != null ? `<small> · ⏱ ${fmtTimeLeft(mine.elapsedSec, q.timeSec ?? st.settings.timeSec)}</small>` : ''}</div></div>` : ''}
        ${answerBlock}
        <p class="sentence">${esc(r.explanation)}</p>
        ${
