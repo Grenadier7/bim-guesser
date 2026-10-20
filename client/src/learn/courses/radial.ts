@@ -1,10 +1,15 @@
 // Kurs – Radiallinien: Strahlen vom Ring hinaus – und wo sie U2 und U6 kreuzen
+import { NET_COLOR } from '../../netcolors.ts';
+import { app } from '../../store.ts';
 import { esc } from '../../ui.ts';
 import { compass } from '../../training/coach.ts';
 import { ask, CENTER, chip, chips, type Course, crossings, DIAMETRAL, districtName, farEnd, have, lineQuiz, mainOf, nearEnd, pick, quiz, RADIAL_FAMILY, RADIAL_OTHER, RING_LINES, route, stationByName, stationsOf, type Step, table, TANGENTIAL } from './common.ts';
 
-/** Farben für den Gesamtüberblick: drei Sorten Strahlen */
-const KIND_COLOR = { radial: '#9e1b32', diameter: '#1c7ed6', ring: '#e39a2d' };
+/**
+ * Farben für den Gesamtüberblick: drei Sorten Strahlen. U-Bahnen behalten immer ihre Linienfarbe; die übrigen Farben
+ * dürfen keiner U-Bahn (U3 orange, U4 grün …) und nicht der S-Bahn (blau) ähneln.
+ */
+const KIND_COLOR = { radial: '#9e1b32', diameter: '#5f3dc4', ring: '#0c8599' };
 
 export const radialCourse: Course = {
   id: 'radial',
@@ -26,8 +31,9 @@ export const radialCourse: Course = {
       // jede Linie nur in einer Sorte – wer ein Stück die Ringstraße fährt, ist ein Ring-Strahl
       const rays = radials.filter((id) => !ringRays.includes(id));
       const colors: Record<string, string> = {};
-      for (const id of rays) colors[id] = KIND_COLOR.radial;
-      for (const id of diameters) colors[id] = KIND_COLOR.diameter;
+      // Badner Bahn bleibt blau wie überall
+      for (const id of rays) colors[id] = id === 'BB' ? NET_COLOR.BB : KIND_COLOR.radial;
+      for (const id of diameters) colors[id] = app.net.lines.get(id)?.mode === 'U' ? app.net.lines.get(id)!.color : KIND_COLOR.diameter;
       for (const id of ringRays) colors[id] = KIND_COLOR.ring;
       const sw = (c: string) => `<span class="swatch" style="background:${c}"></span>`;
       return {
@@ -35,7 +41,7 @@ export const radialCourse: Course = {
         html: `<p>So sieht das ganze Spinnennetz aus – drei Sorten Strahlen:</p>
           ${table([
             [`${sw(KIND_COLOR.radial)} <b>Radial</b>`, `vom Ring hinaus: ${chips(rays, colors)}`],
-            [`${sw(KIND_COLOR.diameter)} <b>Durchmesser</b>`, `quer durchs Zentrum: ${chips(diameters, colors)}`],
+            [`${diameters.every((id) => app.net.lines.get(id)?.mode === 'U') ? '🚇' : sw(KIND_COLOR.diameter)} <b>Durchmesser</b>`, `quer durchs Zentrum: ${chips(diameters, colors)}${diameters.some((id) => app.net.lines.get(id)?.mode === 'U') ? ' <small class="muted">(U-Bahn in ihren Linienfarben)</small>' : ''}`],
             [`${sw(KIND_COLOR.ring)} <b>Ring-Strahlen</b>`, `ein Stück die Ringstraße entlang, dann hinaus: ${chips(ringRays, colors)}`],
           ])}
           <p class="muted">Fast jede Gegend hat „ihren“ Strahl ins Zentrum – wer ihn kennt, findet fast immer eine direkte Verbindung.</p>`,
