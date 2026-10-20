@@ -4,7 +4,7 @@ Gedächtnis des Agenten. Bei Kontextverlust zuerst lesen.
 
 ## Aktueller Stand
 
-- **Phase:** 3 – Fixes (danach STOPP vor Phase 4 – Nutzer-Anweisung 2026-10-20)
+- **Phase:** 3 abgeschlossen – **STOPP vor Phase 4** (Nutzer-Anweisung 2026-10-20: erst nach neuem Go mit `feature/accounts` weitermachen)
 - **Aktiver Branch:** `refactor/structure`
 
 ## Branches (max. ~7, alles lokal, nichts gepusht)
@@ -156,9 +156,11 @@ Algorithmus-/Deploy-Review (Agent, Repro-Skripte in docs/analysis/evidence/agent
 - [x] Phase 2: `02-befunde.md` (K-01, H-01…H-07, M-01…M-12, U-01…U-06, L-01…L-12, N-1…N-6), `03-ideen.md`;
       Tests: matrix.e2e (26 Zeilen), multiplayer.e2e (13), a11y.e2e (14), security.test (18, davon 9 todo)
 
+- [x] Phase 3: alle Befunde bearbeitet (Status je Befund in `docs/analysis/02-befunde.md`), Nutzer-Wünsche N-1…N-6 umgesetzt.
+      Tests: 118 Einheit/API (3 bewusst übersprungen mit Begründung), E2E: home, learn-quiz, matrix (26), multiplayer (15), a11y (14), errors (2), tips (1).
+      Wichtige Messung: Spielstart (leerer Cache) Mittel 6–21 s → 3–8 s.
+
 ## Offen / Nächste Schritte
 
-1. Phase 3: kritisch/hoch zuerst (K-01, H-01/N-6, H-02, H-05, H-03, H-04, H-06, H-07), dann N-1…N-5, dann mittel/niedrig.
-   Jeder Fix: Regressionstest (todo → normal), Commit in 02-befunde.md eintragen.
-2. Matrix erneut laufen lassen, compose prüfen.
-3. STOPP – Nutzer fragt vor Phase 4.
+1. Auf Nutzer warten (Phase 4 `feature/accounts` erst nach Freigabe).
+2. Danach laut Auftrag: Phase 4 Accounts, Phase 5 Vorschläge (u.a. Browser-Zurück/Verlauf, ESLint), Phase 6, Abschlussbericht.
