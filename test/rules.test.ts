@@ -1,8 +1,9 @@
 // Wertung: Routenpunkte, Tipps, Umstiegsaufschlag, Gesamtpunkte
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { computeScore, fmtTimeLeft, routeCost, scoreRoute, TIP_MIN_KEEP, TIPS, tipShareOf, transferPenalty } from '../shared/rules.ts';
+import { computeScore, difficultyMultiplier, fmtTimeLeft, maxRoundPoints, maxRoundPointsWithBonus, timeBonus, routeCost, scoreRoute, TIP_MIN_KEEP, TIPS, tipShareOf, transferPenalty } from '../shared/rules.ts';
 import type { TipKind } from '../shared/types.ts';
+import { DEFAULT_SETTINGS } from '../shared/defaults.ts';
 
 const near = (actual: number, expected: number, tol: number) => assert.ok(Math.abs(actual - expected) <= tol, `${actual} ≉ ${expected} (±${tol})`);
 
@@ -56,4 +57,38 @@ test('N-4: Restzeit statt benötigter Zeit', () => {
   assert.equal(fmtTimeLeft(200, 180), '0:00 / 3:00 übrig');
   assert.equal(fmtTimeLeft(8, 15), '7 / 15 s übrig');
   assert.equal(fmtTimeLeft(50, null), 'in 0:50');
+});
+
+test('Wertung von Hand nachgerechnet: scoreRoute-Tabelle', () => {
+  // Toleranz max(1, 4 %), danach f = 1 − Umweg/(Bestzeit·0,7), Punkte = 1000·f^1,5; besser als die Auskunft: +2 % je 1 %
+  const cases: [number, number, number][] = [[30, 30, 1000], [31.2, 30, 1000], [32, 30, 943], [38, 30, 556], [51, 30, 14], [52, 30, 1], [53, 30, 0],
+    [29, 30, 1067], [27, 30, 1200], [24, 30, 1300], [4, 5, 1200], [10, 0, 0]];
+  for (const [u, b, want] of cases) assert.equal(scoreRoute(u, b), want, `scoreRoute(${u}, ${b})`);
+});
+
+test('computeScore von Hand: 556 Routenpunkte, Tipp Start günstig, 90/180 s, Ortung 250 + 1625 m, ×1,05 → 487', () => {
+  const s = computeScore({ routePoints: 556, tips: ['startLines'], elapsedSec: 90, limitSec: 180, locateDist: { from: 250, to: 1625 }, multiplier: 1.05, tipLevel: 'cheap' });
+  // 556·0,6 = 333,6 → 334 · Zeitbonus 334·0,1·0,5 = 16,7 → 17 · Ortung 75 + 37,5 → 38 · (334 + 17 + 113)·1,05 = 487,2
+  assert.deepEqual([s.routeAfterTips, s.timeBonus, s.locate, s.total], [334, 17, 113, 487]);
+});
+
+test('Regression L-01: Schwierigkeits-Faktor – „wichtige U“ zählt ×0,85', () => {
+  const base = { distance: 'short', minTransfers: 0 } as const;
+  assert.equal(difficultyMultiplier({ ...base, stations: ['Ukey'] }), 0.77); // 0,85 · 0,9 · 1 = 0,765
+  assert.equal(difficultyMultiplier({ stations: ['U', 'S'], distance: 'medium', minTransfers: 1 }), 1.05);
+  assert.equal(difficultyMultiplier({ stations: ['U', 'S', 'T', 'all'], distance: 'long', minTransfers: 2 }), 1.69); // 1,4 · 1,1 · 1,1
+  assert.equal(difficultyMultiplier({ stations: [], distance: 'medium', minTransfers: 0 }), 0.9);
+});
+
+test('Regression L-02: Maximum mit Bonus für bessere Routen (Profi + Ortung: 2113 regulär, 2670 mit Bonus)', () => {
+  const profi = { ...DEFAULT_SETTINGS, stations: ['U', 'S', 'T', 'all'], distance: 'long', minTransfers: 2, locate: true } as typeof DEFAULT_SETTINGS;
+  assert.equal(maxRoundPoints(profi), 2113); // (1000 + 100 + 150) · 1,69 = 2112,5
+  assert.equal(maxRoundPointsWithBonus(profi), 2670); // (1300 + 130 + 150) · 1,69 = 2670,2
+});
+
+test('Regression L-04/L-05: Zeitbonus nie über 10 %, kaputte Zeiten geben 0 statt NaN', () => {
+  assert.equal(timeBonus(1000, -50, 180), 100);
+  assert.equal(timeBonus(1000, 500, 180), 0);
+  assert.equal(scoreRoute(Number.NaN, 30), 0);
+  assert.equal(scoreRoute(30, Number.POSITIVE_INFINITY), 0);
 });

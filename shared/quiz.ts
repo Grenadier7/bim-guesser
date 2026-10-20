@@ -601,7 +601,8 @@ export function generateQuiz(net: QuizNet, s: QuizSettings): QuizQuestion[] {
 
 // ---------------------------------------------------------------- Bewertung
 
-const LOCATE_FULL_M = 200;
+/** volle Punkte bis 250 m – wie „Wo liegt das?“ in der Routenjagd (Befund L-08) */
+const LOCATE_FULL_M = 250;
 const LOCATE_ZERO_M = 3000;
 
 function toXY(p: LatLon, lat0: number): [number, number] {

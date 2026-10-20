@@ -358,16 +358,20 @@ const MAX_GAP = 120;
  * nächsten Abfahrt, gemittelt. null = in diesem Fenster fährt nichts mehr (Betriebsschluss).
  */
 export function expectedWait(departures: number[], t: number, window = HEADWAY_WINDOW): number | null {
-  const times = [...departures].sort((x, y) => x - y);
+  // stetig gerechnet: Ankunft gleichverteilt in [t, t + window) – je Abschnitt bis zur nächsten Abfahrt d wartet man
+  // im Schnitt die halbe Abschnittslänge. Regelmäßiger Takt H → genau H/2 (früher minutenweise: (H−1)/2, Befund L-03).
+  const end = t + window;
+  let a = t;
   let sum = 0;
-  let n = 0;
-  for (let a = t; a < t + window; a++) {
-    const next = times.find((x) => x >= a);
-    if (next === undefined) break; // Betriebsschluss
-    sum += next - a;
-    n++;
+  for (const d of [...departures].sort((x, y) => x - y)) {
+    if (d < a) continue;
+    const segEnd = Math.min(d, end);
+    sum += ((d - a + (d - segEnd)) / 2) * (segEnd - a);
+    a = segEnd;
+    if (a >= end) break;
   }
-  return n ? sum / n : null;
+  // nach der letzten Abfahrt fährt nichts mehr (Betriebsschluss): nur über die abgedeckte Zeit mitteln
+  return a > t ? sum / (a - t) : null;
 }
 /**
  * Am Start wird nur die halbe Ø-Wartezeit gerechnet (also ein Viertel des Takts):

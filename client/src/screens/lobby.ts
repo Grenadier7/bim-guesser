@@ -27,6 +27,7 @@ import {
   difficultyMultiplier,
   fmtDuration,
   maxRoundPoints,
+  maxRoundPointsWithBonus,
 } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import { app, routeState, endSession, inviteLink, isHost, savePrefs, setMobileMap } from '../store.ts';
@@ -299,7 +300,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
 
         </details>
 
-        <p class="maxpts">Max. <b>${maxRoundPoints(st).toLocaleString('de-AT')}</b> Punkte pro Runde</p>
+        <p class="maxpts">Max. <b>${maxRoundPoints(st).toLocaleString('de-AT')}</b> Punkte pro Runde <small>(bis ${maxRoundPointsWithBonus(st).toLocaleString('de-AT')} mit einer besseren Route als die Auskunft)</small></p>
         ${
           host
             ? st.xtreme !== 'off'

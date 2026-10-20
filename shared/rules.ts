@@ -163,7 +163,9 @@ export function distanceRange(d: DistanceRange): [number, number] {
 }
 
 export function difficultyMultiplier(s: Pick<GameSettings, 'stations' | 'distance' | 'minTransfers'>): number {
-  const pool = Math.max(...STATION_KINDS.filter((k) => s.stations.includes(k.id)).map((k) => k.factor), 0.9);
+  // schwierigste gewählte Stufe zählt; ohne Auswahl 0,9 (früher war 0,9 auch die Untergrenze → „wichtige U“ ×0,85 wirkte nie, Befund L-01)
+  const factors = STATION_KINDS.filter((k) => s.stations.includes(k.id)).map((k) => k.factor);
+  const pool = factors.length ? Math.max(...factors) : 0.9;
   const dist = DISTANCES.find((x) => x.id === s.distance)!.factor;
   return Math.round(pool * dist * (MIN_TRANSFER_FACTORS[s.minTransfers] ?? 1) * 100) / 100;
 }
@@ -367,6 +369,7 @@ export const BEAT_BONUS_MAX = 300;
  *   30 vs 29 min -> ~1067,  30 vs 27 min -> 1200,  30 vs 24 min -> 1300 (Maximum)
  */
 export function scoreRoute(userMin: number, bestMin: number): number {
+  if (!Number.isFinite(userMin) || !Number.isFinite(bestMin)) return 0;
   if (userMin < bestMin) {
     const better = (bestMin - userMin) / Math.max(bestMin, 10);
     return Math.round(MAX_ROUTE_POINTS + Math.min(BEAT_BONUS_MAX, MAX_ROUTE_POINTS * better * BEAT_BONUS_FACTOR));
@@ -387,7 +390,8 @@ export function locatePoints(distM: number | null): number {
 export function timeBonus(routeAfterTips: number, elapsedSec: number | null, limitSec: number | null): number {
   if (elapsedSec == null) return 0;
   const ref = limitSec ?? TIME_BONUS_REF_SEC;
-  const f = Math.max(0, 1 - elapsedSec / ref);
+  // 0…1 – auch bei negativer Zeit (Uhrenversatz) nie mehr als 10 % (Befund L-04)
+  const f = Math.min(1, Math.max(0, 1 - elapsedSec / ref));
   return Math.round(routeAfterTips * TIME_BONUS_SHARE * f);
 }
 
@@ -438,8 +442,18 @@ export function computeScore(o: {
   };
 }
 
+/**
+ * Höchstpunkte einer Runde mit der besten Route der Auskunft (Anzeige „Max. … Punkte“, Prozent-Balken).
+ * Wer eine noch bessere Route findet, bekommt bis zu +30 % Bonus darüber hinaus – siehe maxRoundPointsWithBonus.
+ */
 export function maxRoundPoints(s: GameSettings): number {
   const base = MAX_ROUTE_POINTS * (1 + TIME_BONUS_SHARE) + (s.locate ? 2 * LOCATE_POINTS_PER_STATION : 0);
+  return Math.round(base * difficultyMultiplier(s));
+}
+
+/** absolutes Maximum inkl. Bonus für eine bessere Route als die der Auskunft (Befund L-02) */
+export function maxRoundPointsWithBonus(s: GameSettings): number {
+  const base = (MAX_ROUTE_POINTS + BEAT_BONUS_MAX) * (1 + TIME_BONUS_SHARE) + (s.locate ? 2 * LOCATE_POINTS_PER_STATION : 0);
   return Math.round(base * difficultyMultiplier(s));
 }
 
