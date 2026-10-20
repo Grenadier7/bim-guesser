@@ -374,8 +374,11 @@ export class Game extends Lobby {
       return { kind, stops };
     }
     const station = kind === 'startLines' ? round.from! : round.to!;
+    // Nachtlinien nur bei der Nacht-Uhrzeit – tagsüber fahren sie nicht (Befund L-13)
+    const night = this.settings.slot === 'sa02';
     const lines = this.net
       .linesAt(station.id, this.settings.network)
+      .filter((l) => night || l.mode !== 'N')
       .map((l) => ({ id: l.id, mode: l.mode, color: l.color }));
     return { kind, station: this.settings.xtreme === 'noNames' ? '' : station.name, lines };
   }

@@ -59,3 +59,19 @@ test('Training: gleiche Station als festes Paar → 400; Auskunft weg beim Auswe
   await assert.rejects(t.evaluate(r.id, [{ line: 'U1', from: u1[1], to: u1[5] }]), (e: Error & { status?: number }) => e.status === 503);
   mock.fail = false;
 });
+
+test('Regression L-13: Tipp „Linien am Start“ zeigt tagsüber keine Nachtlinien', async () => {
+  mock.fail = false;
+  let checked = false;
+  for (let i = 0; i < 15 && !checked; i++) {
+    const { g, host } = newGame({ ...base, rounds: 1, tips: 'cheap', slot: 'wd12', stations: ['U', 'S', 'T'] });
+    await g.start(host.token);
+    const from = g.state().rounds[0].from!;
+    // nur aussagekräftig, wenn am Start überhaupt Nachtlinien halten
+    if (!net.linesAt(from.id, 'regular').some((l) => l.mode === 'N')) continue;
+    const tip = await g.tip(host.token, 0, 'startLines');
+    assert.ok(tip.kind === 'startLines' && tip.lines.length > 0 && tip.lines.every((l) => l.mode !== 'N'), JSON.stringify(tip));
+    checked = true;
+  }
+  assert.ok(checked, 'keine Start-Station mit Nachtlinien gezogen');
+});

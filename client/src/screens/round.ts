@@ -1,5 +1,5 @@
 import type { Guesses, LatLon, RoundPublic, Station, TipKind, TipResult } from '../../../shared/types.ts';
-import { RESTRICTIONS, TIPS, XTREME_LEVELS, baseLimitSec, fmtDuration, fmtTimeLeft, locatePoints, restrictionLabel, tipShare } from '../../../shared/rules.ts';
+import { RESTRICTIONS, TIPS, XTREME_LEVELS, baseLimitSec, restrictionAllowsLine, fmtDuration, fmtTimeLeft, locatePoints, restrictionLabel, tipShare } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import { RouteBuilder } from '../builder.ts';
 import { distM, fmtDist } from '../net.ts';
@@ -213,11 +213,24 @@ export function roundScreen(panel: HTMLElement): Screen {
                 : '⇄ ?';
           return `<div class="tip-result"><span>Umstiege:</span> ${t.stops.map(stop).join(showNames ? ', ' : ' ')}${showMap ? ' <small>(auf der Karte)</small>' : ''}</div>`;
         }
+        // Linien antippen → direkt als nächste Teilstrecke wählen (Wunsch N-5)
         return `<div class="tip-result"><span>${t.kind === 'startLines' ? 'Am Start' : 'Am Ziel'}${showNames && t.station ? ` (${esc(t.station)})` : ''}:</span>
-                <div class="chips">${t.lines.map((l) => lineChip(l.mode, l.id, l.color)).join('')}</div></div>`;
+                <div class="chips">${t.lines
+                  .map((l) => `<button class="chip-btn" data-tip-line="${esc(l.id)}" title="${esc(l.id)} als nächste Teilstrecke wählen">${lineChip(l.mode, l.id, l.color)}</button>`)
+                  .join('')}</div></div>`;
       })
       .join('');
     box.innerHTML = `<div class="tip-btns">${btns}</div>${results}`;
+    box.querySelectorAll<HTMLButtonElement>('[data-tip-line]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const line = app.net.lines.get(btn.dataset.tipLine!);
+        if (!line) return;
+        if (b.locked) return toast('Schon abgegeben.', 'info');
+        if (!restrictionAllowsLine(round.restriction, round.bannedLines, line)) return toast(`${line.id} ist in dieser Runde nicht erlaubt.`, 'info');
+        b.selectLine(line);
+        b.el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }),
+    );
     box.querySelectorAll<HTMLButtonElement>('[data-tip]').forEach((b) =>
       b.addEventListener('click', async () => {
         b.disabled = true;
