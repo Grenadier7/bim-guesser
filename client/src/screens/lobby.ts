@@ -34,6 +34,7 @@ import { app, routeState, endSession, inviteLink, isHost, savePrefs, setMobileMa
 import { distM } from '../net.ts';
 import { esc, toast } from '../ui.ts';
 import { deferWhileEditing, infoTip, patchQueue, seg, toggleInfo } from '../widgets.ts';
+import { bindKick, kickButton } from './host.ts';
 import type { Screen } from './screen.ts';
 
 /**
@@ -138,7 +139,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     const scroll = panel.scrollTop;
     const players = s.players
       .map(
-        (p) => `<li class="${p.connected ? '' : 'offline'}"><span class="dot"></span>${esc(p.name)}${p.id === app.session?.playerId ? ' <small>(du)</small>' : ''}${p.isHost ? ' <span title="Host">👑</span>' : ''}</li>`,
+        (p) => `<li class="${p.connected ? '' : 'offline'}"><span class="dot"></span>${esc(p.name)}${p.id === app.session?.playerId ? ' <small>(du)</small>' : ''}${p.isHost ? ' <span title="Host">👑</span>' : ''}${kickButton(p)}</li>`,
       )
       .join('');
     const mult = difficultyMultiplier(st);
@@ -306,6 +307,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         <button class="link leave" id="leave">Lobby verlassen</button>
       </div>`;
     panel.scrollTop = scroll;
+    bindKick(panel);
 
     panel.querySelector<HTMLDetailsElement>('details.advanced')!.addEventListener('toggle', (e) => {
       advancedOpen = (e.target as HTMLDetailsElement).open;

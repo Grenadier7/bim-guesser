@@ -42,6 +42,10 @@ export const app = {
   view: 'home' as 'home' | 'learn' | 'training',
   prefs: loadMerged<Prefs>(PREFS_KEY, { name: '', settings: {}, quiz: {} }),
   onChange: () => {},
+  /** Chat-Nachrichten und Verlauf (vom Chat-Fenster gesetzt) */
+  onChat: (_e: Extract<GameEvent, { type: 'chat' | 'chatHistory' }>) => {},
+  /** vom Host entfernt (main.ts zeigt eine Meldung) */
+  onKicked: () => {},
 };
 
 // gespeicherte Zeitlimits, die es nicht mehr gibt (z.B. altes 1:30), verwerfen
@@ -171,6 +175,11 @@ function connect() {
   es.onmessage = (m) => {
     const e = JSON.parse(m.data) as GameEvent;
     if (e.type === 'state') setState(e.state);
+    if (e.type === 'chat' || e.type === 'chatHistory') app.onChat(e);
+    if (e.type === 'kicked' && e.playerId === app.session?.playerId) {
+      endSession();
+      app.onKicked();
+    }
     if (e.type === 'revealed') {
       app.reveals.set(e.reveal.index, e.reveal);
       app.onChange();

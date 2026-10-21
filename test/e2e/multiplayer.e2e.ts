@@ -313,3 +313,29 @@ test('Regression M-10: während der Host einen Regler zieht, zeichnet ein Beitri
   noErrors(a.t);
   await a.t.context.close();
 });
+
+test('Kicken und Chat: Host entfernt Gast (Gast landet auf der Startseite mit Meldung), Chat-Nachrichten kommen live an', async () => {
+  const a = await host('Chef');
+  const b = await joinByCode(a.s.code, 'Gast');
+  const c = await joinByCode(a.s.code, 'Zweiter');
+  // Chat: Gast öffnet, schreibt; Host sieht Zähler, öffnet, sieht Nachricht (HTML als Text)
+  await b.t.page.locator('.chat-toggle').click();
+  await b.t.page.locator('.chat-input').fill('Hallo <b>alle</b> 👋');
+  await b.t.page.locator('.chat-input').press('Enter');
+  await a.t.page.locator('.chat-badge', { hasText: '1' }).waitFor();
+  await a.t.page.locator('.chat-toggle').click();
+  await a.t.page.locator('.chat-list li', { hasText: 'Hallo <b>alle</b> 👋' }).waitFor();
+  assert.equal(await a.t.page.locator('.chat-list b', { hasText: 'alle' }).count(), 0, 'HTML im Chat wurde ausgeführt');
+  await a.t.shot('lobby-chat');
+  // Kicken: nur der Host sieht ✕, nicht bei sich selbst
+  assert.equal(await b.t.page.locator('[data-kick]').count(), 0);
+  assert.equal(await a.t.page.locator('[data-kick]').count(), 2);
+  a.t.page.once('dialog', (d) => void d.accept());
+  await a.t.page.locator('[data-kick][data-name="Gast"]').click();
+  await b.t.page.locator('.toast', { hasText: 'entfernt' }).waitFor();
+  await b.t.page.locator('.mode-quiz').waitFor();
+  await a.t.page.locator('.chat-list li.system', { hasText: 'Gast wurde vom Host entfernt' }).waitFor();
+  await c.t.page.locator('ul.players li', { hasText: 'Gast' }).waitFor({ state: 'detached' });
+  noErrors(a.t, b.t, c.t);
+  await closeAll(a.t, b.t, c.t);
+});

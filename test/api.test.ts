@@ -185,3 +185,35 @@ describe('Quiz über die API', () => {
     assert.equal(r.body.reveal.results[0].points, 0);
   });
 });
+
+describe('Kicken und Chat', () => {
+  test('Host entfernt einen Spieler: Token ungültig, Hinweis im Chat; Gäste dürfen nicht kicken; sich selbst nicht', async () => {
+    const host = await s.call('POST', '/api/games', { mode: 'quiz', playerName: 'Host' });
+    const code = host.body.state.id;
+    const a = await s.call('POST', `/api/games/${code}/join`, { playerName: 'Anna' });
+    const b = await s.call('POST', `/api/games/${code}/join`, { playerName: 'Ben' });
+    assert.equal((await s.call('POST', `/api/games/${code}/kick`, { token: a.body.token, playerId: b.body.playerId })).status, 403);
+    assert.equal((await s.call('POST', `/api/games/${code}/kick`, { token: host.body.token, playerId: host.body.playerId })).status, 400);
+    const r = await s.call('POST', `/api/games/${code}/kick`, { token: host.body.token, playerId: b.body.playerId });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.players.map((p: { name: string }) => p.name).sort(), ['Anna', 'Host']);
+    assert.equal((await s.call('GET', `/api/games/${code}?token=${b.body.token}`)).status, 403);
+    assert.equal((await s.call('POST', `/api/games/${code}/kick`, { token: host.body.token, playerId: b.body.playerId })).status, 404);
+  });
+
+  test('Chat: Text bereinigt, max. 300 Zeichen, leer → 400, Fluten → 429, nur Mitglieder', async () => {
+    const host = await s.call('POST', '/api/games', { mode: 'route', playerName: 'Host' });
+    const code = host.body.state.id;
+    const say = (text: unknown, token = host.body.token) => s.call('POST', `/api/games/${code}/chat`, { token, text });
+    const m = await say('  <b>Hallo</b>\u0000 👨‍👩‍👧  ');
+    assert.equal(m.status, 200);
+    assert.equal(m.body.text, '<b>Hallo</b> 👨‍👩‍👧'); // HTML bleibt Text – der Client escaped beim Anzeigen
+    assert.equal(m.body.name, 'Host');
+    assert.equal((await say('x'.repeat(500))).body.text.length, 300);
+    assert.equal((await say('   ')).status, 400);
+    assert.equal((await say('hi', 'falsch')).status, 403);
+    const statuses = [];
+    for (let i = 0; i < 5; i++) statuses.push((await say(`spam ${i}`)).status);
+    assert.ok(statuses.includes(429), statuses.join(','));
+  });
+});

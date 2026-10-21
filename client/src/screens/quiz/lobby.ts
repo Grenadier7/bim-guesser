@@ -6,6 +6,7 @@ import { api } from '../../api.ts';
 import { app, endSession, inviteLink, isHost, quizState, savePrefs } from '../../store.ts';
 import { esc, toast } from '../../ui.ts';
 import { deferWhileEditing, patchQueue, seg } from '../../widgets.ts';
+import { bindKick } from '../host.ts';
 import type { Screen } from '../screen.ts';
 import { areaOf, playersHtml } from './common.ts';
 
@@ -84,6 +85,7 @@ export function quizLobbyScreen(panel: HTMLElement): Screen {
     panel.querySelector<HTMLDetailsElement>('details.advanced')!.addEventListener('toggle', (e) => {
       advancedOpen = (e.target as HTMLDetailsElement).open;
     });
+    bindKick(panel);
     panel.querySelector('#copy')!.addEventListener('click', async () => {
       try {
         await navigator.clipboard.writeText(inviteLink(st.id));

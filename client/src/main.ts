@@ -14,6 +14,7 @@ import { revealScreen } from './screens/reveal.ts';
 import { roundScreen } from './screens/round.ts';
 import { loadingHtml, type Screen } from './screens/screen.ts';
 import { trainingScreen } from './screens/training.ts';
+import { ChatWidget } from './chat.ts';
 import { app, currentRound, inviteLink, isHost, me, openTimer, restoreSession, serverNow, setMapBig, setMobileMap } from './store.ts';
 import { esc, toast } from './ui.ts';
 
@@ -80,7 +81,11 @@ function mount(key: string): Screen {
   return {};
 }
 
+/** Chat-Fenster an die Sitzung anpassen (gesetzt in init) */
+let chatSync = () => {};
+
 function render() {
+  chatSync();
   const key = keyFor();
   if (key !== screenKey) {
     screen?.destroy?.();
@@ -145,6 +150,10 @@ function tick() {
 async function init() {
   app.map = new GameMap(document.getElementById('map')!);
   app.onChange = render;
+  const chat = new ChatWidget();
+  app.onChat = (e) => (e.type === 'chat' ? chat.add(e.message) : chat.history(e.messages));
+  app.onKicked = () => toast('Du wurdest vom Host aus der Lobby entfernt.');
+  chatSync = () => chat.sync();
   panel.innerHTML = loadingHtml('Lade Netzdaten …');
   try {
     app.net = new NetIndex(await api.network());

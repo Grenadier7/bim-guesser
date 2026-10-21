@@ -1,20 +1,5 @@
 import type { QuizSettings } from '../../shared/quiz.ts';
-import type {
-  GameMode,
-  GameSettings,
-  LatLon,
-  LobbyState,
-  Guesses,
-  JoinResponse,
-  NetworkPublic,
-  RoundReveal,
-  SubmitResponse,
-  TipKind,
-  TrainingResult,
-  TrainingRound,
-  TipResult,
-  UserLeg,
-} from '../../shared/types.ts';
+import type { ChatMessage, GameMode, GameSettings, Guesses, JoinResponse, LatLon, LobbyState, NetworkPublic, RoundReveal, SubmitResponse, TipKind, TipResult, TrainingResult, TrainingRound, UserLeg } from '../../shared/types.ts';
 
 export class ApiError extends Error {
   status: number;
@@ -55,6 +40,8 @@ export const api = {
   next: (a: Auth) => call<LobbyState>('POST', `${g(a.code)}/next`, { token: a.token }),
   lobby: (a: Auth) => call<LobbyState>('POST', `${g(a.code)}/lobby`, { token: a.token }),
   leave: (a: Auth) => call<{ ok: boolean }>('POST', `${g(a.code)}/leave`, { token: a.token }),
+  kick: (a: Auth, playerId: string) => call<LobbyState>('POST', `${g(a.code)}/kick`, { token: a.token, playerId }),
+  chat: (a: Auth, text: string) => call<ChatMessage>('POST', `${g(a.code)}/chat`, { token: a.token, text }),
   pause: (a: Auth) => call<LobbyState>('POST', `${g(a.code)}/pause`, { token: a.token }),
   resume: (a: Auth) => call<LobbyState>('POST', `${g(a.code)}/resume`, { token: a.token }),
   cancel: (a: Auth) => call<LobbyState>('POST', `${g(a.code)}/cancel`, { token: a.token }),

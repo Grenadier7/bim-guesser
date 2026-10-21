@@ -2,8 +2,8 @@
 // Spieler mit geheimem Token, Host, Live-Verbindungen, Events.
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
-import type { GameEvent, GameMode, GamePhase, LobbyState, PlayerPublic } from '../shared/types.ts';
-import { cleanName } from './security.ts';
+import type { ChatMessage, GameEvent, GameMode, GamePhase, LobbyState, PlayerPublic } from '../shared/types.ts';
+import { cleanChat, cleanName } from './security.ts';
 
 export class GameError extends Error {
   status: number;
@@ -18,6 +18,10 @@ const MAX_PLAYERS = 12;
 const MAX_STREAMS_PER_PLAYER = 3;
 /** Ohne offene Verbindung gilt ein Spieler danach als weg */
 const DISCONNECT_AFTER_MS = 15000;
+/** Chat: so viele Nachrichten bleiben gespeichert, höchstens 5 je Spieler in 10 s */
+const CHAT_KEEP = 50;
+const CHAT_WINDOW_MS = 10_000;
+const CHAT_MAX_PER_WINDOW = 5;
 /** Kulanz nach Ablauf des Zeitlimits (Netzwerk-Latenz) */
 export const DEADLINE_GRACE_MS = 3000;
 
@@ -66,6 +70,51 @@ export abstract class Lobby extends EventEmitter {
   protected abstract onPresenceChange(): void;
 
   // -------------------------------------------------------------- Spieler
+
+  // -------------------------------------------------------------- Chat
+
+  private chat: ChatMessage[] = [];
+  private chatSeq = 0;
+  /** je Spieler die Zeitpunkte der letzten Nachrichten (gegen Fluten) */
+  private chatTimes = new Map<string, number[]>();
+
+  get chatHistory(): ChatMessage[] {
+    return this.chat;
+  }
+
+  private post(playerId: string | null, name: string, text: string) {
+    const message: ChatMessage = { id: ++this.chatSeq, playerId, name, text, at: Date.now() };
+    this.chat.push(message);
+    if (this.chat.length > CHAT_KEEP) this.chat.splice(0, this.chat.length - CHAT_KEEP);
+    this.emitEvent({ type: 'chat', message });
+  }
+
+  say(token: string, raw: unknown): ChatMessage {
+    const p = this.auth(token);
+    const text = cleanChat(raw);
+    if (!text) throw new GameError('Leere Nachricht.');
+    const now = Date.now();
+    const recent = (this.chatTimes.get(p.id) ?? []).filter((t) => now - t < CHAT_WINDOW_MS);
+    if (recent.length >= CHAT_MAX_PER_WINDOW) throw new GameError('Nicht so schnell – kurz warten.', 429);
+    this.chatTimes.set(p.id, [...recent, now]);
+    this.touch();
+    this.post(p.id, p.name, text);
+    return this.chat[this.chat.length - 1];
+  }
+
+  /** Host entfernt einen Spieler (auch mitten im Spiel – wie „Verlassen“) */
+  kick(token: string, playerId: string) {
+    const host = this.requireHost(token);
+    const p = this.players.get(String(playerId));
+    if (!p) throw new GameError('Diesen Spieler gibt es nicht (mehr).', 404);
+    if (p.id === host.id) throw new GameError('Du kannst dich nicht selbst entfernen – nimm „Lobby verlassen“.');
+    this.players.delete(p.id);
+    this.byToken.delete(p.token);
+    this.emitEvent({ type: 'kicked', playerId: p.id });
+    this.post(null, '', `${p.name} wurde vom Host entfernt.`);
+    this.touch();
+    this.checkPresence();
+  }
 
   addPlayer(name: unknown): { id: string; token: string } {
     if (this.players.size >= MAX_PLAYERS) throw new GameError('Lobby ist voll.', 409);
