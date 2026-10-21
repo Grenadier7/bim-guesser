@@ -3917,3 +3917,35 @@ details.fine > summary {
     left: 14px;
   }
 }
+
+/* ---------------------------------------------------------------- Kurs-Aufgaben und Prüfung */
+
+.course-quiz.multi button.on {
+  border-color: var(--ink);
+  background: #eef2ff;
+  font-weight: 700;
+}
+
+.order-picked {
+  margin: 8px 0;
+  padding-left: 22px;
+  min-height: 8px;
+}
+
+.order-picked li {
+  padding: 3px 0;
+  font-weight: 600;
+}
+
+.course-task .hint {
+  margin: 8px 0;
+}
+
+.cc-done.mastered {
+  color: #a16207;
+  font-weight: 700;
+}
+
+.path-dots i.mastered {
+  background: #eab308;
+}
