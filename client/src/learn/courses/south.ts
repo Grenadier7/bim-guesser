@@ -99,7 +99,8 @@ export const southCourse: Course = {
       steps.push(
         ...ask(quiz('Wo steigst du im Süden zwischen U6 und S-Bahn um?', meet[0].name, hubs.map((h) => h.name).filter((n) => !crossings('U6', 'S1').some((c) => c.name === n)), `Bei ${meet[0].name} treffen sich U6 und Stammstrecke.`)),
       );
-    const tq = pick(trams.filter((id) => id !== 'BB'));
+    const taught = trams.filter((id) => ['62', '71', '6'].includes(id));
+    const tq = pick(taught.length ? taught : trams.filter((id) => id !== 'BB'));
     const [ta, tb] = ends(tq);
     steps.push(
       ...ask(

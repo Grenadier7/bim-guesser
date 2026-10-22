@@ -88,6 +88,23 @@ test('Kurs U-Bahn: Karten-Aufgaben im Kurs und Abschlussprüfung bis zum Ende', 
   await t.context.close();
 });
 
+test('Ohne Prüfung direkt zum nächsten Kurs (U-Bahn → S-Bahn)', async () => {
+  const t = await app.page();
+  const p = t.page;
+  await p.goto(app.base);
+  await p.locator('.mode-learn').click();
+  await p.locator('.all-courses summary').click();
+  await p.locator('.all-courses .course-card[data-course="ubahn"]').click();
+  for (let i = 0; i < 40 && !(await p.getByText('Kurs geschafft').count()); i++) {
+    await answerCourseStep(p);
+    await p.locator('#next:not([disabled])').click();
+  }
+  await p.locator('#next-course', { hasText: 'Die S-Bahn' }).click();
+  await p.locator('.course-head h2', { hasText: 'Die S-Bahn' }).waitFor();
+  assert.deepEqual(t.errors, []);
+  await t.context.close();
+});
+
 test('Kurs Busnummern: Gegend der 80er/90er auf der Karte antippen, Prüfung', async () => {
   const t = await app.page();
   const kinds = await runCourse(t, 'busnr');

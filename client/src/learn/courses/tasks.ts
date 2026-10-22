@@ -3,7 +3,8 @@
 // Aufgaben erzeugen, bewerten, Prüfungsablauf mit Wiederholung. Die Ansicht steckt in index.ts.
 import type { LatLon, Station } from '../../../../shared/types.ts';
 import { distM } from '../../../../shared/geo.ts';
-import { shuffle } from '../model.ts';
+import { lineProfile, shuffle } from '../model.ts';
+import { app } from '../../store.ts';
 import { chip, crossings, ends, have, L, mainOf, pick, stationsOf, U_LINES } from './common.ts';
 
 export interface ChoiceTask {
@@ -110,7 +111,9 @@ export function gradeTapStation(t: TapStationTask, tap: LatLon): Grade & { neare
   const p = { lat: tap[0], lon: tap[1] };
   const nearest = t.targets.reduce((a, b) => (distM(p, a) <= distM(p, b) ? a : b));
   const dist = Math.round(distM(p, nearest));
-  return { ok: dist <= t.tolM, nearest, dist, note: dist <= 60 ? 'genau getroffen' : `${dist.toLocaleString('de-AT')} m daneben` };
+  const km = (dist / 1000).toLocaleString('de-AT', { maximumFractionDigits: 1 });
+  const note = dist <= 300 ? 'genau getroffen' : dist <= t.tolM ? `ungefähr richtig (${km} km daneben)` : `${km} km daneben`;
+  return { ok: dist <= t.tolM, nearest, dist, note };
 }
 
 /** Hülle der Gegend (für Bewertung und Anzeige) */
@@ -135,13 +138,15 @@ export function gradeMulti(t: MultiTask, picked: string[]): Grade {
   const want = new Set(t.correct);
   const hits = picked.filter((id) => want.has(id)).length;
   const wrong = picked.length - hits;
-  return { ok: hits === want.size && wrong === 0, note: `${hits} von ${want.size} richtig${wrong ? `, ${wrong} zu viel` : ''}` };
+  // bei 3 richtigen darf eine fehlen – aber nichts Falsches gewählt sein
+  const enough = want.size >= 3 ? hits >= want.size - 1 : hits === want.size;
+  return { ok: enough && wrong === 0, note: `${hits} von ${want.size} richtig${wrong ? `, ${wrong} falsch gewählt` : ''}` };
 }
 
-/** Zeichnen: genug Stationen abgedeckt und kaum Striche daneben (wie beim Üben) */
+/** Zeichnen: grob richtig reicht – die Hälfte der Stationen in der Nähe, nicht zu viel daneben */
 export function gradeSketch(coverage: number, precision: number): Grade {
   const pct = Math.round(coverage * 100);
-  return { ok: coverage >= 0.6 && precision >= 0.5, note: `${pct} % der Stationen getroffen${precision < 0.5 ? ', viele Striche daneben' : ''}` };
+  return { ok: coverage >= 0.5 && precision >= 0.4, note: `${pct} % der Stationen getroffen${precision < 0.5 ? ', viele Striche daneben' : ''}` };
 }
 
 // ---------------------------------------------------------------- Prüfung
@@ -197,66 +202,87 @@ export class ExamRun {
 }
 
 // ---------------------------------------------------------------- Aufgaben aus Linien erzeugen
+//
+// Maßstab für jede Aufgabe (Zielgruppe: Leute, die das Netz gerade erst kennenlernen):
+//  • Nutzen: übt sie das Konzept des Kapitels (wo kreuzt was, wohin fährt eine Linie, welche Gegend)?
+//  • Schaffbar: ungefähres Wissen reicht – Orte großzügig bewerten, nur markante Stationen, wenige Elemente.
 
 const name = (s: Station) => s.name;
+const isRapid = (id: string) => L(id)?.mode === 'U' || L(id)?.mode === 'S';
+/** „ungefähr dort“ reicht: Schnellbahnen haben weite Stationsabstände, Bim/Bus enge */
+const nearTol = (id: string) => (isRapid(id) ? 1500 : 1000);
 
-/** „Tippe, wo die A die B kreuzt“ – nur A wird gezeigt */
+/** „Tippe, wo die A die B kreuzt“ – nur A wird gezeigt, ungefähr richtig reicht */
 export function crossingTask(a: string, b: string): TapStationTask | null {
   const xs = crossings(a, b);
   if (!xs.length || !L(a) || !L(b)) return null;
   return {
     kind: 'tapStation',
-    q: `Tippe auf der Karte: Wo kreuzt die ${a} die ${b}?`,
+    q: `Tippe ungefähr dorthin, wo die ${a} die ${b} kreuzt.`,
     targets: xs,
-    tolM: 450,
+    tolM: Math.max(nearTol(a), nearTol(b)),
     show: [a],
     explain: `${a} und ${b} treffen sich bei ${xs.map(name).join(' und ')}.`,
   };
 }
 
-/** „Tippe auf die Endstation der X Richtung …“ – die Linie ist nicht eingezeichnet */
+/** „Wohin fährt die X?“ – andere Endstation ungefähr antippen (Linie nicht eingezeichnet) */
 export function terminalTask(id: string): TapStationTask | null {
   if (!L(id)) return null;
   const [a, b] = ends(id);
   const [known, target] = Math.random() < 0.5 ? [a, b] : [b, a];
   return {
     kind: 'tapStation',
-    q: `Die ${id} fährt von ${known.name} weg – tippe auf ihre andere Endstation.`,
+    q: `Die ${id} startet in ${known.name}. Wohin fährt sie? Tippe ungefähr auf ihr anderes Ende.`,
     targets: [target],
-    tolM: 700,
+    tolM: 2000,
     explain: `Die ${id} fährt ${known.name} ↔ ${target.name}.`,
   };
 }
 
-/** Linie aus dem Gedächtnis zeichnen (von Endstation zu Endstation) */
+/** Linie zeichnen – nur U-/S-Bahn (bei Bim/Bus zu kleinteilig für Einsteiger) */
 export function drawTask(id: string): DrawTask | null {
-  if (!L(id)) return null;
+  if (!L(id) || !isRapid(id)) return null;
   const [from, to] = ends(id);
-  return { kind: 'draw', q: `Zeichne die ${id} von ${from.name} nach ${to.name}.`, line: id, from, to, explain: `So fährt die ${id}.` };
+  return { kind: 'draw', q: `Zeichne grob, wie die ${id} von ${from.name} nach ${to.name} fährt.`, line: id, from, to, explain: `So fährt die ${id}.` };
 }
 
-/** 4–5 markante Stationen einer Linie in die richtige Reihenfolge bringen */
-export function orderTask(id: string, n = 5): OrderTask | null {
-  if (!L(id)) return null;
-  const main = mainOf(id);
+/**
+ * Reihenfolge – nur markante Stationen einer U-/S-Bahn (die aus dem Steckbrief-Satz), höchstens 4, die erste ist
+ * vorgegeben und die Linie eingezeichnet. Zufällige kleine Stationen wären für Einsteiger nicht lösbar.
+ */
+export function orderTask(id: string): OrderTask | null {
+  if (!L(id) || !isRapid(id)) return null;
   const seen = new Set<string>();
-  const uniq = main.filter((s) => !seen.has(s.name) && seen.add(s.name));
-  if (uniq.length < 4) return null;
-  const k = Math.min(n, uniq.length);
-  // gleichmäßig verteilt, Endstationen dabei
-  const picks = Array.from({ length: k }, (_, i) => uniq[Math.round((i * (uniq.length - 1)) / (k - 1))]);
+  const marks = lineProfile(L(id)!)
+    .waypoints.map((sid) => app.net.station(sid))
+    .filter((s) => !seen.has(s.name) && seen.add(s.name));
+  if (marks.length < 3) return null;
+  const inner = marks.slice(1, -1);
+  const mid = inner.length > 2 ? shuffle([...inner]).slice(0, 2).sort((x, y) => marks.indexOf(x) - marks.indexOf(y)) : inner;
+  const picks = [marks[0], ...mid, marks[marks.length - 1]];
   return {
     kind: 'order',
-    q: `Bring die Stationen der ${id} in die richtige Reihenfolge – von ${picks[0].name} aus.`,
+    q: `Die ${id} startet in ${picks[0].name}. In welcher Reihenfolge kommen die anderen Stationen?`,
     items: picks.map((s) => ({ id: s.id, label: s.name })),
     explain: `${id}: ${picks.map(name).join(' → ')}.`,
+    show: [id],
   };
 }
 
-/** „Welche Linie ist das?“ – Linie neutral auf der Karte, Auswahl aus ähnlichen Linien */
+/** Wie verschieden zwei Linien verlaufen (Endstationen weit auseinander → auf der Karte unterscheidbar) */
+function distinct(a: string, b: string): boolean {
+  const [a1, a2] = ends(a);
+  const [b1, b2] = ends(b);
+  const far = (x: Station, y: Station) => distM(x, y) > 2500;
+  return (far(a1, b1) || far(a2, b2)) && (far(a1, b2) || far(a2, b1));
+}
+
+/** „Welche Linie ist das?“ – Linie neutral auf der Karte; Auswahl nur aus deutlich anders verlaufenden Linien */
 export function identifyTask(id: string, pool: string[]): ChoiceTask | null {
-  const wrong = shuffle(have(pool).filter((x) => x !== id)).slice(0, 3);
-  if (!L(id) || wrong.length < 2) return null;
+  if (!L(id)) return null;
+  const wrong = shuffle(have(pool).filter((x) => x !== id && distinct(id, x))).slice(0, 3);
+  if (wrong.length < 2) return null;
   return {
     kind: 'choice',
     q: 'Welche Linie ist auf der Karte eingezeichnet?',
@@ -267,18 +293,17 @@ export function identifyTask(id: string, pool: string[]): ChoiceTask | null {
   };
 }
 
-/** „Welche dieser Linien halten bei …?“ (mehrere richtig) */
+/** „Welche dieser Linien halten bei …?“ – höchstens 3 richtige unter 5 */
 export function servesTask(station: Station, pool: string[]): MultiTask | null {
-  const at = new Set(have(pool).filter((id) => stationsOf(id).some((s) => s.name === station.name)));
-  const others = shuffle(have(pool).filter((id) => !at.has(id))).slice(0, Math.max(2, 5 - at.size));
-  if (!at.size || others.length < 2) return null;
-  const correct = [...at].slice(0, 4);
+  const at = shuffle(have(pool).filter((id) => stationsOf(id).some((s) => s.name === station.name))).slice(0, 3);
+  const others = shuffle(have(pool).filter((id) => !at.includes(id))).slice(0, 5 - at.length);
+  if (!at.length || others.length < 2) return null;
   return {
     kind: 'multi',
     q: `Welche dieser Linien halten bei ${station.name}? (alle richtigen wählen)`,
-    options: shuffle([...correct, ...others]).map((x) => ({ id: x, html: chip(x) })),
-    correct,
-    explain: `Bei ${station.name}: ${correct.join(', ')}.`,
+    options: shuffle([...at, ...others]).map((x) => ({ id: x, html: chip(x) })),
+    correct: at,
+    explain: `Bei ${station.name}: ${at.join(', ')}.`,
   };
 }
 
@@ -290,43 +315,44 @@ export function areaTask(q: string, ids: string[], color: string, explain: strin
   return { kind: 'tapArea', q, stations, lines, color, explain };
 }
 
-/**
- * Aufgaben-Erzeuger zu den Linien eines Kurses: wo kreuzt sie eine U-Bahn, Stationen ordnen, andere Endstation
- * finden, Linie auf der Karte erkennen, wer hält wo, Linie zeichnen.
- */
-export function lineTaskGens(lines: string[]): { cross: TaskGen; order: TaskGen; terminal: TaskGen; identify: TaskGen; serves: TaskGen; draw: TaskGen } | null {
+/** Aufgaben-Erzeuger zu den Linien eines Kurses (null, wenn eine Art mit diesen Linien keinen Sinn ergibt) */
+export function lineTaskGens(lines: string[]) {
   const ls = have(lines).filter((id) => mainOf(id).length >= 4);
   if (!ls.length) return null;
   const any = () => pick(ls);
+  const rapid = ls.filter(isRapid);
   const us = have(U_LINES);
-  // zuerst Kreuzungen mit einer U-Bahn (am lehrreichsten), sonst zwischen den Kurslinien
+  // Kreuzung mit einer U-Bahn ist das wichtigste Orientierungswissen; sonst zwischen den Kurslinien
   const withU = ls.flatMap((a) => us.filter((u) => u !== a && crossings(a, u).length === 1).map((u) => [a, u] as const));
-  const inner = ls.flatMap((a) => ls.filter((b) => a < b && crossings(a, b).length).map((b) => [a, b] as const));
+  const inner = ls.flatMap((a) => ls.filter((b) => a < b && crossings(a, b).length === 1).map((b) => [a, b] as const));
   const pairs = withU.length ? withU : inner;
   const multiStops = ls.flatMap((id) => mainOf(id)).filter((s) => ls.filter((id) => stationsOf(id).some((x) => x.name === s.name)).length >= 2);
+  const idPool = [...new Set([...ls, ...us])];
+  const gen = (f: TaskGen | null) => f;
   return {
-    cross: () => (pairs.length ? crossingTask(...(pick(pairs) as [string, string])) : terminalTask(any())),
-    order: () => orderTask(any()),
-    terminal: () => terminalTask(any()),
-    identify: () => identifyTask(any(), ls.length >= 3 ? ls : [...ls, ...us]),
-    serves: () => (multiStops.length ? servesTask(pick(multiStops), ls) : orderTask(any())),
-    draw: () => drawTask(any()),
+    cross: gen(pairs.length ? () => crossingTask(...(pick(pairs) as [string, string])) : null),
+    terminal: gen(() => terminalTask(any())),
+    identify: gen(() => identifyTask(any(), idPool)),
+    serves: gen(multiStops.length ? () => servesTask(pick(multiStops), ls) : null),
+    order: gen(rapid.length ? () => orderTask(pick(rapid)) : null),
+    draw: gen(rapid.length ? () => drawTask(pick(rapid)) : null),
   };
 }
 
-/** drei Aufgaben für mitten im Kurs (nach den Erklärungen) */
+/** zwei bis drei Aufgaben mitten im Kurs – nur die leichten (ungefähr antippen, Linie erkennen) */
 export function practiceTasks(lines: string[]): Task[] {
   const g = lineTaskGens(lines);
   if (!g) return [];
-  return [g.cross(), g.order(), pick([g.terminal, g.identify])()].filter((t): t is Task => !!t);
+  return [g.cross?.() ?? null, g.terminal?.() ?? null, g.identify?.() ?? null].filter((t): t is Task => !!t).slice(0, 3);
 }
 
 /**
- * Standard-Prüfung aus den Linien eines Kurses (jede Art einmal); Kurse geben eigene Aufgaben dazu
- * (z.B. Gegenden der Busnummern), die zuerst kommen.
+ * Standard-Prüfung aus den Linien eines Kurses: jede Art, die mit diesen Linien Sinn ergibt; eigene Aufgaben
+ * eines Kurses (z.B. Gegenden der Busnummern) kommen zuerst.
  */
 export function defaultExam(lines: string[], extra: TaskGen[] = [], size = 6): TaskGen[] {
   const g = lineTaskGens(lines);
   if (!g) return extra;
-  return [...extra, ...shuffle([g.draw, g.order, g.terminal, g.identify, g.cross, g.serves])].slice(0, Math.max(size, extra.length));
+  const gens = [g.cross, g.terminal, g.identify, g.serves, g.order, g.draw, g.cross, g.terminal].filter((x): x is TaskGen => !!x);
+  return [...extra, ...gens].slice(0, Math.max(size, extra.length));
 }

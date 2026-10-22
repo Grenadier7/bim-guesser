@@ -3,7 +3,7 @@ import type { Station } from '../../../../shared/types.ts';
 import { esc } from '../../ui.ts';
 import { shuffle } from '../model.ts';
 import { ask, chips, type Course, DECADE, districtName, ends, have, L, lineQuiz, net, pick, quiz, stationByName, stationsOf, type Step, table } from './common.ts';
-import { areaTask, terminalTask, type Task, type TaskGen } from './tasks.ts';
+import { areaTask, type Task, type TaskGen } from './tasks.ts';
 
 /** Gegend je Zehnerstelle – die Reihenfolge läuft gegen den Uhrzeigersinn um die Stadt */
 const BUS_REGION: Record<number, string> = { 2: 'Nordosten', 3: 'Norden', 4: 'Westen', 5: 'Südwesten', 6: 'Süden', 7: 'Südosten', 8: 'Osten', 9: 'Osten' };
@@ -162,7 +162,6 @@ export const busCourse: Course = {
         show: { lines: byDecade.get(g)!, neutral: true },
       };
     };
-    const busLine: TaskGen = () => terminalTask(pick(byDecade.get(pick(decades))!));
-    return [area, which, area, which, area, busLine];
+    return [area, which, area, which, area, which];
   },
 };

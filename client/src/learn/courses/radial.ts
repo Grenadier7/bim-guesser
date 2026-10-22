@@ -3,7 +3,7 @@ import { NET_COLOR } from '../../netcolors.ts';
 import { app } from '../../store.ts';
 import { esc } from '../../ui.ts';
 import { compass } from '../../training/coach.ts';
-import { ask, CENTER, chip, chips, type Course, crossings, DIAMETRAL, districtName, farEnd, have, lineQuiz, mainOf, nearEnd, pick, quiz, RADIAL_FAMILY, RADIAL_OTHER, RING_LINES, route, stationByName, stationsOf, type Step, table, TANGENTIAL } from './common.ts';
+import { ask, CENTER, chip, chips, type Course, crossings, DIAMETRAL, districtName, farEnd, have, lineQuiz, mainOf, nearEnd, pick, quiz, RADIAL_FAMILY, RADIAL_OTHER, RING_LINES, route, stationByName, type Step, table, TANGENTIAL } from './common.ts';
 
 /**
  * Farben für den Gesamtüberblick: drei Sorten Strahlen. U-Bahnen behalten immer ihre Linienfarbe; die übrigen Farben
@@ -96,7 +96,12 @@ export const radialCourse: Course = {
         quiz(
           `Wo kreuzt die ${qLine} die U6?`,
           qStation.name,
-          [...u6x.map(([, s]) => s.name), ...mainOf('U6').map((s) => s.name)].filter((n) => !crossings(qLine, 'U6').some((c) => c.name === n)),
+          // nur U6-Stationen, die mindestens 3 Stationen weg sind – sonst rät man zwischen Nachbarn
+          (() => {
+            const u6 = mainOf('U6').map((s) => s.name);
+            const at = u6.indexOf(qStation.name);
+            return u6.filter((n, k) => Math.abs(k - at) >= 3 && !crossings(qLine, 'U6').some((c) => c.name === n));
+          })(),
           `Die ${qLine} trifft die U6 bei ${qStation.name}.`,
         ),
       ),
@@ -110,14 +115,16 @@ export const radialCourse: Course = {
       ),
       ...ask(lineQuiz('Welche dieser Linien ist eine Radiallinie?', pick(radials), have(TANGENTIAL), 'Radiallinien beginnen am Ring – die anderen sind Querverbindungen.')),
     );
+    // wie die Merkhilfe: in welchen Bezirk fährt die Linie hinaus (nicht die genaue Endstation auswendig)
     const q4 = pick(family);
+    const famDistricts = [...new Set(family.map((id) => districtName(farEnd(id).district)))];
     steps.push(
       ...ask(
         quiz(
-          `Wohin fährt die ${q4} vom Schottentor?`,
-          farEnd(q4).name,
-          family.filter((id) => !stationsOf(q4).some((s) => s.id === farEnd(id).id)).map((id) => farEnd(id).name),
-          `Die ${q4} fährt nach ${farEnd(q4).name}.`,
+          `In welchen Bezirk fährt die ${q4} vom Schottentor hinaus?`,
+          districtName(farEnd(q4).district),
+          famDistricts,
+          `Die ${q4} fährt nach ${farEnd(q4).name} (${districtName(farEnd(q4).district)}).`,
         ),
       ),
     );

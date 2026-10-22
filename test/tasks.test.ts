@@ -105,3 +105,28 @@ test('Bus-Kurs: Gegend der 80er und 90er wird im Kurs auf der Karte abgefragt', 
   const qs = bus.build().filter((s) => s.task?.kind === 'tapArea').map((s) => s.task!.q);
   assert.ok(qs.some((q) => q.includes('80er')) && qs.some((q) => q.includes('90er')), qs.join(' | '));
 });
+
+test('Einsteigerfreundlich: Orte ungefähr, Reihenfolge/Zeichnen nur U-/S-Bahn mit wenigen markanten Stationen', () => {
+  assert.ok(T.crossingTask('U3', 'U6')!.tolM >= 1500, 'Kreuzung U/S ungefähr (≥ 1,5 km)');
+  assert.ok(T.crossingTask('43', 'U6')!.tolM >= 1000, 'Kreuzung Bim ungefähr (≥ 1 km)');
+  assert.ok(T.terminalTask('43')!.tolM >= 2000);
+  // 1,2 km neben Westbahnhof zählt als „ungefähr richtig“
+  const t = T.crossingTask('U3', 'U6')!;
+  const g = T.gradeTapStation(t, [t.targets[0].lat + 0.011, t.targets[0].lon]);
+  assert.ok(g.ok && /ungefähr/.test(g.note), g.note);
+  assert.equal(T.orderTask('43'), null, 'keine Reihenfolge bei Bim');
+  assert.equal(T.drawTask('43'), null, 'kein Zeichnen bei Bim');
+  for (let i = 0; i < 20; i++) {
+    const o = T.orderTask('U6')!;
+    assert.ok(o.items.length >= 3 && o.items.length <= 4, `${o.items.length} Stationen`);
+  }
+  // Linie erkennen: falsche Antworten verlaufen deutlich anders
+  for (let i = 0; i < 20; i++) {
+    const c = T.identifyTask('40', ['40', '41', '42', '43', 'U6', 'U3', 'U1'])!;
+    assert.ok(c.options.every((o) => !['41', '42'].includes(o.id)), `zu ähnliche Linien als Auswahl: ${c.options.map((o) => o.id)}`);
+  }
+  // Mehrfachauswahl: bei 3 richtigen darf eine fehlen, Falsches nie
+  const m = { kind: 'multi' as const, q: '', options: [], correct: ['a', 'b', 'c'], explain: '' };
+  assert.equal(T.gradeMulti(m, ['a', 'b']).ok, true);
+  assert.equal(T.gradeMulti(m, ['a', 'b', 'x']).ok, false);
+});

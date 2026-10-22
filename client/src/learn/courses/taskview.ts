@@ -74,9 +74,11 @@ export function mountTask(box: HTMLElement, task: Task, done: (r: TaskResult) =>
   let answered: Grade | null = null;
   let tap: LatLon | null = null;
   const sketch: LatLon[] = [];
-  const order: string[] = [];
+  // Reihenfolge: die erste Station ist vorgegeben
+  const order: string[] = task.kind === 'order' ? [task.items[0].id] : [];
   const picked = new Set<string>();
   const items = task.kind === 'order' ? [...task.items].sort(() => Math.random() - 0.5) : [];
+  const orderLabel = (id: string) => (task.kind === 'order' ? task.items.find((x) => x.id === id)!.label : '');
 
   const finish = (g: Grade) => {
     answered = g;
@@ -101,14 +103,14 @@ export function mountTask(box: HTMLElement, task: Task, done: (r: TaskResult) =>
           })
           .join('')}</div>${a ? '' : `<button class="btn btn-primary" id="t-ok" ${picked.size ? '' : 'disabled'}>Antworten</button>`}`;
       case 'order':
-        return `<ol class="order-picked">${order.map((id) => `<li>${esc(items.find((x) => x.id === id)!.label)}</li>`).join('')}</ol>
+        return `<ol class="order-picked">${order.map((id, k) => `<li>${esc(orderLabel(id))}${k === 0 ? ' <small class="muted">(Start)</small>' : ''}</li>`).join('')}</ol>
           ${
             a
               ? `<p class="muted">Richtig: ${task.items.map((x) => esc(x.label)).join(' → ')}</p>`
               : `<div class="quiz-options course-quiz">${items
                   .filter((x) => !order.includes(x.id))
                   .map((x) => `<button data-ord="${esc(x.id)}">${esc(x.label)}</button>`)
-                  .join('')}</div>${order.length ? '<button class="link" id="t-undo">↶ letzte zurücknehmen</button>' : ''}`
+                  .join('')}</div>${order.length > 1 ? '<button class="link" id="t-undo">↶ letzte zurücknehmen</button>' : ''}`
           }`;
       case 'tapStation':
       case 'tapArea':
@@ -152,7 +154,7 @@ export function mountTask(box: HTMLElement, task: Task, done: (r: TaskResult) =>
       }),
     );
     box.querySelector('#t-undo')?.addEventListener('click', () => {
-      if (task.kind === 'order') order.pop();
+      if (task.kind === 'order' && order.length > 1) order.pop();
       if (task.kind === 'draw') {
         sketch.pop();
         app.map.showSketch(sketch, ends());
@@ -164,7 +166,8 @@ export function mountTask(box: HTMLElement, task: Task, done: (r: TaskResult) =>
       else if (task.kind === 'tapStation' && tap) finish(gradeTapStation(task, tap));
       else if (task.kind === 'tapArea' && tap) finish(gradeTapArea(task, tap));
       else if (task.kind === 'draw') {
-        const r = evaluateSketch(lineProfile(app.net.lines.get(task.line)!), [[task.from.lat, task.from.lon], ...sketch, [task.to.lat, task.to.lon]]);
+        // grob zeichnen reicht: 900 m neben einer Station zählt noch
+        const r = evaluateSketch(lineProfile(app.net.lines.get(task.line)!), [[task.from.lat, task.from.lon], ...sketch, [task.to.lat, task.to.lon]], 900);
         finish(gradeSketch(r.coverage, r.precision));
       }
     });

@@ -65,6 +65,8 @@ export function courseView(panel: HTMLElement, course: Course, onBack: () => voi
   // Fokusgebiet, Haltestellen-Punkte usw. aus dem Lernmodus weg
   app.map.clear();
   const steps = course.build();
+  /** nächster Kurs im Lernpfad – man darf ohne Prüfung weitergehen */
+  const nextCourse = COURSES[COURSES.indexOf(course) + 1] ?? null;
   // Kurse ohne eigene Aufgaben: drei Aufgaben zu ihren Linien nach den Erklärungen (vor den Fragen)
   if (!steps.some((s) => s.task)) {
     const lines = [...new Set(steps.flatMap((s) => s.lines ?? []))].filter((id) => L(id) && !isSpecialLine(L(id)!));
@@ -215,9 +217,10 @@ export function courseView(panel: HTMLElement, course: Course, onBack: () => voi
              : `Zum Meistern brauchst du ${Math.round(ExamRun.PASS * 100)} %. Die Fehler hast du schon wiederholt – eine neue Prüfung hat neue Aufgaben.`
          }</p></div>
        ${practiceHtml()}
-       <div class="learn-actions"><button class="btn btn-primary" id="list">Zum Lernpfad</button><button class="btn btn-ghost" id="exam-again">Neue Prüfung</button></div>`,
+       <div class="learn-actions">${nextCourse ? `<button class="btn btn-primary" id="next-course">Weiter: ${nextCourse.icon} ${esc(nextCourse.title)} →</button>` : ''}<button class="btn ${nextCourse ? 'btn-ghost' : 'btn-primary'}" id="list">Zum Lernpfad</button><button class="btn btn-ghost" id="exam-again">Neue Prüfung</button></div>`,
     );
     panel.append(el);
+    el.querySelector('#next-course')?.addEventListener('click', () => courseView(panel, nextCourse!, onBack));
     el.querySelector('#to-practice')?.addEventListener('click', () => {
       addMine(courseLines);
       renderExamDone(run);
@@ -320,10 +323,11 @@ export function courseView(panel: HTMLElement, course: Course, onBack: () => voi
          ${quizCount ? `<p><b>${score} von ${quizCount}</b> Aufgaben richtig.</p>` : ''}
          <p>Jetzt die <b>Abschlussprüfung</b>: neue Aufgaben auf der Karte – Stationen finden, Linien zeichnen, Reihenfolgen.
            Ab ${Math.round(ExamRun.PASS * 100)} % hast du das Thema <b>gemeistert</b> ⭐. Fehler kommen als neue Variante nochmal.</p></div>
-       <div class="learn-actions"><button class="btn btn-primary" id="exam">🎓 Zur Prüfung</button><button class="btn btn-ghost" id="list">Später</button><button class="btn btn-ghost" id="again">Kurs nochmal</button></div>`,
+       <div class="learn-actions"><button class="btn btn-primary" id="exam">🎓 Zur Prüfung</button>${nextCourse ? `<button class="btn btn-ghost" id="next-course">Ohne Prüfung weiter: ${nextCourse.icon} ${esc(nextCourse.title)} →</button>` : ''}<button class="btn btn-ghost" id="list">Zum Lernpfad</button><button class="btn btn-ghost" id="again">Kurs nochmal</button></div>`,
     );
     panel.append(el);
     el.querySelector('#exam')!.addEventListener('click', startExam);
+    el.querySelector('#next-course')?.addEventListener('click', () => courseView(panel, nextCourse!, onBack));
     el.querySelector('#list')!.addEventListener('click', onBack);
     el.querySelector('#again')!.addEventListener('click', () => courseView(panel, course, onBack));
   }
