@@ -52,7 +52,14 @@ export const nightCourse: Course = {
     ];
     const t = pick(trans);
     steps.push(
-      ...ask(lineQuiz(`Welche Nachtlinie fährt nach ${farEnd(t).name}?`, t, trans.filter((x) => !serves(x, farEnd(t).name)), `Die ${t} fährt ${ends(t)[0].name} ↔ ${ends(t)[1].name}.`)),
+      ...ask(
+        quiz(
+          `Wo startet die ${t} (Richtung ${farEnd(t).name})?`,
+          nearEnd(t).name,
+          ['Schwedenplatz', 'Oper/Karlsplatz', 'Floridsdorf', 'Kagran', 'Kagraner Platz', 'Westbahnhof'],
+          `Die ${t} fährt ${ends(t)[0].name} ↔ ${ends(t)[1].name}.`,
+        ),
+      ),
       ...ask(
         quiz(
           'Wo ist der größte Nacht-Knoten im Zentrum?',
@@ -77,8 +84,9 @@ export const nightCourse: Course = {
           lineQuiz(
             `Mit welcher Nachtlinie kommst du von ${nearEnd(c).name} nach ${farEnd(c).name}?`,
             c,
-            trans.filter((x) => !(serves(x, nearEnd(c).name) && serves(x, farEnd(c).name))),
-            `Die ${c} quert die Donau.`,
+            // nur Linien, die gar nicht ins Zentrum fahren – es reicht zu wissen, welche Linien die Donau queren
+            local.length >= 2 ? local : trans.filter((x) => !(serves(x, nearEnd(c).name) && serves(x, farEnd(c).name))),
+            `Die ${c} quert die Donau – die anderen fahren nur nördlich der Donau.`,
           ),
         ),
       );

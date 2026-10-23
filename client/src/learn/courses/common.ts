@@ -7,6 +7,7 @@ import { app } from '../../store.ts';
 import { esc, lineChip } from '../../ui.ts';
 import { pick } from '../../../../shared/random.ts';
 import { patternsOf, shuffle } from '../model.ts';
+import type { Task, TaskGen } from './tasks.ts';
 
 export interface Quiz {
   q: string;
@@ -35,6 +36,8 @@ export interface Step {
   /** markierte Stationen (Name beim Drüberfahren, bei wenigen dauerhaft) */
   marks?: Station[];
   quiz?: Quiz;
+  /** interaktive Aufgabe (Karte tippen, zeichnen, ordnen …) – ersetzt die Erklär-Karte */
+  task?: Task;
 }
 
 export interface Course {
@@ -43,6 +46,8 @@ export interface Course {
   title: string;
   short: string;
   build: () => Step[];
+  /** Aufgaben für die Abschlussprüfung (jede Erzeugung eine neue Variante); ohne: aus den Linien des Kurses */
+  exam?: () => TaskGen[];
 }
 
 export { CENTER };
@@ -139,6 +144,8 @@ export function quiz(q: string, right: string, wrong: string[], explain: string,
 export const lineQuiz = (q: string, right: string, wrong: string[], explain: string) => quiz(q, right, wrong, explain, (x) => chip(x));
 export { pick };
 export const ask = (qz: Quiz | null): Step[] => (qz ? [{ title: 'Frage', html: '', quiz: qz }] : []);
+/** interaktive Aufgabe als Kursschritt (null = mit diesen Daten nicht möglich → kein Schritt) */
+export const taskStep = (t: Task | null): Step[] => (t ? [{ title: 'Aufgabe', html: '', task: t }] : []);
 
 export function table(rows: [string, string][]): string {
   return `<table class="course-table">${rows.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('')}</table>`;

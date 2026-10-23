@@ -14,6 +14,7 @@ export function gameRoutes(app: Express, games: GameManager) {
   // jeder Start fragt die Wiener-Linien-API dutzende Male ab
   const limitStart = rateLimit('start', 12, 10 * MIN, 'Zu viele Spielstarts – bitte kurz warten.');
   const limitEvents = rateLimit('events', 60, MIN);
+  const limitChat = rateLimit('chat', 60, MIN, 'Zu viele Nachrichten – bitte kurz warten.');
 
   // fehlende Lobby antwortet wie ein fremder Token (403) – sonst ließen sich Codes ausprobieren (Befund L-07).
   // Nur „Beitreten“ sagt ausdrücklich „Lobby nicht gefunden“ (dort mit eigenem Rate-Limit).
@@ -75,6 +76,9 @@ export function gameRoutes(app: Express, games: GameManager) {
   app.post('/api/games/:code/next', h(async (req) => (await game(req).next(token(req)), game(req).state())));
   app.post('/api/games/:code/lobby', h((req) => (game(req).backToLobby(token(req)), game(req).state())));
   app.post('/api/games/:code/leave', h((req) => (game(req).leave(token(req)), { ok: true })));
+  // Host entfernt einen Spieler; Lobby-Chat (eigenes Rate-Limit – Fluten bremst zusätzlich die Lobby selbst)
+  app.post('/api/games/:code/kick', h((req) => (game(req).kick(token(req), String(req.body?.playerId ?? '')), game(req).state())));
+  app.post('/api/games/:code/chat', limitChat, h((req) => game(req).say(token(req), req.body?.text)));
   // Host-Steuerung während einer Runde
   app.post('/api/games/:code/pause', h((req) => (game(req).pause(token(req)), game(req).state())));
   app.post('/api/games/:code/resume', h((req) => (game(req).resume(token(req)), game(req).state())));
@@ -129,6 +133,7 @@ export function gameRoutes(app: Express, games: GameManager) {
     const send = (e: GameEvent) => res.write(`data: ${JSON.stringify(e)}\n\n`);
     g.on('event', send);
     send({ type: 'state', state: g.state() });
+    send({ type: 'chatHistory', messages: g.chatHistory });
     const ping = setInterval(() => res.write(': ping\n\n'), 20000);
     req.on('close', () => {
       clearInterval(ping);

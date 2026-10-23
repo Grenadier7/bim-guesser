@@ -10,6 +10,8 @@ import { esc, h, lineChip } from '../../ui.ts';
 import { lineHtml, stationHtml } from '../atlas.ts';
 import { DAY_SCOPE, addMine, departuresFrom, isMine, isSpecialLine, lineProfile, linesAt, patternsOf, setMine } from '../model.ts';
 import { L, type Course, type Step } from './common.ts';
+import { defaultExam, ExamRun, practiceTasks } from './tasks.ts';
+import { mountTask } from './taskview.ts';
 import { COURSES } from './list.ts';
 import { loadJson, saveJson } from '../../storage.ts';
 
@@ -20,13 +22,20 @@ export { COURSES };
 // ---------------------------------------------------------------- Fortschritt
 
 const PROGRESS_KEY = 'oeffi-courses-v1';
-type Progress = Record<string, { done: boolean; best: number; total: number }>;
+/** best/total: Fragen im Kurs · exam: bestes Prüfungsergebnis (0–1) · mastered: Prüfung mit ≥ 80 % bestanden */
+type Progress = Record<string, { done: boolean; best: number; total: number; exam?: number; mastered?: boolean }>;
 export function courseProgress(): Progress {
   return loadJson<Progress>(PROGRESS_KEY, {});
 }
 function saveProgress(id: string, score: number, total: number) {
   const p = courseProgress();
-  p[id] = { done: true, best: Math.max(p[id]?.best ?? 0, score), total };
+  p[id] = { ...p[id], done: true, best: Math.max(p[id]?.best ?? 0, score), total };
+  saveJson(PROGRESS_KEY, p);
+}
+function saveExam(id: string, share: number, passed: boolean) {
+  const p = courseProgress();
+  const cur = p[id] ?? { done: true, best: 0, total: 0 };
+  p[id] = { ...cur, done: true, exam: Math.max(cur.exam ?? 0, share), mastered: !!cur.mastered || passed };
   saveJson(PROGRESS_KEY, p);
 }
 
@@ -56,15 +65,31 @@ export function courseView(panel: HTMLElement, course: Course, onBack: () => voi
   // Fokusgebiet, Haltestellen-Punkte usw. aus dem Lernmodus weg
   app.map.clear();
   const steps = course.build();
+  /** nächster Kurs im Lernpfad – man darf ohne Prüfung weitergehen */
+  const nextCourse = COURSES[COURSES.indexOf(course) + 1] ?? null;
+  // Kurse ohne eigene Aufgaben: drei Aufgaben zu ihren Linien nach den Erklärungen (vor den Fragen)
+  if (!steps.some((s) => s.task)) {
+    const lines = [...new Set(steps.flatMap((s) => s.lines ?? []))].filter((id) => L(id) && !isSpecialLine(L(id)!));
+    const at = steps.findIndex((s) => s.quiz);
+    steps.splice(at < 0 ? steps.length : at, 0, ...practiceTasks(lines).map((task): Step => ({ title: 'Aufgabe', html: '', task })));
+  }
   const answers = new Map<number, boolean>();
   const chosen = new Map<number, string>();
   let i = 0;
+  /** laufende Aufgabe: Karten-Tippen abmelden, wenn man weitergeht */
+  let unmount: (() => void) | null = null;
+  const leave = () => {
+    unmount?.();
+    unmount = null;
+  };
 
   function render() {
+    leave();
     const total = steps.length;
-    const quizCount = steps.filter((s) => s.quiz).length;
+    const quizCount = steps.filter((s) => s.quiz || s.task).length;
     if (i >= total) return renderDone(quizCount);
     const st = steps[i];
+    if (st.task) return renderTaskStep(st, total);
     drawStep(st);
     const answered = answers.has(i);
     const el = h(
@@ -91,7 +116,7 @@ export function courseView(panel: HTMLElement, course: Course, onBack: () => voi
     panel.innerHTML = '';
     panel.append(el);
     panel.scrollTop = 0;
-    el.querySelector('#cback')!.addEventListener('click', onBack);
+    el.querySelector('#cback')!.addEventListener('click', () => (leave(), onBack()));
     el.querySelector('#prev')!.addEventListener('click', () => {
       i = Math.max(0, i - 1);
       render();
@@ -114,6 +139,99 @@ export function courseView(panel: HTMLElement, course: Course, onBack: () => voi
       const id = t.closest<HTMLElement>('.chip-link[data-line]')?.dataset.line;
       if (id) card({ kind: 'line', id });
     });
+  }
+
+  /** Kopf, Fortschritt und Knöpfe – gleich für Erklär-Schritte und Aufgaben */
+  function frame(title: string, progress: string, pct: number): { el: HTMLElement; box: HTMLElement; next: HTMLButtonElement; prev: HTMLButtonElement } {
+    const el = h(
+      'div',
+      { class: 'learn course' },
+      `<button class="link" id="cback">← Lernen</button>
+       <div class="course-head"><span class="cc-icon">${course.icon}</span><h2>${esc(title)}</h2></div>
+       <div class="learn-progress"><div class="bar"><i style="width:${Math.round(pct * 100)}%"></i></div><small>${progress}</small></div>
+       <div class="learn-card course-step course-task"></div>
+       <div class="learn-actions"><button class="btn btn-primary" id="next" disabled>Weiter →</button><button class="btn btn-ghost" id="prev">← Zurück</button></div>`,
+    );
+    panel.innerHTML = '';
+    panel.append(el);
+    panel.scrollTop = 0;
+    el.querySelector('#cback')!.addEventListener('click', () => (leave(), onBack()));
+    return { el, box: el.querySelector('.course-task')!, next: el.querySelector('#next')!, prev: el.querySelector('#prev')! };
+  }
+
+  /** interaktive Aufgabe mitten im Kurs (zählt wie eine Frage) */
+  function renderTaskStep(st: Step, total: number) {
+    const f = frame(course.title, `Schritt ${i + 1} von ${total}`, i / total);
+    f.prev.disabled = i === 0;
+    f.prev.addEventListener('click', () => {
+      i = Math.max(0, i - 1);
+      render();
+    });
+    f.next.textContent = i + 1 === total ? 'Zur Prüfung →' : 'Weiter →';
+    f.next.addEventListener('click', () => {
+      i++;
+      render();
+    });
+    unmount = mountTask(f.box, st.task!, (r) => {
+      answers.set(i, r.ok);
+      f.next.disabled = false;
+      f.next.focus();
+    });
+  }
+
+  /** Abschlussprüfung: frische Aufgaben, Fehler kommen als neue Variante wieder, „gemeistert“ ab 80 % */
+  function renderExam(run: ExamRun) {
+    leave();
+    const task = run.current;
+    if (!task) return renderExamDone(run);
+    const { done, left } = run.position;
+    const f = frame(`${course.title} – Prüfung`, run.isRetry ? 'Wiederholung – zählt nicht mehr, aber du sollst es können' : `Aufgabe ${done + 1} von ${run.total}`, done / (done + left));
+    f.prev.textContent = 'Prüfung abbrechen';
+    f.prev.addEventListener('click', () => (leave(), onBack()));
+    unmount = mountTask(f.box, task, (r) => {
+      f.next.disabled = false;
+      f.next.focus();
+      f.next.addEventListener('click', () => {
+        run.answer(r.ok);
+        renderExam(run);
+      });
+    });
+  }
+
+  function renderExamDone(run: ExamRun) {
+    leave();
+    const share = run.total ? run.score / run.total : 0;
+    saveExam(course.id, share, run.passed);
+    netLayer().render(netView());
+    app.map.overview();
+    panel.innerHTML = '';
+    const el = h(
+      'div',
+      { class: 'learn course' },
+      `<div class="course-head"><span class="cc-icon">${course.icon}</span><h2>${esc(course.title)}</h2></div>
+       <div class="learn-card"><h3>${run.passed ? '⭐ Gemeistert!' : '📚 Fast – noch nicht gemeistert'}</h3>
+         <p><b>${run.score} von ${run.total}</b> Prüfungsaufgaben beim ersten Versuch richtig (${Math.round(share * 100)} %).</p>
+         <p class="muted">${
+           run.passed
+             ? 'Du kannst das Thema. Die Aufgaben sind jedes Mal anders – zum Auffrischen einfach wieder prüfen.'
+             : `Zum Meistern brauchst du ${Math.round(ExamRun.PASS * 100)} %. Die Fehler hast du schon wiederholt – eine neue Prüfung hat neue Aufgaben.`
+         }</p></div>
+       ${practiceHtml()}
+       <div class="learn-actions">${nextCourse ? `<button class="btn btn-primary" id="next-course">Weiter: ${nextCourse.icon} ${esc(nextCourse.title)} →</button>` : ''}<button class="btn ${nextCourse ? 'btn-ghost' : 'btn-primary'}" id="list">Zum Lernpfad</button><button class="btn btn-ghost" id="exam-again">Neue Prüfung</button></div>`,
+    );
+    panel.append(el);
+    el.querySelector('#next-course')?.addEventListener('click', () => courseView(panel, nextCourse!, onBack));
+    el.querySelector('#to-practice')?.addEventListener('click', () => {
+      addMine(courseLines);
+      renderExamDone(run);
+    });
+    el.querySelector('#list')!.addEventListener('click', onBack);
+    el.querySelector('#exam-again')!.addEventListener('click', startExam);
+  }
+
+  function startExam() {
+    const gens = course.exam?.() ?? defaultExam(courseLines);
+    renderExam(new ExamRun(gens));
   }
 
   /** Steckbrief bzw. „Von hier“ mitten im Kurs – „← zurück zum Kurs“ führt zum selben Schritt */
@@ -189,7 +307,9 @@ export function courseView(panel: HTMLElement, course: Course, onBack: () => voi
       }</div>`;
   }
 
+  /** Ende der Erklärungen: Zwischenstand, dann die Prüfung */
   function renderDone(quizCount: number) {
+    leave();
     const score = [...answers.values()].filter(Boolean).length;
     saveProgress(course.id, score, quizCount);
     netLayer().render(netView());
@@ -200,16 +320,14 @@ export function courseView(panel: HTMLElement, course: Course, onBack: () => voi
       { class: 'learn course' },
       `<div class="course-head"><span class="cc-icon">${course.icon}</span><h2>${esc(course.title)}</h2></div>
        <div class="learn-card"><h3>🎉 Kurs geschafft!</h3>
-         ${quizCount ? `<p><b>${score} von ${quizCount}</b> Fragen richtig.</p>` : ''}
-         <p class="muted">Die Fragen sind bei jedem Durchgang etwas anders – nochmal machen lohnt sich.</p></div>
-       ${practiceHtml()}
-       <div class="learn-actions"><button class="btn btn-primary" id="list">Zum Lernpfad</button><button class="btn btn-ghost" id="again">Nochmal</button></div>`,
+         ${quizCount ? `<p><b>${score} von ${quizCount}</b> Aufgaben richtig.</p>` : ''}
+         <p>Jetzt die <b>Abschlussprüfung</b>: neue Aufgaben auf der Karte – Stationen finden, Linien zeichnen, Reihenfolgen.
+           Ab ${Math.round(ExamRun.PASS * 100)} % hast du das Thema <b>gemeistert</b> ⭐. Fehler kommen als neue Variante nochmal.</p></div>
+       <div class="learn-actions"><button class="btn btn-primary" id="exam">🎓 Zur Prüfung</button>${nextCourse ? `<button class="btn btn-ghost" id="next-course">Ohne Prüfung weiter: ${nextCourse.icon} ${esc(nextCourse.title)} →</button>` : ''}<button class="btn btn-ghost" id="list">Zum Lernpfad</button><button class="btn btn-ghost" id="again">Kurs nochmal</button></div>`,
     );
     panel.append(el);
-    el.querySelector('#to-practice')?.addEventListener('click', () => {
-      addMine(courseLines);
-      renderDone(quizCount);
-    });
+    el.querySelector('#exam')!.addEventListener('click', startExam);
+    el.querySelector('#next-course')?.addEventListener('click', () => courseView(panel, nextCourse!, onBack));
     el.querySelector('#list')!.addEventListener('click', onBack);
     el.querySelector('#again')!.addEventListener('click', () => courseView(panel, course, onBack));
   }

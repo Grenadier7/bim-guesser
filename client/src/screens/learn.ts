@@ -43,6 +43,7 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
 
     const progress = courseProgress();
     const done = COURSES.filter((c) => progress[c.id]?.done).length;
+    const mastered = COURSES.filter((c) => progress[c.id]?.mastered).length;
     const next = COURSES.find((c) => !progress[c.id]?.done) ?? null;
     const mine = myLines().map((id) => net.lines.get(id)!);
     const shown = mine.slice(0, 14);
@@ -52,8 +53,8 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
       <h2>📚 Lernen</h2>
       <section class="hub-card">
         <div class="hub-head"><span class="hub-icon">🎓</span><div><b>Lernpfad</b>
-          <small>Das Netz Schritt für Schritt verstehen – ${done} von ${COURSES.length} Kursen geschafft</small></div></div>
-        <div class="path-dots">${COURSES.map((c) => `<i class="${progress[c.id]?.done ? 'on' : ''}${c === next ? ' next' : ''}" title="${esc(c.title)}"></i>`).join('')}</div>
+          <small>Das Netz Schritt für Schritt verstehen – ${done} von ${COURSES.length} Kursen geschafft${mastered ? ` · ⭐ ${mastered} gemeistert` : ''}</small></div></div>
+        <div class="path-dots">${COURSES.map((c) => `<i class="${progress[c.id]?.done ? 'on' : ''}${progress[c.id]?.mastered ? ' mastered' : ''}${c === next ? ' next' : ''}" title="${esc(c.title)}"></i>`).join('')}</div>
         ${
           next
             ? `<button class="btn btn-primary" data-course="${next.id}">Weiter mit: ${next.icon} ${esc(next.title)}</button>`
@@ -64,7 +65,13 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
             const p = progress[c.id];
             return `<button class="course-card" data-course="${c.id}"><span class="cc-icon">${c.icon}</span>
               <span class="cc-text"><b>${i + 1}. ${esc(c.title)}</b><small>${esc(c.short)}</small></span>
-              ${p?.done ? `<span class="cc-done" title="abgeschlossen">✓${p.total ? ` ${p.best}/${p.total}` : ''}</span>` : ''}</button>`;
+              ${
+                p?.mastered
+                  ? `<span class="cc-done mastered" title="gemeistert – Prüfung bestanden">⭐ ${Math.round((p.exam ?? 0) * 100)} %</span>`
+                  : p?.done
+                    ? `<span class="cc-done" title="Erklärungen fertig – Prüfung noch offen">✓${p.exam ? ` Prüfung ${Math.round(p.exam * 100)} %` : ''}</span>`
+                    : ''
+              }</button>`;
           }).join('')}</div></details>
       </section>
       <section class="hub-card">

@@ -123,3 +123,34 @@ export async function startApp(env: Record<string, string> = {}): Promise<App> {
 export async function setName(p: Page, name: string) {
   await p.locator('#name').fill(name);
 }
+
+/**
+ * Kurs-Schritt beantworten, egal welche Art: Auswahl, Mehrfachauswahl, Ordnen, Karte antippen, Linie zeichnen.
+ * Liefert false, wenn auf der Seite keine offene Aufgabe ist.
+ */
+export async function answerCourseStep(p: Page): Promise<boolean> {
+  const map = async () => (await p.locator('#map').boundingBox())!;
+  if (await p.locator('.course-quiz button[data-o]:not([disabled])').count()) {
+    await p.locator('.course-quiz button[data-o]:not([disabled])').first().click();
+    return true;
+  }
+  if (await p.locator('[data-m]:not([disabled])').count()) {
+    await p.locator('[data-m]:not([disabled])').first().click();
+    await p.locator('#t-ok').click();
+    return true;
+  }
+  if (await p.locator('[data-ord]').count()) {
+    while (await p.locator('[data-ord]').count()) await p.locator('[data-ord]').first().click();
+    return true;
+  }
+  if (await p.locator('.course-task #t-ok').count()) {
+    // Karte antippen (Station/Gegend) bzw. zwei Punkte zeichnen
+    await p.waitForTimeout(300);
+    const b = await map();
+    await p.mouse.click(b.x + b.width * 0.5, b.y + b.height * 0.5);
+    if (await p.locator('.course-task #t-ok[disabled]').count()) await p.mouse.click(b.x + b.width * 0.55, b.y + b.height * 0.45);
+    await p.locator('.course-task #t-ok').click();
+    return true;
+  }
+  return false;
+}

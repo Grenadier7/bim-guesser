@@ -2,7 +2,8 @@
 import type { Station } from '../../../../shared/types.ts';
 import { esc } from '../../ui.ts';
 import { shuffle } from '../model.ts';
-import { ask, chip, type Course, crossings, L, quiz, route, type Step, table, U_LINES } from './common.ts';
+import { ask, chip, type Course, crossings, L, pick, quiz, route, type Step, table, taskStep, U_LINES } from './common.ts';
+import { crossingTask, drawTask, identifyTask, orderTask, type TaskGen } from './tasks.ts';
 
 export const ubahnCourse: Course = {
   id: 'ubahn',
@@ -33,8 +34,19 @@ export const ubahnCourse: Course = {
         marks: allStations,
       },
     ];
-    for (const p of shuffle(pairs.filter((x) => x.at.length === 1)).slice(0, 4))
+    // erst auf der Karte finden (nur eine der beiden Linien ist eingezeichnet), dann ohne Karte
+    const single = shuffle(pairs.filter((x) => x.at.length === 1));
+    for (const p of single.slice(0, 2)) steps.push(...taskStep(crossingTask(p.a, p.b)));
+    steps.push(...taskStep(orderTask(pick(us))));
+    for (const p of single.slice(2, 4))
       steps.push(...ask(quiz(`Wo kreuzen sich ${p.a} und ${p.b}?`, p.at[0].name, allStations.map((s) => s.name), `${p.a} und ${p.b} treffen sich bei ${p.at[0].name}.`)));
     return steps;
+  },
+
+  exam() {
+    const us = U_LINES.filter((u) => L(u));
+    const pairs = us.flatMap((a) => us.filter((b) => a < b && crossings(a, b).length).map((b) => [a, b] as const));
+    const cross: TaskGen = () => crossingTask(...(pick(pairs) as [string, string]));
+    return [cross, cross, () => orderTask(pick(us)), () => drawTask(pick(us)), cross, () => identifyTask(pick(us), us)];
   },
 };

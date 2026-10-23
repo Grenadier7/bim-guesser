@@ -2,7 +2,7 @@
 // Die Zählungen der Netzkarte sind Charakterisierungswerte: Ändert ein Umbau die Darstellung, fällt es hier auf.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
-import { setName, startApp, type App } from './harness.ts';
+import { answerCourseStep, setName, startApp, type App, type TestPage } from './harness.ts';
 
 let app: App;
 before(async () => (app = await startApp({ RATE_LIMIT_SCALE: '1000' })));
@@ -44,20 +44,71 @@ test('Netzkarte: Lernen-Startseite zeichnet das ganze Netz, Linie antippen öffn
   await t.context.close();
 });
 
-test('Kurs: U-Bahn-Kreuzungen komplett durchklicken', async () => {
+/** Kurs mit allen Aufgaben durcharbeiten, dann die Prüfung bis zum Ende; Screenshots von Karten-Aufgaben */
+async function runCourse(t: TestPage, id: string) {
+  const p = t.page;
+  await p.goto(app.base);
+  await p.locator('.mode-learn').click();
+  await p.locator('.all-courses summary').click();
+  await p.locator(`.all-courses .course-card[data-course="${id}"]`).click();
+  const kinds = new Set<string>();
+  for (let i = 0; i < 40; i++) {
+    if (await p.getByText('Kurs geschafft').count()) break;
+    const h3 = await p.locator('.course-step h3').first().innerText();
+    if (/^(📍|🗺|✏️|🔢|☑️)/.test(h3) && !kinds.has(h3.slice(0, 2))) {
+      kinds.add(h3.slice(0, 2));
+      await t.shot(`course-${id}-task-${kinds.size}`);
+    }
+    await answerCourseStep(p);
+    await p.locator('#next:not([disabled])').click();
+  }
+  await p.getByText('Kurs geschafft').waitFor();
+  // Prüfung bis zum Ende (Antworten zufällig – Wiederholungen inklusive)
+  await p.locator('#exam').click();
+  for (let i = 0; i < 30; i++) {
+    if (await p.locator('#exam-again').count()) break;
+    await p.locator('.course-task h3').waitFor();
+    await answerCourseStep(p);
+    await p.locator('#next:not([disabled])').click();
+  }
+  await p.locator('#exam-again').waitFor();
+  await t.shot(`course-${id}-exam-done`);
+  return kinds;
+}
+
+test('Kurs U-Bahn: Karten-Aufgaben im Kurs und Abschlussprüfung bis zum Ende', async () => {
+  const t = await app.page();
+  const kinds = await runCourse(t, 'ubahn');
+  assert.ok(kinds.size >= 2, `zu wenige Aufgaben-Arten: ${[...kinds].join(' ')}`);
+  // Lernpfad zeigt den Kurs als erledigt (✓ oder ⭐)
+  await t.page.locator('#list').click();
+  await t.page.locator('.all-courses summary').click();
+  await t.page.locator('.course-card[data-course="ubahn"] .cc-done').waitFor();
+  assert.deepEqual(t.errors, []);
+  await t.context.close();
+});
+
+test('Ohne Prüfung direkt zum nächsten Kurs (U-Bahn → S-Bahn)', async () => {
   const t = await app.page();
   const p = t.page;
   await p.goto(app.base);
   await p.locator('.mode-learn').click();
   await p.locator('.all-courses summary').click();
   await p.locator('.all-courses .course-card[data-course="ubahn"]').click();
-  for (let i = 0; i < 30; i++) {
-    const opt = p.locator('.course-quiz button:not([disabled])');
-    if (await opt.count()) await opt.first().click();
-    if (await p.getByText('Kurs geschafft').count()) break;
-    await p.locator('#next').click();
+  for (let i = 0; i < 40 && !(await p.getByText('Kurs geschafft').count()); i++) {
+    await answerCourseStep(p);
+    await p.locator('#next:not([disabled])').click();
   }
-  await p.getByText('Kurs geschafft').waitFor();
+  await p.locator('#next-course', { hasText: 'Die S-Bahn' }).click();
+  await p.locator('.course-head h2', { hasText: 'Die S-Bahn' }).waitFor();
+  assert.deepEqual(t.errors, []);
+  await t.context.close();
+});
+
+test('Kurs Busnummern: Gegend der 80er/90er auf der Karte antippen, Prüfung', async () => {
+  const t = await app.page();
+  const kinds = await runCourse(t, 'busnr');
+  assert.ok(kinds.has('🗺'), `keine Gegend-Aufgabe: ${[...kinds].join(' ')}`);
   assert.deepEqual(t.errors, []);
   await t.context.close();
 });

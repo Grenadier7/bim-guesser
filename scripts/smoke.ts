@@ -39,6 +39,23 @@ async function launch(): Promise<Browser> {
   throw new Error('Weder Edge noch Chrome gefunden');
 }
 
+/** Kurs-Schritt beantworten: Auswahl, Mehrfachauswahl, Ordnen, Karte antippen bzw. zeichnen */
+async function answerStep(page: Page) {
+  if (await page.locator('.course-quiz button[data-o]:not([disabled])').count()) return page.locator('.course-quiz button[data-o]:not([disabled])').first().click();
+  if (await page.locator('[data-m]:not([disabled])').count()) {
+    await page.locator('[data-m]:not([disabled])').first().click();
+    return page.locator('#t-ok').click();
+  }
+  while (await page.locator('[data-ord]').count()) await page.locator('[data-ord]').first().click();
+  if (await page.locator('.course-task #t-ok').count()) {
+    await page.waitForTimeout(300);
+    const b = (await page.locator('#map').boundingBox())!;
+    await page.mouse.click(b.x + b.width * 0.5, b.y + b.height * 0.5);
+    if (await page.locator('.course-task #t-ok[disabled]').count()) await page.mouse.click(b.x + b.width * 0.55, b.y + b.height * 0.45);
+    await page.locator('.course-task #t-ok').click();
+  }
+}
+
 async function run(page: Page) {
   const click = async (sel: string) => {
     step = `klicke ${sel}`;
@@ -91,11 +108,11 @@ async function run(page: Page) {
       await click('#to-course');
       await see('.course-step');
     }
-    for (let n = 0; n < 40; n++) {
-      if (await page.locator('.course-quiz button:not([disabled])').count()) await click('.course-quiz button:not([disabled])');
-      if (!(await page.locator('#next').count())) break;
-      await click('#next');
+    for (let n = 0; n < 60; n++) {
       if (await page.getByText('Kurs geschafft').count()) break;
+      await answerStep(page);
+      step = `Kurs ${id}: weiter`;
+      await page.locator('#next:not([disabled])').click();
     }
     await see('h3', 'Kurs geschafft');
     log(`Kurs „${id}“`);

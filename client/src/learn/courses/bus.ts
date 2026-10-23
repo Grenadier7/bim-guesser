@@ -3,6 +3,7 @@ import type { Station } from '../../../../shared/types.ts';
 import { esc } from '../../ui.ts';
 import { shuffle } from '../model.ts';
 import { ask, chips, type Course, DECADE, districtName, ends, have, L, lineQuiz, net, pick, quiz, stationByName, stationsOf, type Step, table } from './common.ts';
+import { areaTask, type Task, type TaskGen } from './tasks.ts';
 
 /** Gegend je Zehnerstelle – die Reihenfolge läuft gegen den Uhrzeigersinn um die Stadt */
 const BUS_REGION: Record<number, string> = { 2: 'Nordosten', 3: 'Norden', 4: 'Westen', 5: 'Südwesten', 6: 'Süden', 7: 'Südosten', 8: 'Osten', 9: 'Osten' };
@@ -60,6 +61,20 @@ export const busCourse: Course = {
       };
     };
 
+    /** „Tippe in die Gegend, wo die 80er fahren“ – Auflösung zeigt die Gegend als Fläche */
+    const areaOf = (g: number) =>
+      areaTask(
+        `Tippe auf der Karte in die Gegend, wo die ${g}0er-Busse fahren.`,
+        groups.get(g)?.ids ?? [],
+        DECADE[g],
+        `Die ${g}0er fahren vor allem im ${districtName(top(g))}${BUS_REGION[g] ? ` (${BUS_REGION[g]})` : ''}.`,
+      );
+    const taskStep = (t: Task | null): Step[] => (t ? [{ title: 'Aufgabe', html: '', task: t }] : []);
+    const regionWithTask = (title: string, gs: number[], text: string): Step[] => {
+      const shown = gs.filter((g) => groups.has(g));
+      return [regionStep(title, gs, text), ...(shown.length ? taskStep(areaOf(pick(shown))) : [])];
+    };
+
     const steps: Step[] = [
       {
         title: 'Die Zehnerstelle zählt',
@@ -69,10 +84,12 @@ export const busCourse: Course = {
         colors,
         allLabels: true,
       },
-      regionStep('Norden: 20er und 30er', [2, 3], 'Jenseits der Donau und im Norden. Die 20er verteilen sich von Kagran und Floridsdorf aus, die 30er fahren in Floridsdorf und hinauf nach Döbling.'),
-      regionStep('Westen: 40er und 50er', [4, 5], 'Die 40er erschließen die westlichen Vororte von Ottakring, Hernals und Hütteldorf aus, die 50er Hietzing und Penzing – oft ab der U4.'),
-      regionStep('Süden: 60er und 70er', [6, 7], 'Die 60er fahren in Liesing und Favoriten (Knoten Liesing und Reumannplatz), die 70er in Simmering bis zum Zentralfriedhof und Alberner Hafen.'),
+      ...regionWithTask('Norden: 20er und 30er', [2, 3], 'Jenseits der Donau und im Norden. Die 20er verteilen sich von Kagran und Floridsdorf aus, die 30er fahren in Floridsdorf und hinauf nach Döbling.'),
+      ...regionWithTask('Westen: 40er und 50er', [4, 5], 'Die 40er erschließen die westlichen Vororte von Ottakring, Hernals und Hütteldorf aus, die 50er Hietzing und Penzing – oft ab der U4.'),
+      ...regionWithTask('Süden: 60er und 70er', [6, 7], 'Die 60er fahren in Liesing und Favoriten (Knoten Liesing und Reumannplatz), die 70er in Simmering bis zum Zentralfriedhof und Alberner Hafen.'),
       regionStep('Osten: 80er und 90er', [8, 9], 'Zurück im Osten: Die 80er fahren durch die Donaustadt und den Prater, die 90er ausschließlich in der Donaustadt – rund um Kagran, Stadlau und Aspern.'),
+      ...(groups.has(8) ? taskStep(areaOf(8)) : []),
+      ...(groups.has(9) ? taskStep(areaOf(9)) : []),
     ];
     if (groups.has(0) || groups.has(1))
       steps.push({
@@ -118,5 +135,33 @@ export const busCourse: Course = {
       );
     }
     return steps;
+  },
+
+  exam() {
+    const buses = net().data.lines.filter((l) => l.mode === 'B' && /^\d+[AB]$/.test(l.id) && L(l.id));
+    const byDecade = new Map<number, string[]>();
+    for (const l of buses) {
+      const g = Math.floor(parseInt(l.id, 10) / 10);
+      if (g >= 2) byDecade.set(g, [...(byDecade.get(g) ?? []), l.id]);
+    }
+    const decades = [...byDecade.keys()];
+    const area: TaskGen = () => {
+      const g = pick(decades);
+      return areaTask(`Tippe in die Gegend, wo die ${g}0er-Busse fahren.`, byDecade.get(g)!, DECADE[g], `Das ist die Gegend der ${g}0er${BUS_REGION[g] ? ` (${BUS_REGION[g]})` : ''}.`);
+    };
+    // umgekehrt: Gegend auf der Karte (Linien neutral) → welche Zehnerstelle?
+    const which: TaskGen = () => {
+      const g = pick(decades);
+      const others = shuffle(decades.filter((x) => x !== g)).slice(0, 3);
+      return {
+        kind: 'choice',
+        q: 'Welche Busnummern fahren in der eingezeichneten Gegend?',
+        options: shuffle([g, ...others]).map((x) => ({ id: String(x), html: `<b>${x}0A–${x}9A</b>` })),
+        correct: String(g),
+        explain: `Das sind die ${g}0er${BUS_REGION[g] ? ` im ${BUS_REGION[g]}` : ''}.`,
+        show: { lines: byDecade.get(g)!, neutral: true },
+      };
+    };
+    return [area, which, area, which, area, which];
   },
 };

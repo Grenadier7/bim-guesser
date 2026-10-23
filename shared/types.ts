@@ -392,10 +392,25 @@ export interface QuizState {
 export type LobbyState = GameState | QuizState;
 
 /** Events, die ein Spiel aussendet (für SSE/WebSocket) */
+/** Nachricht im Lobby-Chat; ohne playerId = Hinweis vom System (z.B. „X wurde entfernt“) */
+export interface ChatMessage {
+  id: number;
+  playerId: string | null;
+  name: string;
+  text: string;
+  /** Serverzeit (ms) */
+  at: number;
+}
+
 export type GameEvent =
   | { type: 'state'; state: LobbyState }
   | { type: 'submitted'; round: number; playerId: string }
-  | { type: 'revealed'; reveal: RoundReveal };
+  | { type: 'revealed'; reveal: RoundReveal }
+  | { type: 'chat'; message: ChatMessage }
+  /** beim Verbinden: die letzten Nachrichten */
+  | { type: 'chatHistory'; messages: ChatMessage[] }
+  /** vom Host entfernt – der betroffene Client verlässt die Lobby */
+  | { type: 'kicked'; playerId: string };
 
 // ---------------------------------------------------------------- API
 

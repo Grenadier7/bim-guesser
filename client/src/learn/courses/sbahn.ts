@@ -4,7 +4,8 @@ import { esc } from '../../ui.ts';
 import { shuffle } from '../model.ts';
 import { distM } from '../../net.ts';
 import type { Piece } from '../../netmap.ts';
-import { ask, chip, chips, type Course, ends, farEnd, have, L, lineQuiz, pick, quiz, route, S_BRANCH, segment, stationByName, stationsOf, type Step, table, TRANSDANUBIEN, U_LINES } from './common.ts';
+import { ask, chip, chips, type Course, crossings, ends, farEnd, have, L, lineQuiz, pick, quiz, route, S_BRANCH, segment, stationByName, stationsOf, type Step, table, taskStep, TRANSDANUBIEN, U_LINES } from './common.ts';
+import { crossingTask, identifyTask, orderTask, servesTask, terminalTask } from './tasks.ts';
 
 export const sbahnCourse: Course = {
   id: 'sbahn',
@@ -55,6 +56,18 @@ export const sbahnCourse: Course = {
           stationByName('Liesing'),
         ].filter((s): s is Station => !!s),
       },
+      ...taskStep(
+        stationByName('Floridsdorf')
+          ? {
+              kind: 'tapStation',
+              q: 'Tippe auf der Karte: Wo teilt sich die Stammstrecke im Norden in ihre Äste?',
+              targets: [stationByName('Floridsdorf')!],
+              tolM: 600,
+              show: core,
+              explain: 'In Floridsdorf: S1 über Leopoldau, S2 Richtung Mistelbach, S3/S4 über die Brünner Straße.',
+            }
+          : null,
+      ),
       {
         title: 'Umsteigen in die U-Bahn',
         html: table(withU.map((s) => [`<b>${esc(s.name)}</b>`, chips(uAt(s))])),
@@ -98,6 +111,8 @@ export const sbahnCourse: Course = {
       .map((u) => [u, withU.filter((s) => uAt(s).includes(u))] as const)
       .filter(([, at]) => at.length === 1)
       .map(([u, at]) => [u, at[0]] as const);
+    // auf der Karte: wo kreuzt die Stammstrecke diese U-Bahn?
+    if (unique.length) steps.push(...taskStep(crossingTask('S1', pick(unique)[0])));
     for (const [u, s] of shuffle([...unique]).slice(0, 2))
       steps.push(...ask(quiz(`Wo steigst du von der Stammstrecke in die ${u} um?`, s.name, stamm.filter((x) => !uAt(x).includes(u)).map((x) => x.name), `Bei ${s.name} hält die ${u}.`)));
     steps.push(
@@ -107,5 +122,20 @@ export const sbahnCourse: Course = {
       ...ask(lineQuiz('Welche S-Bahn fährt NICHT über die Stammstrecke?', pick(others), core, `${core.join(', ')} fahren die Stammstrecke.`)),
     );
     return steps;
+  },
+
+  exam() {
+    const core = have(['S1', 'S2', 'S3', 'S4']);
+    const all = have(['S1', 'S2', 'S3', 'S4', 'S7', 'S40', 'S45', 'S50', 'S60', 'S80']);
+    const us = U_LINES.filter((u) => L(u));
+    const sCross = all.flatMap((s) => us.filter((u) => crossings(s, u).length === 1).map((u) => [s, u] as const));
+    return [
+      () => (sCross.length ? crossingTask(...(pick(sCross) as [string, string])) : null),
+      () => terminalTask(pick(all)),
+      () => orderTask(pick(all)),
+      () => identifyTask(pick(all), all),
+      () => (sCross.length ? crossingTask(...(pick(sCross) as [string, string])) : null),
+      () => servesTask(pick(core.flatMap((id) => stationsOf(id))), all),
+    ];
   },
 };

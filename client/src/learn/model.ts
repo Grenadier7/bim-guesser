@@ -235,9 +235,10 @@ export interface SketchResult {
   missed: Station[];
 }
 
-export function evaluateSketch(prof: LineProfile, sketch: LatLon[]): SketchResult {
+/** `tolM`: so weit darf die Zeichnung neben einer Station liegen (Standard: Üben, eher genau) */
+export function evaluateSketch(prof: LineProfile, sketch: LatLon[], tolM?: number): SketchResult {
   const net = app.net;
-  const tol = prof.line.mode === 'U' || prof.line.mode === 'S' ? 600 : 350;
+  const tol = tolM ?? (prof.line.mode === 'U' || prof.line.mode === 'S' ? 600 : 350);
   const inner = prof.main.slice(1, -1).map((id) => net.station(id));
   const missed = inner.filter((s) => distToPath(s, sketch) > tol);
   const real: LatLon[] = prof.main.map((id) => [net.station(id).lat, net.station(id).lon]);

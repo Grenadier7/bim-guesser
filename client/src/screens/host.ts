@@ -1,7 +1,7 @@
 // Host-Steuerung während des Spiels (Routenjagd und Quiz): Pause, Runde/Frage abbrechen, Spiel beenden
 import { api } from '../api.ts';
 import { app, isHost, openTimer } from '../store.ts';
-import { h, toast } from '../ui.ts';
+import { esc, h, toast } from '../ui.ts';
 
 async function run(fn: () => Promise<unknown>) {
   try {
@@ -24,6 +24,23 @@ export const hostActions = {
     if (confirm('Spiel beenden und alle zurück in die Lobby schicken?')) void run(() => api.lobby(app.session!));
   },
 };
+
+/** ✕ neben einem Mitspieler (nur für den Host, nicht bei sich selbst) */
+export function kickButton(p: { id: string; name: string }): string {
+  if (!isHost() || p.id === app.session?.playerId) return '';
+  return `<button class="kick" data-kick="${esc(p.id)}" data-name="${esc(p.name)}" title="${esc(p.name)} aus der Lobby entfernen" aria-label="${esc(p.name)} entfernen">✕</button>`;
+}
+
+/** Klicks auf ✕ in einer Spielerliste */
+export function bindKick(root: HTMLElement) {
+  root.querySelectorAll<HTMLButtonElement>('[data-kick]').forEach((b) =>
+    b.addEventListener('click', () => {
+      if (!confirm(`${b.dataset.name} aus der Lobby entfernen?`)) return;
+      b.disabled = true;
+      void run(() => api.kick(app.session!, b.dataset.kick!));
+    }),
+  );
+}
 
 /** Leiste mit Host-Knöpfen (leer für Nicht-Hosts) */
 export function hostBar(): HTMLElement {

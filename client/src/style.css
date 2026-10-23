@@ -3778,3 +3778,174 @@ details.fine > summary {
   text-shadow: 0 0 2px #fff, 0 0 3px #fff, 0 0 4px #fff;
   pointer-events: none;
 }
+
+/* ---------------------------------------------------------------- Lobby-Chat und Kicken */
+
+.kick {
+  margin: -4px -6px -4px 0;
+  min-width: 24px;
+  min-height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.kick:hover,
+.kick:focus-visible {
+  background: #fde2e2;
+  color: #b42318;
+}
+
+.chat {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 1200;
+  width: min(340px, calc(100vw - 28px));
+  display: flex;
+  flex-direction: column;
+  max-height: min(420px, 60vh);
+  background: var(--panel, #fff);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+}
+
+.chat.closed {
+  width: auto;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.chat-toggle {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--ink);
+  color: #fff;
+  font-size: 24px;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+
+.chat-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: #e3000f;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
+.chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.chat-close {
+  min-width: 32px;
+  min-height: 32px;
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.chat-list {
+  flex: 1;
+  margin: 0;
+  padding: 8px 12px;
+  list-style: none;
+  overflow-y: auto;
+  font-size: 14px;
+}
+
+.chat-list li {
+  padding: 3px 0;
+  overflow-wrap: anywhere;
+}
+
+.chat-list li.mine b {
+  color: #b42318;
+}
+
+.chat-list li.system {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.chat-form {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.chat-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font: inherit;
+}
+
+.chat-form .btn {
+  padding: 6px 12px;
+}
+
+/* breite Bildschirme: Chat über der Karte (links unten) – das Panel rechts mit „Starten“ bleibt frei */
+@media (min-width: 900px) {
+  .chat {
+    right: auto;
+    left: 14px;
+  }
+}
+
+/* ---------------------------------------------------------------- Kurs-Aufgaben und Prüfung */
+
+.course-quiz.multi button.on {
+  border-color: var(--ink);
+  background: #eef2ff;
+  font-weight: 700;
+}
+
+.order-picked {
+  margin: 8px 0;
+  padding-left: 22px;
+  min-height: 8px;
+}
+
+.order-picked li {
+  padding: 3px 0;
+  font-weight: 600;
+}
+
+.course-task .hint {
+  margin: 8px 0;
+}
+
+.cc-done.mastered {
+  color: #a16207;
+  font-weight: 700;
+}
+
+.path-dots i.mastered {
+  background: #eab308;
+}
