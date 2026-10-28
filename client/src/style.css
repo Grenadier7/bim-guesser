@@ -4050,3 +4050,59 @@ details.host-bar {
   background: transparent;
   padding: 0;
 }
+
+/* ---------------------------------------------------------------- Fußwege im Routen-Baukasten (abgestuft) */
+
+.leg-walk {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+.walk-leg {
+  border-style: dashed;
+  background: #f7f8fa;
+}
+
+.walk-leg .walk-icon {
+  font-size: 20px;
+  width: 34px;
+  text-align: center;
+}
+
+.walk-leg.walk-loud,
+.leg-walk.walk-loud {
+  border-color: #e0a100;
+  background: #fff8e6;
+  color: #7a4d00;
+}
+
+.walk-note {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.walk-alert {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.walk-alert.walk-mid {
+  background: #f1f5ff;
+  border: 1px solid #c9d6f5;
+}
+
+.walk-alert.walk-loud {
+  background: #fff4e5;
+  border: 2px solid #f0a020;
+  color: #6b3d00;
+}
+
+.one-way {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #7a4d00;
+}

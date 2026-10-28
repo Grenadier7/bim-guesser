@@ -290,7 +290,8 @@ export class GameMap {
   /** Route, die der User gerade baut (Luftlinien zwischen Haltestellen) */
   showDraft(segments: { path: LL[]; color: string; walk: boolean }[], transfers: { lat: number; lon: number; name: string }[]) {
     this.draft.clearLayers();
-    for (const s of segments) {
+    // Fußwege zuerst (darunter) – sonst verdecken lange Fußwege die gefahrenen Linien
+    for (const s of [...segments].sort((a, b) => Number(b.walk) - Number(a.walk))) {
       if (!s.walk) this.draft.addLayer(L.polyline(s.path, { color: '#fff', weight: 9, opacity: 0.9 }));
       this.draft.addLayer(
         L.polyline(s.path, s.walk ? { color: '#666', weight: 4, dashArray: '2 8', lineCap: 'round' } : { color: s.color, weight: 5 }),
