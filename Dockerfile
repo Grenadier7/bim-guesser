@@ -19,7 +19,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY server ./server
 COPY shared ./shared
-COPY data/network.json data/headways.json ./data/
+COPY data/network.json data/headways.json data/addresses.json ./data/
 COPY --from=build /app/dist ./dist
 RUN mkdir -p /app/state && chown node:node /app/state
 ARG APP_VERSION=dev

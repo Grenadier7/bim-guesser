@@ -14,7 +14,9 @@ import { revealScreen } from './screens/reveal.ts';
 import { roundScreen } from './screens/round.ts';
 import { loadingHtml, type Screen } from './screens/screen.ts';
 import { trainingScreen } from './screens/training.ts';
+import { tutorialScreen } from './screens/tutorial.ts';
 import { ChatWidget } from './chat.ts';
+import { hideIdle, idleCheck } from './idle.ts';
 import { app, currentRound, inviteLink, isHost, me, openTimer, restoreSession, serverNow, setMapBig, setMobileMap } from './store.ts';
 import { esc, toast } from './ui.ts';
 
@@ -66,6 +68,7 @@ function mount(key: string): Screen {
   if (key === 'home') return homeScreen(panel);
   if (key === 'learn') return learnScreen(panel, back);
   if (key === 'training') return trainingScreen(panel, back);
+  if (key === 'tutorial') return tutorialScreen(panel, back);
   if (key === 'lobby') return lobbyScreen(panel);
   if (key === 'final') return finalScreen(panel);
   if (key === 'qlobby') return quizLobbyScreen(panel);
@@ -153,6 +156,11 @@ async function init() {
   const chat = new ChatWidget();
   app.onChat = (e) => (e.type === 'chat' ? chat.add(e.message) : chat.history(e.messages));
   app.onKicked = () => toast('Du wurdest vom Host aus der Lobby entfernt.');
+  app.onIdle = idleCheck;
+  app.onClosed = (reason) => {
+    hideIdle();
+    toast(reason, 'info');
+  };
   chatSync = () => chat.sync();
   panel.innerHTML = loadingHtml('Lade Netzdaten …');
   try {
@@ -161,9 +169,37 @@ async function init() {
     panel.innerHTML = `<div class="loading"><p class="err">Server nicht erreichbar: ${esc((e as Error).message)}</p></div>`;
     return;
   }
-  if (!(await restoreSession())) render();
+  // geteilter Einstellungs-Link → Startseite (legt die Lobby an) statt in die alte Lobby zurück
+  if (new URLSearchParams(location.search).has('settings') || !(await restoreSession())) render();
   setInterval(tick, 250);
   // ☆ hinter Liniennummern (z.B. in der Routenjagd-Auflösung): Linie für „Lernen → Üben“ merken
+  // ☆ für mehrere gleichwertige Linien („S1/S2/S3“): alle merken, in der Meldung „nur S1“ wählbar (Punkt 8)
+  document.addEventListener('click', (e) => {
+    const g = (e.target as HTMLElement).closest<HTMLElement>('[data-star-group]');
+    if (!g) return;
+    e.stopPropagation();
+    const ids = g.dataset.starGroup!.split('/');
+    const refresh = () =>
+      document.querySelectorAll<HTMLElement>(`[data-star-group="${CSS.escape(g.dataset.starGroup!)}"]`).forEach((x) => {
+        const all = ids.every(isMine);
+        x.textContent = all ? '⭐' : ids.some(isMine) ? '✬' : '☆';
+        x.classList.toggle('on', all);
+      });
+    if (ids.every(isMine)) {
+      for (const id of ids) setMine(id, false);
+      refresh();
+      return toast(`${ids.join(', ')} nicht mehr gemerkt`, 'info');
+    }
+    for (const id of ids) setMine(id, true);
+    refresh();
+    toast(`${ids.join(', ')} gemerkt – zum Üben unter 📚 Lernen`, 'info', {
+      label: `nur ${ids[0]}`,
+      run: () => {
+        for (const id of ids.slice(1)) setMine(id, false);
+        refresh();
+      },
+    });
+  });
   document.addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest<HTMLElement>('[data-star-line]');
     if (!b) return;

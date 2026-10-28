@@ -3,7 +3,7 @@
 // Fortsetzung. So gibt es keine Knicke, und Linien auf derselben Strecke liegen genau übereinander.
 // Alle Ansichten (Kurse, Test) zeichnen dieselbe Karte und blenden nur Linien hervor oder aus.
 import L from 'leaflet';
-import type { Line, Station } from '../../shared/types.ts';
+import type { Line, RouteLeg, Station } from '../../shared/types.ts';
 import { CENTER, distM } from '../../shared/geo.ts';
 import { NET_COLOR } from './netcolors.ts';
 import { kindOf, NetGraph, type Edge, type Kind, type LL } from './netgraph.ts';
@@ -126,10 +126,18 @@ export class NetMapLayer {
     const z = this.map.getZoom();
     this.map.getContainer().classList.toggle('net-z-low', z < 12.5);
     this.map.getContainer().classList.toggle('net-z-mid', z < 14);
+    // Einbahn-Pfeile erst ab Stadtteil-Zoom – weiter draußen wären es nur Krümel (Punkt 5a)
+    this.map.getContainer().classList.toggle('net-z-arrows', z < 13);
   };
 
   clear() {
     this.group.clearLayers();
+  }
+
+  /** schöne Kurve einer Fahrt (Grundkarte, sonst Bus-/Nachtgraph); [] = nicht zeichenbar */
+  curve(lineId: string, fromId: string, toId: string): LL[] {
+    const g = this.graph.has(lineId) ? this.graph : this.extra.has(lineId) ? this.extra : null;
+    return g ? g.pathByIds(lineId, fromId, toId) : [];
   }
 
   private get extra(): NetGraph {
@@ -203,8 +211,9 @@ export class NetMapLayer {
           poly(e.curve, { color: this.lineColor(id, v, dim), weight: dim && kind !== 'U' && kind !== 'S' ? s.w + 1.4 : s.w, dashArray: dash });
           if (dim) fit.push(e.curve[0], e.curve[e.curve.length - 1]);
           if (v.onLine) hits.push({ curve: e.curve, ids: [...e.lines].filter((l) => !dim || v.focus.has(l)) });
-          // Einbahn-Abschnitt (Schleife, getrennte Richtungen): Pfeil in Fahrtrichtung – nur bei wenigen Linien
-          const d = dim && v.focus.size <= 4 ? e.dirs.get(id) : 3;
+          // Einbahn-Abschnitt (Schleife, getrennte Richtungen): Pfeil in Fahrtrichtung – auch bei „Von hier“ mit vielen
+          // Buslinien (Punkt 5b); ausgeblendet, wenn weit herausgezoomt (CSS net-z-arrows)
+          const d = dim && v.focus.size <= 16 ? e.dirs.get(id) : 3;
           if (d === 1 || d === 2) arrows.push({ curve: e.curve, back: d === 2, color: this.lineColor(id, v, dim) });
         }
       }
@@ -242,7 +251,7 @@ export class NetMapLayer {
       const [p, q] = [a.curve[Math.max(0, i - 1)], a.curve[Math.min(a.curve.length - 1, i + 1)]];
       // Bildschirmwinkel: 0° = Osten, im Uhrzeigersinn
       const deg = (Math.atan2(-(q[0] - p[0]), (q[1] - p[1]) * Math.cos((p[0] * Math.PI) / 180)) * 180) / Math.PI + (a.back ? 180 : 0);
-      tag(a.curve[i], `<span class="net-arrow" style="--c:${a.color};transform:translate(-50%,-50%) rotate(${deg.toFixed(0)}deg)"></span>`, 'net-tags', 200);
+      tag(a.curve[i], `<span class="net-arrow" style="--c:${a.color};transform:translate(-50%,-50%) rotate(${deg.toFixed(0)}deg)"></span>`, 'net-tags net-arrows', 200);
     }
 
     // Klickflächen der hervorgehobenen Linien: unsichtbar und breit, unter den Haltestellen-Punkten
@@ -360,6 +369,24 @@ export class NetMapLayer {
 let shared: NetMapLayer | null = null;
 
 /** Die eine Netzkarte auf der Spielkarte – wird mit app.map.clear() mitgeleert */
+/**
+ * Fahrten wie auf der Netzkarte zeichnen (Kurven durch die Stationen) statt mit dem groben Verlauf der Auskunft.
+ * „S1/S2“ → erste bekannte Linie; nicht zeichenbar (z.B. fremde Busse) → bisheriger Verlauf.
+ */
+export function smoothPath(lineIds: string | null, fromId: string | null, toId: string | null, fallback: LL[]): LL[] {
+  if (!lineIds || !fromId || !toId) return fallback;
+  for (const id of lineIds.split('/')) {
+    const c = netLayer().curve(id, fromId, toId);
+    if (c.length >= 2) return c;
+  }
+  return fallback;
+}
+
+/** alle Teilstrecken einer Route glätten (für Auflösung, Training) */
+export function smoothRoute<T extends { legs: RouteLeg[] }>(r: T): T {
+  return { ...r, legs: r.legs.map((l) => (l.mode === 'W' ? l : { ...l, path: smoothPath(l.line, l.fromStation, l.toStation, l.path) })) };
+}
+
 export function netLayer(): NetMapLayer {
   if (!shared) {
     const layer = new NetMapLayer(app.map.leaflet, new NetGraph(app.net));

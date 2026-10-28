@@ -15,7 +15,7 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<s
 /** Linien-Chip, z.B. [🚇 U2] in Linienfarbe */
 export function lineChip(mode: Mode, line: string | null, color: string): string {
   const label = line ? esc(line) : '';
-  return `<span class="chip chip-${mode}" style="--c:${color}" title="${MODE_LABEL[mode]}${line ? ' ' + label : ''}">${MODE_ICON[mode]}${label ? `<b>${label}</b>` : ''}</span>`;
+  return `<span class="chip chip-${mode}" style="--c:${color}" ${line && mode !== 'W' ? `data-chip-line="${label}"` : ''} title="${MODE_LABEL[mode]}${line ? ' ' + label : ''}">${MODE_ICON[mode]}${label ? `<b>${label}</b>` : ''}</span>`;
 }
 
 export function modeChip(mode: Mode): string {
@@ -79,7 +79,7 @@ function stepsDetails(route: RouteOption, star?: StarFn): string {
   const end = route.steps!.length ? route.steps![route.steps!.length - 1] : null;
   const endAt = end ? addMin(end.at, end.min) : '';
   return `<ol class="leg-detail">${rows.join('')}<li class="ld-end"><span class="ld-time">${esc(endAt)}</span><span>🏁 Ankunft – <b>${route.medianMin} min</b></span></li></ol>
-    <p class="wait-note">Berechnet mit Ø-Wartezeiten (halber Takt) und Umsteigezeit – genau diese Minuten zählen.</p>`;
+    <p class="wait-note">Berechnet mit Ø-Wartezeiten (halber Takt) und Umsteigezeit.</p>`;
 }
 
 function addMin(hhmm: string, min: number): string {
@@ -137,9 +137,19 @@ export function makeExpandable(list: HTMLElement) {
   });
 }
 
-export function toast(msg: string, kind: 'error' | 'info' = 'error') {
+export function toast(msg: string, kind: 'error' | 'info' = 'error', action?: { label: string; run: () => void }) {
   const el = h('div', { class: `toast toast-${kind}`, role: kind === 'error' ? 'alert' : 'status', 'aria-live': kind === 'error' ? 'assertive' : 'polite' }, esc(msg));
+  // optionaler Knopf (z.B. „nur S1 merken“) – Meldung bleibt dann etwas länger
+  if (action) {
+    const b = h('button', { class: 'toast-action' }, esc(action.label));
+    b.addEventListener('click', () => {
+      action.run();
+      el.remove();
+    });
+    el.append(' ', b);
+  }
   document.body.append(el);
-  setTimeout(() => el.classList.add('hide'), 3800);
-  setTimeout(() => el.remove(), 4400);
+  const ms = action ? 6500 : 3800;
+  setTimeout(() => el.classList.add('hide'), ms);
+  setTimeout(() => el.remove(), ms + 600);
 }

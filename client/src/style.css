@@ -3949,3 +3949,341 @@ details.fine > summary {
 .path-dots i.mastered {
   background: #eab308;
 }
+
+/* ---------------------------------------------------------------- Host-Leiste (ausklappbar), Spieler verwalten, Inaktivität */
+
+details.host-bar > summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+}
+
+details.host-bar > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.host-bar > summary::after {
+  content: ' ▾';
+  color: var(--muted);
+}
+
+details.host-bar[open] > summary::after {
+  content: ' ▴';
+}
+
+.hb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.hb-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hb-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-top: 1px solid var(--line);
+}
+
+.hb-list li span {
+  flex: 1;
+}
+
+.hb-list li.offline {
+  opacity: 0.6;
+}
+
+.crown {
+  min-width: 26px;
+  min-height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
+.crown.on,
+.crown:hover,
+.crown:focus-visible {
+  filter: none;
+  opacity: 1;
+}
+
+.idle-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(15, 18, 24, 0.55);
+}
+
+.idle-box {
+  max-width: 420px;
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--panel, #fff);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.idle-count {
+  font-size: 20px;
+}
+
+details.host-bar {
+  display: block;
+}
+
+.host-bar .crown,
+.host-bar .kick {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+/* ---------------------------------------------------------------- Fußwege im Routen-Baukasten (abgestuft) */
+
+.leg-walk {
+  font-size: 13px;
+  color: var(--muted);
+  padding: 0 4px;
+}
+
+.walk-leg {
+  border-style: dashed;
+  background: #f7f8fa;
+}
+
+.walk-leg .walk-icon {
+  font-size: 20px;
+  width: 34px;
+  text-align: center;
+}
+
+.walk-leg.walk-loud,
+.leg-walk.walk-loud {
+  border-color: #e0a100;
+  background: #fff8e6;
+  color: #7a4d00;
+}
+
+.walk-note {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.walk-alert {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.walk-alert.walk-mid {
+  background: #f1f5ff;
+  border: 1px solid #c9d6f5;
+}
+
+.walk-alert.walk-loud {
+  background: #fff4e5;
+  border: 2px solid #f0a020;
+  color: #6b3d00;
+}
+
+.one-way {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #7a4d00;
+}
+
+.toast-action {
+  margin-left: 8px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+[data-chip-line] {
+  cursor: pointer;
+}
+
+.net-z-arrows .net-arrows {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- Einstellungen teilen */
+
+.share-row {
+  display: flex;
+  gap: 6px;
+}
+
+.share-link {
+  flex: 1;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.share-json {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+}
+
+.settings-share .idle-box {
+  max-width: 560px;
+  width: 100%;
+}
+
+.settings-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 16px;
+}
+
+/* ---------------------------------------------------------------- Handy: Joker ausklappbar, Platz für den Chat-Knopf */
+
+.tips-drawer > summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 6px 0;
+}
+
+.tips-drawer > summary small {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.tips-drawer[open] > summary {
+  margin-bottom: 6px;
+}
+
+@media (max-width: 899px) {
+  #panel {
+    padding-bottom: 84px;
+  }
+}
+
+/* ---------------------------------------------------------------- Tutorial (Punkt 17) */
+.tut-hint {
+  display: block;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 12px 16px;
+  border: 2px dashed var(--good);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--good) 8%, var(--panel));
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tut-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin-top: 18px;
+  padding: 18px;
+  border: 0;
+  border-left: 6px solid var(--good);
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  animation: tut-glow 2.4s ease-in-out 3;
+}
+.tut-card > span:nth-child(2) {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+.tut-card small {
+  color: var(--muted);
+}
+@keyframes tut-glow {
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--good) 35%, transparent);
+  }
+}
+.tut-head {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.tut-head #tut-quit {
+  justify-self: end;
+}
+.tut-step {
+  font-weight: 700;
+  color: var(--good);
+}
+.tut-bubble {
+  position: relative;
+  margin: 4px 0 14px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--good) 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--good) 45%, transparent);
+  line-height: 1.45;
+}
+.tut-bubble:empty {
+  display: none;
+}
+.tut-focus {
+  outline: 3px solid var(--good) !important;
+  outline-offset: 2px;
+  animation: tut-glow 1.6s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------- Welcher Bus fährt hier? (Punkt 6) */
+.bq-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.bq-opt {
+  padding: 6px 8px;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  cursor: pointer;
+  font: inherit;
+}
+.bq-opt.on {
+  border-color: var(--good);
+  background: color-mix(in srgb, var(--good) 12%, var(--panel));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--good) 30%, transparent);
+}
+.bq-opt .chip {
+  font-size: 1.05em;
+}

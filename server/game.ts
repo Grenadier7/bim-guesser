@@ -26,6 +26,7 @@ import {
   transfersOf,
   difficultyMultiplier,
   scoreRoute,
+  linePatterns,
 } from '../shared/rules.ts';
 import { distM, NoPairError, type Network, type PastPair } from './network.ts';
 import { EfaUnavailableError, evaluateUserRoute, topRoutes, type RouteQuery } from './routing.ts';
@@ -190,17 +191,33 @@ export class Game extends Lobby {
     const order = ['U', 'S', 'T', 'B', 'N'];
     const leg = [...pt].sort((a, b) => order.indexOf(a.mode) - order.indexOf(b.mode))[0];
     if (!leg) return [];
-    // bei gleichwertigen Linien ("30/31") alle sperren – sonst wäre es keine Einschränkung
-    return leg.line!.split('/').filter((id) => this.net.lines.has(id));
+    const ids = new Set(leg.line!.split('/').filter((id) => this.net.lines.has(id)));
+    // bei gleichwertigen Linien alle sperren – auch die, die in der Stichprobe zufällig nicht vorkamen
+    // (S1 und S2 fahren beide Siemensstraße → Matzleinsdorfer Platz: nur die S2 zu sperren wäre keine Einschränkung)
+    if (leg.mode !== 'U' && leg.fromStation && leg.toStation)
+      for (const l of this.net.lines.values()) {
+        if (l.mode !== leg.mode) continue;
+        if (linePatterns(l, this.settings.network).some((p) => p.indexOf(leg.fromStation!) >= 0 && p.indexOf(leg.toStation!) > p.indexOf(leg.fromStation!))) ids.add(l.id);
+      }
+    return [...ids];
+  }
+
+  /** Mindest-Umstiege, die mit der Einschränkung überhaupt gehen („max. 1 Umstieg“ verträgt keine 2) */
+  private minTransfersFor(round: Round): number {
+    return round.restriction === 'oneTransfer' ? Math.min(1, this.settings.minTransfers) : this.settings.minTransfers;
   }
 
   /** Stationspaar ziehen und Top-Verbindungen sampeln; ungeeignete Paare werden verworfen */
   private async prepare(round: Round, gen: number): Promise<RouteOption[]> {
+    const wanted = this.minTransfersFor(round);
     for (let attempt = 0; attempt < 14; attempt++) {
       if (gen !== this.generation) return [];
       let a: Station, b: Station;
       try {
-        [a, b] = this.net.randomPair(this.settings, this.usedStations, this.pastPairs);
+        [a, b] =
+          this.settings.endpoints === 'addresses' && this.net.hasAddresses
+            ? this.net.randomAddressPair(this.settings, this.pastPairs)
+            : this.net.randomPair(this.settings, this.usedStations, this.pastPairs);
       } catch (e) {
         if (e instanceof NoPairError) throw new GameError(e.message, 422);
         throw e;
@@ -214,10 +231,14 @@ export class Game extends Lobby {
           if (!free.length || free[0].key === 'walk') continue;
           round.bannedLines = this.pickBan(free[0]);
           if (!round.bannedLines.length) continue;
+          // nur sperren, wenn es in der Stichprobe eine Verbindung ohne die gesperrten Linien gibt –
+          // sonst findet die zweite Rechnung nichts (früher häufiger Grund für „Keine passende Strecke“)
+          const banned = new Set(round.bannedLines);
+          if (!free.some((r) => r.key !== 'walk' && !r.legs.some((l) => l.line?.split('/').some((x) => banned.has(x))))) continue;
         }
         // bei "beste Route" nach Zeit + Umstiegen sortieren – routes[0] ist dann die beste (auch für Tipps)
         // Mindest-Umstiege schon nach den Stichproben prüfen (nach vielen Versuchen gelockert, siehe unten)
-        const minTransfers = attempt < 12 ? this.settings.minTransfers : 0;
+        const minTransfers = attempt < 12 ? wanted : 0;
         routes = sortRoutes(await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), minTransfers }), this.settings);
       } catch (e) {
         if (e instanceof EfaUnavailableError) throw new GameError('Die Wiener-Linien-Auskunft antwortet gerade nicht – bitte in einer Minute nochmal starten.', 503);
@@ -226,10 +247,10 @@ export class Game extends Lobby {
       if (!routes.length || routes[0].key === 'walk') continue;
       const ptLegs = routes[0].legs.filter((l) => l.mode !== 'W').length;
       // beste Verbindung muss mindestens so viele Umstiege haben (nach vielen Versuchen gelockert)
-      if (ptLegs - 1 < this.settings.minTransfers && attempt < 12) continue;
+      if (ptLegs - 1 < wanted && attempt < 12) continue;
       this.usedStations.add(a.id).add(b.id);
       this.pastPairs.push({ a, b });
-      this.net.markUsed(a.id, b.id);
+      if (!this.net.isAddress(a.id)) this.net.markUsed(a.id, b.id);
       round.from = a;
       round.to = b;
       round.routes = routes;

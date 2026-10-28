@@ -105,3 +105,38 @@ test('Regression L-11: Statistik lässt sich sofort sichern (beim Beenden des Se
   const saved = JSON.parse(readFileSync(path.join(process.env.STATE_DIR!, 'usage.json'), 'utf8'));
   assert.ok(saved.s1 >= 1 && saved.s2 >= 1);
 });
+
+test('Regression Punkt 2: „max. 1 Umstieg“ verlangt bei Schwer/Profi nicht 2 Umstiege (sonst findet sich nie eine Strecke)', () => {
+  const { g } = newGame({ ...base, minTransfers: 2 });
+  const minFor = (restriction: string | null) => (g as unknown as { minTransfersFor(r: object): number }).minTransfersFor({ restriction });
+  assert.equal(minFor('oneTransfer'), 1);
+  assert.equal(minFor(null), 2);
+  assert.equal(minFor('noBus'), 2);
+});
+
+test('Regression Punkt 10: „Linie gesperrt“ sperrt parallel fahrende Linien mit (S2 → auch S1)', () => {
+  const { g } = newGame();
+  const id = (n: string) => net.data.stations.find((s) => s.name === n)!.id;
+  const leg = { mode: 'S', line: 'S2', fromStation: id('Siemensstraße'), toStation: id('Matzleinsdorfer Platz'), path: [] };
+  const banned = (g as unknown as { pickBan(r: object): string[] }).pickBan({ key: 'x', legs: [leg] });
+  assert.ok(banned.includes('S2') && banned.includes('S1'), banned.join(','));
+});
+
+test('Punkt 13: zufällige Adressen – Entfernung passt, gleichmäßig verteilt (nicht nur Zentrum), Linien in der Nähe', () => {
+  const settings = { ...base, distance: 'medium', endpoints: 'addresses' } as never;
+  const { g } = newGame(settings);
+  const s = (g as unknown as { settings: Parameters<typeof net.randomAddressPair>[0] }).settings;
+  let central = 0;
+  for (let i = 0; i < 200; i++) {
+    const [a, b] = net.randomAddressPair(s);
+    const d = Math.hypot((a.lat - b.lat) * 111_320, (a.lon - b.lon) * 74_000);
+    assert.ok(d >= 1500 && d <= 12_500, `Entfernung ${Math.round(d)} m`);
+    assert.match(a.id, /^a:/);
+    assert.equal(net.station(a.id).name, a.name);
+    if (Math.hypot((a.lat - 48.2085) * 111_320, (a.lon - 16.3731) * 74_000) < 3000) central++;
+  }
+  assert.ok(central < 120, `${central} von 200 Starts im Zentrum (3 km)`);
+  const [a] = net.randomAddressPair(s);
+  assert.ok(net.linesAt(a.id, 'regular').length > 0, 'Linien in der Nähe der Adresse');
+  assert.match(net.mainEfaId(a.id), /^coord:16\.\d+:48\.\d+$/);
+});

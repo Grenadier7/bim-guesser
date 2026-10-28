@@ -2,6 +2,7 @@
 import type { Line, Restriction, Station, UserLeg } from '../../shared/types.ts';
 import { restrictionAllowsLine, restrictionLabel, restrictionMaxLegs } from '../../shared/rules.ts';
 import { distM, fmtDist, type NetIndex } from './net.ts';
+import { smoothPath } from './netmap.ts';
 import { esc, h, lineChip } from './ui.ts';
 
 export interface DraftLeg {
@@ -11,6 +12,15 @@ export interface DraftLeg {
 }
 
 const WALK_WARN_M = 1200;
+/**
+ * Fußwege, abgestuft – deutlich, wenn es wohl ein Versehen ist, aber nicht nervig, wenn man absichtlich geht:
+ * bis 250 m nur leise (Bahnsteig, Ecke weiter), bis 700 m ein Hinweis, darüber deutlich (aber nie blockierend).
+ */
+const WALK_QUIET_M = 250;
+const WALK_LOUD_M = 700;
+/** Gehzeit wie in der Auswertung: Luftlinie × 1,3 bei 80 m/min */
+const walkMinutes = (m: number) => Math.max(1, Math.round((m * 1.3) / 80));
+const walkText = (m: number) => `${fmtDist(m)} zu Fuß (≈ ${walkMinutes(m)} min)`;
 
 export interface BuilderOptions {
   /** X-treme: Ein-/Ausstieg selbst eintippen, keine Auswahllisten und keine Stationszahl */
@@ -81,7 +91,7 @@ export class RouteBuilder {
     for (const l of this.legs) {
       const from = this.net.station(l.from);
       if (from.id !== pos.id) segs.push({ path: [ll(pos), ll(from)], color: '#666', walk: true });
-      segs.push({ path: this.net.legPath(l.line, l.from, l.to), color: l.line.color, walk: false });
+      segs.push({ path: smoothPath(l.line.id, l.from, l.to, this.net.legPath(l.line, l.from, l.to)), color: l.line.color, walk: false });
       pos = this.net.station(l.to);
     }
     if (this.legs.length && pos.id !== this.dest.id) segs.push({ path: [ll(pos), ll(this.dest)], color: '#666', walk: true });
@@ -101,48 +111,67 @@ export class RouteBuilder {
 
   // -------------------------------------------------------------- Rendering
 
+  /** Hinweis, nachdem eine frühere Teilstrecke geändert wurde (z.B. „ab hier neu wählen“) */
+  private notice = '';
+
   private render() {
     this.el.innerHTML = '';
     const list = h('ol', { class: 'legs' });
     let pos = this.start;
+    const hideD = !!this.opts.hideDistances;
+    const typed = !!this.opts.typed;
     this.legs.forEach((l, i) => {
       const from = this.net.station(l.from);
       const to = this.net.station(l.to);
-      const walk =
-        from.id !== pos.id ? `<div class="walk">🚶 ${this.opts.hideDistances ? '' : `${fmtDist(distM(pos, from))} `}zu Fuß nach ${esc(from.name)}</div>` : '';
+      // Fußweg vor dieser Teilstrecke: zwischendurch und über 250 m als eigener Block (wie eine Fahrt)
+      if (from.id !== pos.id) {
+        const d = distM(pos, from);
+        const level = d > WALK_LOUD_M ? 'walk-loud' : d > WALK_QUIET_M ? 'walk-mid' : 'walk-quiet';
+        if (i > 0 && d > WALK_QUIET_M && !hideD)
+          list.append(
+            h('li', { class: `leg walk-leg ${level}` }, `<div class="leg-main"><span class="walk-icon">🚶</span>
+              <span class="leg-text">${esc(pos.name)} → <b>${esc(from.name)}</b><small>${walkText(d)}</small></span></div>`),
+          );
+        else list.append(h('li', { class: `leg-walk ${level}` }, `🚶 ${hideD ? '' : `${fmtDist(d)} `}zu Fuß nach ${esc(from.name)}`));
+      }
       const stops = this.net.stopsBetween(l.line, l.from, l.to);
       const last = i === this.legs.length - 1;
-      const typed = !!this.opts.typed;
       const fromName = this.opts.hideStart && from.id === this.start.id ? 'Start' : from.name;
+      // Einbahn/Schleife: die Linie hält hier, aber nicht in diese Richtung → Einstieg woanders (Punkt 11)
+      const oneWay = from.id !== pos.id && this.net.patterns(l.line).some((p) => p.includes(pos.id));
       const li = h(
         'li',
         { class: 'leg' },
-        `${walk}<div class="leg-main">${lineChip(l.line.mode, l.line.id, l.line.color)}
-          <span class="leg-text">${esc(fromName)} →${last && !typed ? '' : ` <b>${esc(to.name)}</b>`}${typed ? '<small></small>' : `<small>${stops} Station${stops === 1 ? '' : 'en'}</small>`}</span>
-          ${last ? '<button class="icon-btn" data-act="remove" title="Teilstrecke entfernen">✕</button>' : ''}</div>`,
+        `<div class="leg-main">${lineChip(l.line.mode, l.line.id, l.line.color)}
+          <span class="leg-text">${esc(fromName)} →${typed ? ` <b>${esc(to.name)}</b>` : ''}${typed ? '<small></small>' : `<small>${stops} Station${stops === 1 ? '' : 'en'}</small>`}</span>
+          ${last ? '<button class="icon-btn" data-act="remove" title="Teilstrecke entfernen">✕</button>' : ''}</div>
+          ${oneWay ? `<div class="one-way">↩ Die ${esc(l.line.id)} hält in diese Richtung nicht bei ${esc(pos.name)} (Einbahn/Schleife) – Einstieg ${esc(from.name)}.</div>` : ''}`,
       );
-      if (last && !typed) {
-        // Ziel der letzten Teilstrecke direkt änderbar (z.B. Kagran -> Kagraner Platz)
+      if (!typed) {
+        // Ausstieg jeder Teilstrecke änderbar (z.B. 71 bis St. Marx statt Rennweg) – folgende Strecken passen sich an
         const sel = this.alightSelect(l.line, l.from, l.to);
         sel.classList.add('leg-alight');
         sel.title = 'Ausstieg ändern';
         sel.addEventListener('change', () => {
           if (!sel.value) return;
-          const [from, to] = parseAlight(sel.value, l.from);
-          l.from = from;
-          l.to = to;
+          const [nf, nt] = parseAlight(sel.value, l.from);
+          l.from = nf;
+          l.to = nt;
+          this.reflow(i);
           this.resetForm();
         });
         li.querySelector('.leg-text small')!.before(sel);
       }
       li.querySelector('[data-act=remove]')?.addEventListener('click', () => {
         this.legs.pop();
+        this.notice = '';
         this.resetForm();
       });
       list.append(li);
       pos = to;
     });
     if (this.legs.length) this.el.append(list);
+    if (this.notice) this.el.append(h('div', { class: 'warn' }, esc(this.notice)));
 
     const arrived = pos.id === this.dest.id;
     const full = this.legs.length >= restrictionMaxLegs(this.restriction);
@@ -151,8 +180,7 @@ export class RouteBuilder {
       this.el.append(h('div', { class: 'warn' }, `${esc(restrictionLabel(this.restriction!, this.banned))}: keine weitere Linie möglich.`));
 
     if (this.legs.length) {
-      const hideD = !!this.opts.hideDistances;
-      const endWalk = arrived || hideD ? '' : `<div class="walk">🚶 ${fmtDist(distM(pos, this.dest))} zu Fuß zum Ziel</div>`;
+      const endWalk = arrived || hideD ? '' : `<div class="walk">🚶 ${walkText(distM(pos, this.dest))} zum Ziel</div>`;
       const far = !arrived && !hideD && distM(pos, this.dest) > WALK_WARN_M ? '<div class="warn">Ziemlich weiter Fußweg – sicher?</div>' : '';
       const foot = h('div', { class: 'submit-row' }, `${endWalk}${far}<button class="btn btn-primary" data-act="submit">Route abgeben</button>`);
       foot.querySelector('button')!.disabled = this.locked;
@@ -174,6 +202,27 @@ export class RouteBuilder {
   unlock() {
     this.locked = false;
     this.render();
+  }
+
+  /**
+   * Nach dem Ändern von Teilstrecke i: die nächste beginnt am neuen Ausstieg, wenn ihre Linie dort hält, sonst an der
+   * nächstgelegenen Haltestelle (wie beim Neu-Hinzufügen). Kommt sie von dort nicht mehr in ihre Richtung zum alten
+   * Ausstieg, fallen sie und alle späteren weg.
+   */
+  private reflow(i: number) {
+    this.notice = '';
+    const next = this.legs[i + 1];
+    if (!next) return;
+    const at = this.legs[i].to;
+    const reach = (from: string) => this.net.patterns(next.line).some((p) => p.indexOf(from) >= 0 && p.indexOf(next.to, p.indexOf(from) + 1) > p.indexOf(from));
+    const here = this.net.patterns(next.line).some((p) => p.includes(at));
+    const board = here && reach(at) ? at : this.net.boardOptions(next.line, this.net.station(at), 1)[0]?.station.id;
+    if (board && reach(board)) {
+      next.from = board;
+      return;
+    }
+    const dropped = this.legs.splice(i + 1);
+    this.notice = `${dropped.map((l) => l.line.id).join(', ')} ${dropped.length > 1 ? 'passen' : 'passt'} ab dem neuen Ausstieg nicht mehr – bitte neu wählen.`;
   }
 
   private resetForm() {
@@ -236,7 +285,28 @@ export class RouteBuilder {
     const boardRow = h('label', { class: 'field' }, '<span>Einstieg</span>');
     boardRow.append(boardSel);
     form.append(boardRow);
-    if (boardDist > WALK_WARN_M) form.append(h('div', { class: 'warn' }, `${esc(line.id)} hält nicht in der Nähe – ${fmtDist(boardDist)} Fußweg.`));
+    // Linie hält nicht hier: je nach Entfernung leise, Hinweis oder deutlich (Punkt 4)
+    const boardName = this.net.station(this.board!).name;
+    const servesHere = this.net.patterns(line).some((p) => p.includes(pos.id));
+    if (boardDist > WALK_LOUD_M && !this.opts.hideDistances)
+      form.append(
+        h(
+          'div',
+          { class: 'walk-alert walk-loud', role: 'status' },
+          `⚠️ <b>Die ${esc(line.id)} fährt nicht bei ${esc(pos.name)}.</b> Nächster Halt: ${esc(boardName)} – ${walkText(boardDist)}. Absicht? Sonst „andere Linie“.`,
+        ),
+      );
+    else if (boardDist > WALK_QUIET_M && !this.opts.hideDistances)
+      form.append(
+        h(
+          'div',
+          { class: 'walk-alert walk-mid' },
+          servesHere
+            ? `↩ In diese Richtung hält die ${esc(line.id)} nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`
+            : `🚶 Die ${esc(line.id)} hält nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`,
+        ),
+      );
+    else if (boardDist > 0 && !this.opts.hideDistances) form.append(h('div', { class: 'walk-note' }, `🚶 ${fmtDist(boardDist)} zum Einstieg ${esc(boardName)}`));
 
     // Ausstieg nach Richtung gruppiert
     const alightSel = this.alightSelect(line, this.board!, null);
@@ -262,7 +332,7 @@ export class RouteBuilder {
     const { up, down } = this.net.lineThrough(line, board);
     // Gegenrichtung mit anderem Einstieg: Wert "einstieg>ausstieg"
     const opt = (s: Station, alt?: Station) =>
-      `<option value="${alt ? `${alt.id}>` : ''}${s.id}">${esc(s.name)}${s.id === this.dest.id ? ' 🏁' : ''}</option>`;
+      `<option value="${alt ? `${alt.id}>` : ''}${s.id}">${esc(s.name)}${s.id === this.dest.id ? ' 🏁' : ''}${alt && alt.id !== board ? ` ↩ ab ${esc(alt.name)}` : ''}</option>`;
     const here = this.net.station(board);
     // Reihenfolge wie auf dem Linienplan: obere Stationen · "↑ Richtung …" · hier · "↓ Richtung …" · untere Stationen.
     // Die Überschriften sind leere <optgroup>s, damit sie fett direkt neben der aktuellen Station stehen.

@@ -153,6 +153,8 @@ export interface GameSettings {
   /** Tipps erlaubt */
   /** Tipps: keine / günstig / teuer */
   tips: TipLevel;
+  /** Start und Ziel: Haltestellen oder zufällige Adressen (Punkt 13) */
+  endpoints: 'stations' | 'addresses';
 }
 
 // ---------------------------------------------------------------- Routen
@@ -410,7 +412,11 @@ export type GameEvent =
   /** beim Verbinden: die letzten Nachrichten */
   | { type: 'chatHistory'; messages: ChatMessage[] }
   /** vom Host entfernt – der betroffene Client verlässt die Lobby */
-  | { type: 'kicked'; playerId: string };
+  | { type: 'kicked'; playerId: string }
+  /** Lobby lange inaktiv: diese Spieler werden gefragt „Lobby behalten?“ (leer = Nachfrage erledigt) */
+  | { type: 'idleCheck'; playerIds: string[]; deadline: number }
+  /** Lobby geschlossen (Inaktivität oder vom Host) */
+  | { type: 'closed'; reason: string };
 
 // ---------------------------------------------------------------- API
 

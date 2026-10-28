@@ -201,6 +201,19 @@ export class NetGraph {
     return [];
   }
 
+  /** Kurve entlang einer Linie zwischen zwei Stationen (nach ID, in Fahrtrichtung) – [] wenn nicht auf der Linie */
+  pathByIds(lineId: string, fromId: string, toId: string): LL[] {
+    const line = this.net.lines.get(lineId);
+    if (!line || !this.has(lineId)) return [];
+    for (const p of patternsOf(line)) {
+      const i = p.indexOf(fromId);
+      const j = p.indexOf(toId);
+      if (i < 0 || j < 0 || i === j) continue;
+      return this.path(kindOf(line)!, i < j ? p.slice(i, j + 1) : p.slice(j, i + 1).reverse());
+    }
+    return [];
+  }
+
   /** Kurve entlang einer Linie von Station `from` bis `to` (nach Namen) */
   along(lineId: string, from: string, to: string): LL[] {
     const line = this.net.lines.get(lineId);

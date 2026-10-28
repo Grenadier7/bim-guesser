@@ -2,6 +2,7 @@
 // Die Zählungen der Netzkarte sind Charakterisierungswerte: Ändert ein Umbau die Darstellung, fällt es hier auf.
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
+import type { NetworkPublic } from '../../shared/types.ts';
 import { answerCourseStep, setName, startApp, type App, type TestPage } from './harness.ts';
 
 let app: App;
@@ -177,6 +178,41 @@ test('N-1/N-2/N-3: Linien einer Gegend üben, Takt im Steckbrief, U-Bahn-Farben 
   const colors = await p.locator('.compare-head .chip').evaluateAll((els) => els.map((e) => getComputedStyle(e).backgroundColor));
   assert.deepEqual(colors, ['rgb(157, 105, 48)', 'rgb(238, 125, 0)']);
   await t.shot('learn-compare-u');
+  assert.deepEqual(t.errors, []);
+  await t.context.close();
+});
+
+test('Punkt 6: Welcher Bus fährt hier? – richtig antippen, Fehler kommen nochmal, Auswertung', async () => {
+  const net = (await (await fetch(`${app.base}/api/network`)).json()) as NetworkPublic;
+  const t = await app.page();
+  const p = t.page;
+  await p.goto(app.base);
+  await p.locator('.mode-learn').click();
+  await p.locator('#busquiz').click();
+  await p.locator('#bq-district').selectOption('13');
+  await p.locator('#bq-start').click();
+  // erste Station richtig: genau die Busse antippen, die dort halten
+  const stId = (await p.locator('.busquiz[data-station]').getAttribute('data-station'))!;
+  const opts = await p.locator('.bq-opt').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.bus!));
+  const here = opts.filter((id) => net.lines.find((l) => l.id === id)!.patterns.some((pt) => pt.includes(stId)));
+  assert.ok(here.length >= 1 && opts.length >= 6, `${here.length} richtige von ${opts.length} Vorschlägen`);
+  for (const id of here) await p.locator(`.bq-opt[data-bus="${id}"]`).click();
+  await t.shot('busquiz-question');
+  await p.locator('#bq-check').click();
+  await p.locator('h3', { hasText: 'Genau richtig' }).waitFor();
+  await p.waitForTimeout(900);
+  await t.shot('busquiz-reveal');
+  // Rest: „Weiß ich nicht“ – jede Station kommt einmal nochmal, dann die Auswertung
+  let asked = 1;
+  while (!(await p.locator('#bq-again').count())) {
+    await p.locator('#bq-next').click();
+    if (await p.locator('#bq-again').count()) break;
+    await p.locator('#bq-skip').click();
+    asked++;
+  }
+  assert.ok(asked >= 18, `${asked} Fragen (10 + Wiederholungen)`);
+  await p.locator('h3', { hasText: '1 von 10 Stationen' }).waitFor();
+  await t.shot('busquiz-summary');
   assert.deepEqual(t.errors, []);
   await t.context.close();
 });

@@ -22,6 +22,9 @@ const DISCONNECT_AFTER_MS = 15000;
 const CHAT_KEEP = 50;
 const CHAT_WINDOW_MS = 10_000;
 const CHAT_MAX_PER_WINDOW = 5;
+/** Inaktive Lobby: nach 9 min ohne Aktivität fragt der Server die Hosts, ob sie bleiben soll (30 s Zeit) */
+export const IDLE_WARN_MS = Number(process.env.LOBBY_IDLE_MS) || 9 * 60_000;
+export const IDLE_ANSWER_MS = Number(process.env.LOBBY_IDLE_ANSWER_MS) || 30_000;
 /** Kulanz nach Ablauf des Zeitlimits (Netzwerk-Latenz) */
 export const DEADLINE_GRACE_MS = 3000;
 
@@ -40,7 +43,8 @@ export abstract class Lobby extends EventEmitter {
   abstract readonly mode: GameMode;
   readonly id: string;
   phase: GamePhase = 'lobby';
-  hostId = '';
+  /** Hosts (mehrere möglich): dürfen Einstellungen ändern, starten, kicken, andere zum Host machen */
+  protected hosts = new Set<string>();
   /** IP, von der die Lobby erstellt wurde (Limit je IP) */
   creatorIp = '';
   readonly createdAt = Date.now();
@@ -110,10 +114,91 @@ export abstract class Lobby extends EventEmitter {
     if (p.id === host.id) throw new GameError('Du kannst dich nicht selbst entfernen – nimm „Lobby verlassen“.');
     this.players.delete(p.id);
     this.byToken.delete(p.token);
+    this.hosts.delete(p.id);
     this.emitEvent({ type: 'kicked', playerId: p.id });
     this.post(null, '', `${p.name} wurde vom Host entfernt.`);
     this.touch();
     this.checkPresence();
+  }
+
+  /** Host macht einen Spieler zum (weiteren) Host oder nimmt ihm die Host-Rechte – mindestens ein Host bleibt */
+  setHost(token: string, playerId: string, on: boolean) {
+    this.requireHost(token);
+    const p = this.players.get(String(playerId));
+    if (!p) throw new GameError('Diesen Spieler gibt es nicht (mehr).', 404);
+    if (on) this.hosts.add(p.id);
+    else {
+      if (this.hosts.has(p.id) && this.hosts.size === 1) throw new GameError('Es muss mindestens einen Host geben.');
+      this.hosts.delete(p.id);
+    }
+    this.post(null, '', on ? `${p.name} ist jetzt Host.` : `${p.name} ist kein Host mehr.`);
+    this.touch();
+    this.emitState();
+  }
+
+  // -------------------------------------------------------------- Inaktivität
+
+  /** laufende Nachfrage „Lobby behalten?“: wer gefragt wird und bis wann */
+  private idle: { asked: Set<string>; deadline: number; timer: NodeJS.Timeout } | null = null;
+  /** schon gefragt (und nicht geantwortet) – kommen nicht nochmal dran */
+  private idleSkipped = new Set<string>();
+
+  /** vom Manager regelmäßig aufgerufen; true = Lobby ist geschlossen und kann weg */
+  closed = false;
+
+  tickIdle(now = Date.now()) {
+    if (this.closed || this.idle || this.phase === 'playing' || !this.players.size) return;
+    if (now - this.lastActivity < IDLE_WARN_MS) return;
+    this.idleSkipped.clear();
+    this.askIdle([...this.hosts]);
+  }
+
+  private askIdle(ids: string[]) {
+    const deadline = Date.now() + IDLE_ANSWER_MS;
+    const timer = setTimeout(() => this.idleTimeout(), IDLE_ANSWER_MS);
+    timer.unref?.();
+    this.idle = { asked: new Set(ids), deadline, timer };
+    this.emitEvent({ type: 'idleCheck', playerIds: ids, deadline });
+  }
+
+  /** niemand geantwortet: Gefragte verlieren den Host, der nächste Spieler wird Host und gefragt – sonst schließen */
+  private idleTimeout() {
+    if (!this.idle) return;
+    for (const id of this.idle.asked) {
+      this.hosts.delete(id);
+      this.idleSkipped.add(id);
+    }
+    const next = [...this.players.values()].find((p) => !this.idleSkipped.has(p.id) && this.isConnected(p));
+    this.idle = null;
+    if (!next) return this.close('Die Lobby wurde wegen Inaktivität geschlossen.');
+    this.hosts.add(next.id);
+    this.post(null, '', `${next.name} ist jetzt Host (der bisherige Host hat nicht reagiert).`);
+    this.emitState();
+    this.askIdle([next.id]);
+  }
+
+  private clearIdle() {
+    if (!this.idle) return;
+    clearTimeout(this.idle.timer);
+    this.idle = null;
+    this.emitEvent({ type: 'idleCheck', playerIds: [], deadline: 0 });
+  }
+
+  /** Antwort auf die Nachfrage: behalten oder löschen */
+  answerIdle(token: string, keep: boolean) {
+    const p = this.auth(token);
+    if (!this.hosts.has(p.id) && !this.idle?.asked.has(p.id)) throw new GameError('Nur der Host kann das.', 403);
+    if (!keep) return this.close(`${p.name} hat die Lobby geschlossen.`);
+    this.touch();
+  }
+
+  close(reason: string) {
+    if (this.closed) return;
+    if (this.idle) clearTimeout(this.idle.timer);
+    this.idle = null;
+    this.closed = true;
+    this.emitEvent({ type: 'closed', reason });
+    this.emit('closed');
   }
 
   addPlayer(name: unknown): { id: string; token: string } {
@@ -128,7 +213,7 @@ export abstract class Lobby extends EventEmitter {
     const player: Player = { id, token, name: clean, score: 0, connections: 0, lastSeen: Date.now() };
     this.players.set(id, player);
     this.byToken.set(token, player);
-    if (!this.hostId) this.hostId = id;
+    if (!this.hosts.size) this.hosts.add(id);
     this.touch();
     this.emitState();
     return { id, token };
@@ -160,7 +245,7 @@ export abstract class Lobby extends EventEmitter {
 
   protected requireHost(token: string): Player {
     const p = this.auth(token);
-    if (p.id !== this.hostId) throw new GameError('Nur der Host kann das.', 403);
+    if (!this.hosts.has(p.id)) throw new GameError('Nur der Host kann das.', 403);
     return p;
   }
 
@@ -173,7 +258,7 @@ export abstract class Lobby extends EventEmitter {
       id: p.id,
       name: p.name,
       score: p.score,
-      isHost: p.id === this.hostId,
+      isHost: this.hosts.has(p.id),
       connected: this.isConnected(p),
     }));
   }
@@ -204,16 +289,21 @@ export abstract class Lobby extends EventEmitter {
     if (!p) return;
     this.players.delete(p.id);
     this.byToken.delete(p.token);
+    this.hosts.delete(p.id);
     this.checkPresence();
   }
 
-  /** Host weitergeben und offene Runde auflösen, wenn nur noch Abwesende fehlen */
+  /** Host weitergeben (wenn kein Host mehr da/verbunden ist) und offene Runde auflösen, wenn nur noch Abwesende fehlen */
   protected checkPresence() {
-    const host = this.players.get(this.hostId);
-    if (!host || !this.isConnected(host)) {
+    for (const id of this.hosts) if (!this.players.has(id)) this.hosts.delete(id);
+    const hostOnline = [...this.hosts].some((id) => this.isConnected(this.players.get(id)!));
+    if (!hostOnline) {
       const next = [...this.players.values()].find((p) => this.isConnected(p));
-      if (next) this.hostId = next.id;
-      else if (!host) this.hostId = [...this.players.keys()][0] ?? '';
+      if (next) {
+        // getrennte Hosts geben ab – sonst könnte niemand starten
+        this.hosts.clear();
+        this.hosts.add(next.id);
+      } else if (!this.hosts.size && this.players.size) this.hosts.add([...this.players.keys()][0]);
     }
     this.onPresenceChange();
     this.emitState();
@@ -231,5 +321,6 @@ export abstract class Lobby extends EventEmitter {
 
   protected touch() {
     this.lastActivity = Date.now();
+    this.clearIdle();
   }
 }

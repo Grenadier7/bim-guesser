@@ -20,8 +20,8 @@ export function roundScreen(panel: HTMLElement): Screen {
   const auth = app.session!;
   const { playerId } = auth;
   app.net.mode = s.settings.network;
-  const from = app.net.station(round.from!.id);
-  const to = app.net.station(round.to!.id);
+  const from = app.net.ensure(round.from!);
+  const to = app.net.ensure(round.to!);
   const multi = s.players.length > 1;
   // X-treme: Haltestellen eintippen, keine Route auf der Karte, je nach Stufe ohne Namen / ohne Karte
   const xt = s.settings.xtreme ?? 'off';
@@ -188,6 +188,9 @@ export function roundScreen(panel: HTMLElement): Screen {
     drawDraft();
   }
 
+  /** Joker-Leiste offen/zu (über Neuzeichnen hinweg) */
+  let tipsOpen: boolean | null = null;
+
   function renderTips(): HTMLElement {
     const box = h('div', { class: 'tips' });
     const used = new Set(tips.map((t) => t.kind));
@@ -220,7 +223,11 @@ export function roundScreen(panel: HTMLElement): Screen {
                   .join('')}</div></div>`;
       })
       .join('');
-    box.innerHTML = `<div class="tip-btns">${btns}</div>${results}`;
+    // Joker ausklappbar: am Handy zu (eine Zeile statt vier großer Knöpfe), am Computer offen; Ergebnisse immer sichtbar
+    const free = (Object.keys(TIPS) as TipKind[]).filter((k) => !used.has(k)).length;
+    tipsOpen ??= matchMedia('(min-width: 900px)').matches;
+    box.innerHTML = `${free ? `<details class="tips-drawer" ${tipsOpen ? 'open' : ''}><summary>💡 Joker <small>(${free} übrig – kosten Punkte)</small></summary><div class="tip-btns">${btns}</div></details>` : ''}${results}`;
+    box.querySelector('details')?.addEventListener('toggle', (e) => (tipsOpen = (e.target as HTMLDetailsElement).open));
     box.querySelectorAll<HTMLButtonElement>('[data-tip-line]').forEach((btn) =>
       btn.addEventListener('click', () => {
         const line = app.net.lines.get(btn.dataset.tipLine!);

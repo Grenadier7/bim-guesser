@@ -4,6 +4,7 @@ import { atlasView, type AtlasSel } from '../learn/atlas.ts';
 import { COURSES, courseProgress, courseView } from '../learn/courses/index.ts';
 import { isSpecialLine, myLines, patternsOf, scopeOfLines, servedStations, shuffle } from '../learn/model.ts';
 import { areaView } from '../learn/area.ts';
+import { busQuizView } from '../learn/busquiz.ts';
 import { studyView } from '../learn/study.ts';
 import { netLayer, netView } from '../netmap.ts';
 import { app, setMapBig, setMobileMap } from '../store.ts';
@@ -92,8 +93,9 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
           <button class="btn btn-primary" id="practice" ${mine.length ? '' : 'disabled'}>Meine Linien üben${mine.length ? ` (${mine.length})` : ''}</button>
           <button class="btn btn-ghost" id="random">🎲 ${RANDOM_COUNT} zufällige Linien</button>
           <button class="btn btn-ghost" id="area">📍 Linien einer Gegend</button>
+          <button class="btn btn-ghost" id="busquiz">🚌 Welcher Bus fährt hier?</button>
         </div>
-        <small class="muted">Zufällig aus U-Bahn, S-Bahn und Bim · Gegend: alle Linien (auch Busse) rund um einen Ort oder in einem Bezirk.</small>
+        <small class="muted">Zufällig aus U-Bahn, S-Bahn und Bim · Gegend: alle Linien (auch Busse) rund um einen Ort oder in einem Bezirk · Bus: Station sehen, die Busse dort antippen.</small>
       </section>
       <p class="muted center">Wissen gegen andere testen? Dafür gibt's den <b>🧠 Quiz</b>-Modus auf der Startseite.</p>`;
     panel.innerHTML = '';
@@ -115,6 +117,10 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
     el.querySelector('#area')!.addEventListener('click', () => {
       setMobileMap(true);
       areaView(panel, home);
+    });
+    el.querySelector('#busquiz')!.addEventListener('click', () => {
+      setMobileMap(true);
+      busQuizView(panel, home);
     });
     el.querySelector('#open-atlas')!.addEventListener('click', () => openAtlas());
     // Tippen in der Suche öffnet gleich die Netzkarte mit dem Suchbegriff

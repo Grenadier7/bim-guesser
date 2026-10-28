@@ -5,13 +5,14 @@ import { DIFFICULTY_PRESETS, TIME_SLOTS } from '../../../shared/rules.ts';
 import { DEFAULT_TRAINING } from '../../../shared/defaults.ts';
 import { api } from '../api.ts';
 import { RouteBuilder } from '../builder.ts';
-import { netLayer, netView } from '../netmap.ts';
+import { netLayer, netView, smoothRoute } from '../netmap.ts';
 import { departuresFrom, starMini, type Scope } from '../learn/model.ts';
 import { app, setMapBig, setMobileMap } from '../store.ts';
 import { HINTS, compass, explain, hintText, legFeedback, lineDirections, routeSentence, type CoachMsg, type HintId } from '../training/coach.ts';
 import { chain, esc, h, lineChip, makeExpandable, routeDetails, toast } from '../ui.ts';
 import { loadingHtml, type Screen } from './screen.ts';
 import { loadMerged, saveJson } from '../storage.ts';
+import { markPlayed } from '../progress.ts';
 
 // ---------------------------------------------------------------- Speicher
 
@@ -302,6 +303,7 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
       renderSetup();
       return;
     }
+    markPlayed('training');
     renderReview(res);
   }
 
@@ -319,7 +321,7 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
 
     // Netzkarte blass als Hintergrund unter den Routen
     netLayer().render(netView({ dimAll: true, hubs: false, labels: false }));
-    app.map.showReveal(r.routes, res.route ? [{ key: 'me', name: 'Du', route: res.route, isMe: true }] : [], [r.routes[0].key, ...(res.route ? ['me'] : [])]);
+    app.map.showReveal(r.routes.map(smoothRoute), res.route ? [{ key: 'me', name: 'Du', route: smoothRoute(res.route), isMe: true }] : [], [r.routes[0].key, ...(res.route ? ['me'] : [])]);
     setMapBig(false);
 
     let verdict: string;

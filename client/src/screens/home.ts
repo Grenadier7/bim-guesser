@@ -4,6 +4,8 @@ import { api } from '../api.ts';
 import { app, savePrefs, startSession } from '../store.ts';
 import { esc, h, toast } from '../ui.ts';
 import { setPanel, type Screen } from './screen.ts';
+import { takeSettingsLink } from '../settingsShare.ts';
+import { offerTutorial } from '../progress.ts';
 
 const MODES = [
   {
@@ -45,10 +47,13 @@ function tile(m: (typeof MODES)[number], cls: string): string {
 export function homeScreen(panel: HTMLElement): Screen {
   app.map.clear();
   const urlCode = new URLSearchParams(location.search).get('code')?.toUpperCase() ?? '';
+  // Tutorial (Punkt 17): nur für Neue – unten als Karte, oben ein Hinweis darauf
+  const tut = offerTutorial() && !urlCode;
   const el = h(
     'div',
     { class: 'home' },
     `<header class="hero"><span class="logo big">U</span><div><h1>BimGuesser Wien</h1><p>Wie gut kennst du die Wiener Öffis?</p></div></header>
+     ${tut ? `<button class="tut-hint" data-mode="tutorial">🎓 Neu hier? <b>Tutorial spielen</b> – 2 Runden, 3 Minuten</button>` : ''}
      ${
        urlCode
          ? `<div class="invite-card"><div>📨 Du wurdest in die Lobby <b>${esc(urlCode)}</b> eingeladen.</div>
@@ -66,7 +71,14 @@ export function homeScreen(panel: HTMLElement): Screen {
        <div class="field join"><span>Mit Code beitreten</span>
          <div class="join-row"><input id="code" class="code-input" maxlength="5" placeholder="CODE" value="${esc(urlCode)}" autocomplete="off" spellcheck="false">
          <button class="btn btn-dark" id="join">Beitreten</button></div></div>
-     </div>`,
+     </div>
+     ${
+       tut
+         ? `<button class="tut-card" data-mode="tutorial"><span class="mt-icon">🎓</span><span><b>Tutorial: dein erstes Spiel</b>
+              <small>Zwei geführte Runden (Praterstern → Stephansplatz, Reumannplatz → Rathaus) und wie es Punkte gibt.</small></span>
+              <span class="btn btn-primary">Los</span></button>`
+         : ''
+     }`,
   );
   const nameIn = el.querySelector<HTMLInputElement>('#name')!;
   const codeIn = el.querySelector<HTMLInputElement>('#code')!;
@@ -82,11 +94,11 @@ export function homeScreen(panel: HTMLElement): Screen {
     el.querySelectorAll('button').forEach((x) => ((x as HTMLButtonElement).disabled = b));
   };
 
-  async function createLobby(mode: GameMode) {
+  async function createLobby(mode: GameMode, settings?: Record<string, unknown>) {
     if (pending) return;
     busy(true);
     try {
-      const res = await api.create(name(), mode, mode === 'quiz' ? app.prefs.quiz : app.prefs.settings);
+      const res = await api.create(name(), mode, settings ?? (mode === 'quiz' ? app.prefs.quiz : app.prefs.settings));
       startSession({ code: res.state.id, playerId: res.playerId, token: res.token }, res.state);
     } catch (e) {
       toast((e as Error).message);
@@ -99,7 +111,7 @@ export function homeScreen(panel: HTMLElement): Screen {
       const m = b.dataset.mode!;
       if (m === 'route' || m === 'quiz') return void createLobby(m);
       name();
-      app.view = m as 'learn' | 'training';
+      app.view = m as 'learn' | 'training' | 'tutorial';
       app.onChange();
     }),
   );
@@ -127,5 +139,11 @@ export function homeScreen(panel: HTMLElement): Screen {
   codeIn.addEventListener('keydown', (e) => e.key === 'Enter' && join());
   setPanel(panel, el);
   if (urlCode) (inviteName ?? codeIn).focus();
+  // geteilter Einstellungs-Link (Punkt 14): gleich eine Lobby mit diesen Einstellungen
+  const shared = takeSettingsLink();
+  if (shared) {
+    toast('Neue Lobby mit den geteilten Einstellungen …', 'info');
+    void createLobby(shared.mode, shared.settings);
+  }
   return {};
 }

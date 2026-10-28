@@ -339,3 +339,50 @@ test('Kicken und Chat: Host entfernt Gast (Gast landet auf der Startseite mit Me
   noErrors(a.t, b.t, c.t);
   await closeAll(a.t, b.t, c.t);
 });
+
+test('Punkt 1/19: im laufenden Quiz Spieler verwalten – Gast zum Host machen, anderen Gast kicken', async () => {
+  const a = await host('Chefin');
+  const b = await joinByCode(a.s.code, 'Bert');
+  const c = await joinByCode(a.s.code, 'Cleo');
+  await a.t.page.locator('ul.players li', { hasText: 'Cleo' }).waitFor();
+  await a.t.page.locator('#start').click();
+  await a.t.page.locator('.quiz-q h2').waitFor();
+  // Host-Leiste ist auf dem Desktop offen → Spielerliste aufklappen
+  await a.t.page.locator('.hb-players').click();
+  await a.t.page.locator('.hb-list [data-host][data-name="Bert"]').click();
+  await b.t.page.locator('details.host-bar summary', { hasText: 'Host' }).waitFor();
+  a.t.page.once('dialog', (d) => void d.accept());
+  await a.t.page.locator('.hb-list [data-kick][data-name="Cleo"]').click();
+  await c.t.page.locator('.toast', { hasText: 'entfernt' }).waitFor();
+  const st = await state(a.s);
+  assert.deepEqual(st.players.map((p) => `${p.name}${p.isHost ? '👑' : ''}`).sort(), ['Bert👑', 'Chefin👑']);
+  noErrors(a.t, b.t, c.t);
+  await closeAll(a.t, b.t, c.t);
+});
+
+test('Punkt 14: Einstellungen als Link teilen (öffnet neue Lobby damit) und als JSON importieren', async () => {
+  const a = await host('Teiler', 'route');
+  // Host setzt 3 Runden, teilt den Link
+  await a.t.page.locator('[data-k="rounds"][data-v="3"]').click();
+  await a.t.page.waitForTimeout(400);
+  await a.t.page.locator('details.advanced summary').click();
+  await a.t.page.locator('#shareSettings').click();
+  const link = await a.t.page.locator('.share-link').inputValue();
+  assert.match(link, /\?settings=/);
+  // JSON ändern (7 Runden) und übernehmen
+  const json = JSON.parse(await a.t.page.locator('.share-json').inputValue());
+  assert.equal(json.rounds, 3);
+  await a.t.page.locator('.share-json').fill(JSON.stringify({ ...json, rounds: 7 }));
+  await a.t.page.locator('#share-import').click();
+  await a.t.page.waitForTimeout(500);
+  assert.equal((await (await fetch(`${app.base}/api/games/${a.s.code}?token=${a.s.token}`)).json()).state.settings.rounds, 7);
+  // jemand anderes öffnet den Link → eigene neue Lobby mit 3 Runden
+  const b = await app.page();
+  await b.page.goto(link);
+  await b.page.locator('#start').waitFor();
+  const sb = (await session(b.page))!;
+  assert.notEqual(sb.code, a.s.code);
+  assert.equal((await (await fetch(`${app.base}/api/games/${sb.code}?token=${sb.token}`)).json()).state.settings.rounds, 3);
+  noErrors(a.t, b);
+  await closeAll(a.t, b);
+});

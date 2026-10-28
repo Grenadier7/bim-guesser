@@ -217,3 +217,49 @@ describe('Kicken und Chat', () => {
     assert.ok(statuses.includes(429), statuses.join(','));
   });
 });
+
+describe('Mehrere Hosts', () => {
+  test('Host macht andere zum Host; mehrere Hosts dürfen Einstellungen ändern; der letzte Host bleibt', async () => {
+    const a = await s.call('POST', '/api/games', { mode: 'quiz', playerName: 'A' });
+    const code = a.body.state.id;
+    const b = await s.call('POST', `/api/games/${code}/join`, { playerName: 'B' });
+    assert.equal((await s.call('PUT', `/api/games/${code}/settings`, { token: b.body.token, settings: { questions: 5 } })).status, 403);
+    assert.equal((await s.call('POST', `/api/games/${code}/host`, { token: b.body.token, playerId: b.body.playerId })).status, 403);
+    const r = await s.call('POST', `/api/games/${code}/host`, { token: a.body.token, playerId: b.body.playerId, on: true });
+    assert.deepEqual(r.body.players.filter((p: { isHost: boolean }) => p.isHost).map((p: { name: string }) => p.name).sort(), ['A', 'B']);
+    assert.equal((await s.call('PUT', `/api/games/${code}/settings`, { token: b.body.token, settings: { questions: 5 } })).status, 200);
+    // B nimmt A den Host weg; dann kann B sich nicht selbst als letzten Host entfernen
+    assert.equal((await s.call('POST', `/api/games/${code}/host`, { token: b.body.token, playerId: a.body.playerId, on: false })).status, 200);
+    assert.equal((await s.call('POST', `/api/games/${code}/host`, { token: b.body.token, playerId: b.body.playerId, on: false })).status, 400);
+  });
+});
+
+describe('Inaktive Lobby', () => {
+  let t: TestServer;
+  before(async () => (t = await startServer({ LOBBY_IDLE_MS: '1500', LOBBY_IDLE_ANSWER_MS: '1000' })));
+  after(async () => t?.stop());
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  test('ohne Antwort: Host verliert die Rechte, nächster Spieler wird gefragt, danach wird die Lobby gelöscht', async () => {
+    const a = await t.call('POST', '/api/games', { mode: 'quiz', playerName: 'A' });
+    const code = a.body.state.id;
+    const b = await t.call('POST', `/api/games/${code}/join`, { playerName: 'B' });
+    await sleep(3000); // 1,5 s inaktiv + 1 s ohne Antwort von A
+    const st = await t.call('GET', `/api/games/${code}?token=${b.body.token}`);
+    assert.equal(st.status, 200);
+    assert.deepEqual(st.body.state.players.filter((p: { isHost: boolean }) => p.isHost).map((p: { name: string }) => p.name), ['B']);
+    await sleep(1500); // B antwortet auch nicht → gelöscht
+    assert.equal((await t.call('GET', `/api/games/${code}?token=${b.body.token}`)).status, 403);
+  });
+
+  test('„Lobby behalten“ setzt die Inaktivität zurück; „löschen“ schließt sofort', async () => {
+    const a = await t.call('POST', '/api/games', { mode: 'quiz', playerName: 'A' });
+    const code = a.body.state.id;
+    await sleep(1800);
+    assert.equal((await t.call('POST', `/api/games/${code}/idle`, { token: a.body.token, keep: true })).status, 200);
+    await sleep(900);
+    assert.equal((await t.call('GET', `/api/games/${code}?token=${a.body.token}`)).status, 200, 'nach „behalten“ noch da');
+    assert.equal((await t.call('POST', `/api/games/${code}/idle`, { token: a.body.token, keep: false })).status, 200);
+    assert.equal((await t.call('GET', `/api/games/${code}?token=${a.body.token}`)).status, 403);
+  });
+});
