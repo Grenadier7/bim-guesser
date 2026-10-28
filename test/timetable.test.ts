@@ -170,3 +170,14 @@ test('Regionalzüge nach langem Fußweg: um die Fahrzeit, nicht um die Abfrageze
     assert.deepEqual(leg.with, ['REX4', 'REX41']);
   }
 });
+
+test('Beschriftung zeigt, was um diese Zeit wirklich fährt: S7 Floridsdorf → Leopoldau ist mittags S1/S2', { skip: !HAS }, async () => {
+  const { evaluateUserRoute } = await import('../server/routing.ts');
+  const st = (n: string) => net.data.stations.find((s) => s.name === n && s.lines.includes('S7'))!.id;
+  const [a, b] = [st('Floridsdorf'), st('Leopoldau')];
+  const r = await evaluateUserRoute(net, [{ line: 'S7', from: a, to: b }], a, b, T, 'regular', { countWait: true, avgWait: true, restriction: null }, []);
+  assert.equal(r.error, null, 'S7 eingeben geht (gleichwertig)');
+  const leg = r.route!.legs.find((l) => l.mode !== 'W')!;
+  assert.equal(leg.line, 'S1/S2');
+  assert.ok(leg.with?.includes('REX1'), String(leg.with));
+});

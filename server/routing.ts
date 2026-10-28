@@ -371,8 +371,10 @@ async function chainRoute(
   const lineInfo = legs.map((l, i) => {
     if (net.lines.get(l.line)?.mode !== 'S') return { label: labels?.[i] ?? l.line, with: [] as string[] };
     const at = rideTimes[i].length ? rideTimes[i] : [slotTime];
-    const names = [l.line, ...tables[i].linesIn(Math.min(...at) - 10, Math.max(...at) + 20)];
-    return { label: lineGroupLabel(names), with: regionalTrains(names) };
+    const running = tables[i].linesIn(Math.min(...at) - 10, Math.max(...at) + 20);
+    // die eingegebene Linie nur, wenn sie um diese Zeit auch fährt (S4 um 17 Uhr nördlich von Floridsdorf: nur S3)
+    const label = lineGroupLabel(running) || l.line;
+    return { label, with: regionalTrains(running) };
   });
   let pi = 0;
   const route: RouteOption = {
