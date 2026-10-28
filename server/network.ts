@@ -5,6 +5,7 @@ import type { GameSettings, Headways, Line, NetMode, NetworkData, NetworkPublic,
 import { distanceRange, linePatterns } from '../shared/rules.ts';
 import { inStationKinds } from '../shared/pools.ts';
 import type { EfaPoint } from './efa.ts';
+import { coversTime, timetableWarnings } from './timetable.ts';
 import { STATE_DIR } from './paths.ts';
 
 /** Ø-Takt je Linie (optional – fehlt die Datei, zeigt der Steckbrief einfach keinen Takt) */
@@ -105,8 +106,10 @@ export class Network {
    * (Befund M-07). Liefert Warntexte für Log und /api/health.
    */
   referenceWarnings(now = new Date()): string[] {
-    const out: string[] = [];
+    const out: string[] = timetableWarnings(now);
     for (const [type, day] of Object.entries(this.data.regularDays)) {
+      // mit eigenem Referenzfahrplan braucht es die Auskunft für diesen Tag nicht
+      if (coversTime(Date.UTC(+day.date.slice(0, 4), +day.date.slice(5, 7) - 1, +day.date.slice(8, 10), 12) / 60000)) continue;
       const ageDays = (now.getTime() - new Date(`${day.date}T12:00:00Z`).getTime()) / 86400000;
       if (ageDays > 150) out.push(`Referenztag ${type}=${day.date} ist ${Math.round(ageDays)} Tage alt – die Auskunft kennt ihn evtl. nicht mehr. Netzdaten neu bauen (npm run build:data).`);
     }

@@ -5,6 +5,7 @@ import { mkdir, readdir, readFile, stat, unlink, writeFile } from 'node:fs/promi
 import path from 'node:path';
 import { STATE_DIR } from './paths.ts';
 import type { LatLon, Mode } from '../shared/types.ts';
+import { localTrip } from './timetable.ts';
 
 const BASE = 'https://www.wienerlinien.at/ogd_routing';
 const CACHE_DIR = path.join(STATE_DIR, 'cache');
@@ -319,6 +320,12 @@ function place(id: string): { type: string; name: string } {
 }
 
 export async function trip(q: TripQuery): Promise<EfaTrip[]> {
+  // Referenztag des regulären Netzes: eigener Fahrplan (mit Regionalzügen, ohne Abfrage) – sonst die Auskunft
+  return localTrip(q) ?? remoteTrip(q);
+}
+
+/** immer die Wiener-Linien-Auskunft (für „Aktuell“ und zum Vergleich mit dem eigenen Fahrplan) */
+export async function remoteTrip(q: TripQuery): Promise<EfaTrip[]> {
   const o = place(q.from);
   const d = place(q.to);
   const params: Record<string, string> = {

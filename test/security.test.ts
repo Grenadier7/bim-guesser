@@ -110,7 +110,7 @@ async function spawnServer(opts: { env?: Record<string, string>; mock?: boolean 
   const entry = opts.mock ? import.meta.filename : 'server/index.ts';
   const proc = spawn(process.execPath, [entry], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(port), STATE_DIR: stateDir, RATE_LIMIT_SCALE: '1000', BIMGUESSER_MOCK_EFA: opts.mock ? '1' : '', ...opts.env },
+    env: { ...process.env, PORT: String(port), STATE_DIR: stateDir, RATE_LIMIT_SCALE: '1000', BIMGUESSER_MOCK_EFA: opts.mock ? '1' : '', ...(opts.mock ? { TIMETABLE: 'off' } : {}), ...opts.env },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = '';
