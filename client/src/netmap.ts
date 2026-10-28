@@ -3,7 +3,7 @@
 // Fortsetzung. So gibt es keine Knicke, und Linien auf derselben Strecke liegen genau übereinander.
 // Alle Ansichten (Kurse, Test) zeichnen dieselbe Karte und blenden nur Linien hervor oder aus.
 import L from 'leaflet';
-import type { Line, Station } from '../../shared/types.ts';
+import type { Line, RouteLeg, Station } from '../../shared/types.ts';
 import { CENTER, distM } from '../../shared/geo.ts';
 import { NET_COLOR } from './netcolors.ts';
 import { kindOf, NetGraph, type Edge, type Kind, type LL } from './netgraph.ts';
@@ -130,6 +130,12 @@ export class NetMapLayer {
 
   clear() {
     this.group.clearLayers();
+  }
+
+  /** schöne Kurve einer Fahrt (Grundkarte, sonst Bus-/Nachtgraph); [] = nicht zeichenbar */
+  curve(lineId: string, fromId: string, toId: string): LL[] {
+    const g = this.graph.has(lineId) ? this.graph : this.extra.has(lineId) ? this.extra : null;
+    return g ? g.pathByIds(lineId, fromId, toId) : [];
   }
 
   private get extra(): NetGraph {
@@ -360,6 +366,24 @@ export class NetMapLayer {
 let shared: NetMapLayer | null = null;
 
 /** Die eine Netzkarte auf der Spielkarte – wird mit app.map.clear() mitgeleert */
+/**
+ * Fahrten wie auf der Netzkarte zeichnen (Kurven durch die Stationen) statt mit dem groben Verlauf der Auskunft.
+ * „S1/S2“ → erste bekannte Linie; nicht zeichenbar (z.B. fremde Busse) → bisheriger Verlauf.
+ */
+export function smoothPath(lineIds: string | null, fromId: string | null, toId: string | null, fallback: LL[]): LL[] {
+  if (!lineIds || !fromId || !toId) return fallback;
+  for (const id of lineIds.split('/')) {
+    const c = netLayer().curve(id, fromId, toId);
+    if (c.length >= 2) return c;
+  }
+  return fallback;
+}
+
+/** alle Teilstrecken einer Route glätten (für Auflösung, Training) */
+export function smoothRoute<T extends { legs: RouteLeg[] }>(r: T): T {
+  return { ...r, legs: r.legs.map((l) => (l.mode === 'W' ? l : { ...l, path: smoothPath(l.line, l.fromStation, l.toStation, l.path) })) };
+}
+
 export function netLayer(): NetMapLayer {
   if (!shared) {
     const layer = new NetMapLayer(app.map.leaflet, new NetGraph(app.net));

@@ -2,6 +2,7 @@
 import type { Line, Restriction, Station, UserLeg } from '../../shared/types.ts';
 import { restrictionAllowsLine, restrictionLabel, restrictionMaxLegs } from '../../shared/rules.ts';
 import { distM, fmtDist, type NetIndex } from './net.ts';
+import { smoothPath } from './netmap.ts';
 import { esc, h, lineChip } from './ui.ts';
 
 export interface DraftLeg {
@@ -81,7 +82,7 @@ export class RouteBuilder {
     for (const l of this.legs) {
       const from = this.net.station(l.from);
       if (from.id !== pos.id) segs.push({ path: [ll(pos), ll(from)], color: '#666', walk: true });
-      segs.push({ path: this.net.legPath(l.line, l.from, l.to), color: l.line.color, walk: false });
+      segs.push({ path: smoothPath(l.line.id, l.from, l.to, this.net.legPath(l.line, l.from, l.to)), color: l.line.color, walk: false });
       pos = this.net.station(l.to);
     }
     if (this.legs.length && pos.id !== this.dest.id) segs.push({ path: [ll(pos), ll(this.dest)], color: '#666', walk: true });

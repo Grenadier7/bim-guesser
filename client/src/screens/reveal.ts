@@ -2,7 +2,7 @@ import type { Evaluation, RoundReveal } from '../../../shared/types.ts';
 import { MODE_LABEL, RESTRICTIONS, TIPS, fmtTimeLeft, maxRoundPoints, restrictionLabel, routeCostOf, transferPenalty, transfersOf } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import type { PlayerRoute } from '../map.ts';
-import { netLayer, netView } from '../netmap.ts';
+import { netLayer, netView, smoothRoute } from '../netmap.ts';
 import { app, routeState, currentRound, getReveal, isHost } from '../store.ts';
 import { starMini } from '../learn/model.ts';
 import { chain, esc, h, makeExpandable, routeDetails, toast, viaText } from '../ui.ts';
@@ -76,7 +76,7 @@ export function revealScreen(panel: HTMLElement): Screen {
       .map((e) => ({ key: `p:${e.playerId}`, name: e.playerId === myId ? 'Du' : e.playerName, route: e.route!, isMe: e.playerId === myId }));
     // Netzkarte blass als Hintergrund, darüber die Routen: kräftig die beste + eigene, die anderen blass
     netLayer().render(netView({ dimAll: true, hubs: false, labels: false }));
-    app.map.showReveal(reveal.routes, playerRoutes, [best.key, ...(mine?.route ? [`p:${myId}`] : [])]);
+    app.map.showReveal(reveal.routes.map(smoothRoute), playerRoutes.map((p) => ({ ...p, route: smoothRoute(p.route) })), [best.key, ...(mine?.route ? [`p:${myId}`] : [])]);
     pinned = null;
     if (s.settings.locate) {
       app.map.showEndpoints(round.from!, round.to!, false);
@@ -152,7 +152,7 @@ export function revealScreen(panel: HTMLElement): Screen {
       'beforeend',
       `<div class="legend">${(['U', 'S', 'T', 'B', 'W'] as const)
         .map((m) => `<span><i class="lg lg-${m}"></i>${MODE_LABEL[m]}</span>`)
-        .join('')}<span><i class="lg lg-user"></i>Spieler-Routen</span></div>`,
+        .join('')}<span><i class="lg lg-user"></i>gestrichelt = eure Routen</span><span class="lg-note">durchgezogen = beste Verbindungen der Auskunft</span></div>`,
     );
 
     const last = idx + 1 >= s.settings.rounds;
