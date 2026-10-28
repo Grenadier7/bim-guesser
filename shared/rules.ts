@@ -205,8 +205,14 @@ export function regularPatterns(line: Line): string[][] {
   return reg.length ? reg : linePatterns(line, 'current');
 }
 
-/** Sonderlinien wie 71E oder 26E (Ersatz-/Verstärkerverkehr) – zum Lernen und im Quiz irreführend */
-export const isSpecialLine = (l: { id: string }) => /^\d+E$/.test(l.id);
+/** Regionalzüge (R, REX, CJX) aus dem eigenen Fahrplan – fahren auf S-Bahn-Strecken mit, im Spiel eingebbar */
+export const isRegionalTrain = (l: { id: string }) => /^(R|REX|CJX)\d+$/.test(l.id);
+
+/**
+ * Sonderlinien wie 71E oder 26E (Ersatz-/Verstärkerverkehr) und Regionalzüge – zum Lernen, im Quiz und auf der
+ * Netzkarte irreführend (die Regionalzüge lägen genau auf den S-Bahn-Strecken)
+ */
+export const isSpecialLine = (l: { id: string }) => /^\d+E$/.test(l.id) || isRegionalTrain(l);
 
 export function isSlotId(v: unknown): v is SlotId {
   return TIME_SLOTS.some((s) => s.id === v);

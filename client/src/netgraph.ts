@@ -2,6 +2,7 @@
 // Stationspunkte. Die Richtung an einer Station zeigt zur geradesten Fortsetzung (gleiche Linien bevorzugt) –
 // so gibt es keine Knicke, und Linien auf derselben Strecke liegen genau übereinander.
 // Reine Berechnung ohne Leaflet/DOM – gezeichnet wird in netmap.ts, getestet in test/netgraph.test.ts.
+import { isRegionalTrain } from '../../shared/rules.ts';
 import type { Line, Station } from '../../shared/types.ts';
 import { patternsOf } from './learn/model.ts';
 import type { NetIndex } from './net.ts';
@@ -28,7 +29,7 @@ export interface Edge {
 export const kindOf = (l: Line): Kind | null =>
   l.mode === 'U' || l.mode === 'S' || l.mode === 'T' ? l.mode : l.mode === 'B' || l.mode === 'N' ? 'B' : null;
 const edgeKey = (kind: Kind, a: string, b: string) => `${kind}:${a < b ? `${a}|${b}` : `${b}|${a}`}`;
-const baseLine = (l: Line) => l.mode === 'U' || l.mode === 'S' || l.mode === 'T' || (l.mode === 'B' && MAP_BUSES.includes(l.id));
+const baseLine = (l: Line) => l.mode === 'U' || (l.mode === 'S' && !isRegionalTrain(l)) || l.mode === 'T' || (l.mode === 'B' && MAP_BUSES.includes(l.id));
 
 export class NetGraph {
   readonly net: NetIndex;

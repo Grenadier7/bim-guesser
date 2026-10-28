@@ -90,6 +90,31 @@ zeigen den nächsten Schritt und heben das passende Feld hervor; danach die Punk
   Sonderlinien (71E, 26E) und keine Halte aus Sonderführungen.
 - Host: Pause, Frage überspringen, Jetzt auflösen, Spiel beenden.
 
+## Eigener Referenzfahrplan (GTFS)
+
+Für „Regulär“ sucht der Server Verbindungen selbst (`server/timetable.ts`, RAPTOR) auf einem Auszug der offiziellen
+Fahrplandaten (`data/timetable.json`). Vorteile gegenüber der Wiener-Linien-Auskunft: auch **Regionalzüge** (R, REX,
+CJX – sie zählen auf S-Bahn-Abschnitten wie eine S-Bahn, z.B. S80/R81/REX8 zwischen Simmering und Stadlau, das halbiert
+dort die Wartezeit), keine Abfragen (Spielstart in Sekundenbruchteilen) und kein Referenztag, der aus der Auskunft
+verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der Server weiter die Auskunft.
+
+- Daten: data.mobilitaetsverbuende.at (Registrierung nötig) – „Timetable Data PTA Eastern Region (GTFS)“ nach
+  `data/raw/timetables/`, „Railway Timetable Data (GTFS) – Reference Data for Timetable Changeover“ nach
+  `data/raw/timetables-trains/` entpacken (beides nicht im Repo), dann `npm run build:timetable`. Das baut den Auszug
+  für die drei Referenztage aus `data/network.json` (nur Wien, nur Linien des Spiels + Nahverkehrszüge, Nachtfahrten
+  vom Vortag) und trägt die Regionalzüge als Linien ins Netz ein (Eingabe im Routen-Baukasten; Netzkarte, Lernen und
+  Quiz blenden sie aus).
+- Suche: Fußwege zwischen Halten bis 500 m, von/zu Adressen bis 1,5 km (Luftlinie × 1,3, 80 m/min), Umsteigen 2 min,
+  bis 4 Umstiege. Abgeglichen mit der Auskunft: bei gleicher Abfahrt gleiche Ankunft; die eigene Suche findet nie eine
+  langsamere Verbindung (sie geht manchmal lieber 400 m zu Fuß, wo die Auskunft auf einen Bus wartet).
+- Abschalten: `TIMETABLE=off` (dann alles über die Auskunft, wie früher).
+- **Lizenz** (Datenlizenz Mobilitätsverbünde Österreich): Namensnennung „Datenquelle: Mobilitätsverbünde Österreich
+  OG – data.mobilitaetsverbuende.at“ (steht in der Kartenzeile). Die Daten gelten bis zum Fahrplanwechsel
+  (`validUntil` in `data/timetable.json`); danach dürfen sie laut Abschnitt 6a/7d nicht mehr in öffentlich
+  zugänglichen Auskunftssystemen verwendet werden (Vertragsstrafe!). Ohne schriftliche Zustimmung also jedes Jahr nach
+  dem Fahrplanwechsel neue Daten laden und neu bauen – der Server warnt beim Start und unter `/api/health`, sobald der
+  Auszug abgelaufen ist.
+
 ## Routenjagd
 
 1. Auf der Startseite **🏁 Routenjagd** wählen (erstellt eine Lobby, auch alleine) oder **mit Code beitreten** – der Einladungslink `?code=XXXXX` füllt den Code automatisch aus.
@@ -101,7 +126,9 @@ zeigen den nächsten Schritt und heben das passende Feld hervor; danach die Punk
    Mit X-treme heißt der Knopf „⚡ X-TREME starten“.
    Im Einzelnen:
    - **Uhrzeit** (unter „Erweitert“): Mo–Fr 12 Uhr, Mo–Fr 17 Uhr, Sa 2 Uhr (Nacht), So 12 Uhr
-   - **Netz**: *Regulär* = Referenztag ohne Baustellen · *Aktuell* = nächster echter Tag inkl. Sperren.
+   - **Netz**: *Regulär* = Referenztag ohne Baustellen, aus dem **eigenen Referenzfahrplan** (siehe unten) – mit
+     Regionalzügen (R, REX, CJX), ganz ohne Abfrage bei der Auskunft · *Aktuell* = nächster echter Tag inkl. Sperren
+     (Wiener-Linien-Auskunft).
      Referenztage derzeit **Di 30.6., Sa 27.6., So 28.6.2026** (`PREFERRED_DAYS` in `scripts/build-network.ts`):
      nur Ende Juni fährt die S-Bahn-Stammstrecke (ab ca. 8.7. bis mindestens Dezember gesperrt) und Bim/Bus sind
      fast im Normalbetrieb. Ohne passende Wunschtage sucht das Build-Skript selbst (Tag ohne Ersatzverkehr, mit
