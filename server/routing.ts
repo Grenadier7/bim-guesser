@@ -12,7 +12,7 @@
 //     Ein zufällig perfekter Anschluss (an um 16:32, S-Bahn um 16:34) bringt so keinen Vorteil mehr –
 //     eine S-Bahn alle 15 min kostet im Schnitt 7,5 min Warten, eine U-Bahn alle 4 min nur 2.
 import type { LatLon, Mode, NetMode, Restriction, RouteLeg, RouteOption, RouteStep, UserLeg } from '../shared/types.ts';
-import { lineColor, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
+import { lineColor, lineGroupLabel, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
 import * as efa from './efa.ts';
 import { distM, type Network } from './network.ts';
 
@@ -207,6 +207,11 @@ class LegTimetable {
     return modeGroup(l.mode) === modeGroup(this.mode);
   }
 
+  /** Linien, die in [from, to) auf diesem Abschnitt fahren (für die Beschriftung „S80/REX8/R81“) */
+  linesIn(from: number, to: number): string[] {
+    return [...new Set(this.legs.filter((l) => l.dep >= from && l.dep < to && l.line).map((l) => l.line!))];
+  }
+
   /** passende Fahrten ab `time` und bis wohin die Antwort lückenlos ist (letzte gelieferte Abfahrt) */
   private async query(from: string, to: string, time: number): Promise<{ out: efa.EfaLeg[]; until: number | null }> {
     const t5 = Math.floor(time / 5) * 5;
@@ -357,9 +362,16 @@ async function chainRoute(
   const durs = samples.map((s) => s.total);
   const med = median(durs);
   const rep = samples.reduce((b, s) => (Math.abs(s.total - med) < Math.abs(b.total - med) ? s : b));
+  // Beschriftung je Teilstrecke: bei der S-Bahn alle Züge, die dort in dieser Stunde fahren – auch Regionalzüge
+  // („S80/REX8/R81“, Stammstrecke „S1/S2/S3/S4/REX“); sonst wie bisher
+  const shown = legs.map((l, i) => {
+    if (net.lines.get(l.line)?.mode !== 'S') return labels?.[i] ?? l.line;
+    return lineGroupLabel([l.line, ...tables[i].linesIn(slotTime, slotTime + SAMPLE_OFFSETS[SAMPLE_OFFSETS.length - 1] + 10)]);
+  });
+  let pi = 0;
   const route: RouteOption = {
     key,
-    legs: rep.route,
+    legs: rep.route.map((l) => (l.mode === 'W' ? l : { ...l, line: shown[pi++] ?? l.line })),
     medianMin: med,
     minMin: Math.min(...durs),
     maxMin: Math.max(...durs),
@@ -367,7 +379,7 @@ async function chainRoute(
     samples: samples.length,
   };
   if (q.avgWait) {
-    const avg = await averagedRoute(net, legs, tables, fromId, toId, slotTime, q.countWait, labels);
+    const avg = await averagedRoute(net, legs, tables, fromId, toId, slotTime, q.countWait, shown);
     if (avg) Object.assign(route, avg);
   }
   return { route, error: null };
@@ -524,9 +536,8 @@ export async function topRoutes(net: Network, fromId: string, toId: string, slot
         const pt = t.legs.filter((x) => x.mode !== 'W');
         if (pt[k]?.line) names.add(pt[k].line!);
       }
-      // S-Bahnen zuerst, dann Regionalzüge: „S80/R81/REX8“
-      const rank = (n: string) => (/^(R|REX|CJX)\d+$/.test(n) ? 1 : 0);
-      return [...names].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, 'de', { numeric: true })).join('/');
+      // S-Bahnen zuerst, dann Regionalzüge: „S80/REX8/R81“, auf der Stammstrecke „S1/S2/S3/S4/REX“
+      return lineGroupLabel([...names]);
     });
     const legs = rep.legs.map((l, i) => toRouteLeg(net, l, labels[i] ?? undefined));
     candidates.push({

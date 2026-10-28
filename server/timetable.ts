@@ -45,7 +45,12 @@ interface Node {
 interface Pattern {
   line: number;
   stops: number[];
+  /** durchgebundener Zug: ab Position `at` heißt er anders (S7 → REX2 ab Rennweg) */
+  cont: { line: number; at: number } | null;
 }
+
+/** Linie einer Fahrt auf diesem Muster ab Position `board` (wer vor dem Wechsel einsteigt, fährt mit der ersten) */
+const lineAt = (p: Pattern, board: number) => (p.cont && board >= p.cont.at ? p.cont.line : p.line);
 
 /** Fahrten eines Musters an einem Tag: Zeiten flach (Fahrt i, Halt j → times[i * len + j]), nach Abfahrt sortiert */
 interface DayPattern {
@@ -99,12 +104,12 @@ function load(): Data | null {
     days: Record<string, string>;
     nodes: [string, string, number, number][];
     lines: [string, Mode, number][];
-    patterns: [number, number[]][];
+    patterns: ([number, number[]] | [number, number[], number, number])[];
     trips: Record<string, number[][]>;
   };
   validUntil = raw.validUntil ?? null;
   const nodes = raw.nodes.map(([key, name, lat, lon]) => ({ key, efaId: efaIdOf(key), name, lat, lon }));
-  const patterns = raw.patterns.map(([line, stops]) => ({ line, stops }));
+  const patterns = raw.patterns.map(([line, stops, contLine, contAt]) => ({ line, stops, cont: contLine != null ? { line: contLine, at: contAt! } : null }));
   const stopPatterns: [number, number][][] = nodes.map(() => []);
   patterns.forEach((p, pi) => p.stops.forEach((s, pos) => stopPatterns[s].push([pi, pos])));
   // Fußwege: grobes Raster für die Nachbarsuche
@@ -337,7 +342,7 @@ function toTrip(d: Data, day: Day, j: Journey, from: EfaPoint | null, to: EfaPoi
       continue;
     }
     const pat = d.patterns[p.pattern];
-    const line = d.lines[pat.line];
+    const line = d.lines[lineAt(pat, p.board)];
     const len = pat.stops.length;
     const times = day.patterns[p.pattern]!.times;
     const stops = pat.stops.slice(p.board, p.alight + 1).map((s) => point(d, s));

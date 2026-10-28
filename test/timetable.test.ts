@@ -115,7 +115,7 @@ test('Regionalzüge: keine eigenen Linien im Netz, zählen aber auf S-Bahn-Absch
   // beste Verbindung: zusammengefasst „S80/…“ und mit Ø-Wartezeiten nachgerechnet
   const top = await topRoutes(net, a, b, T, q);
   const leg = top[0].legs.find((l) => l.mode !== 'W')!;
-  assert.match(leg.line ?? '', /^S80\/(R|REX)/, leg.line ?? '');
+  assert.equal(leg.line, 'S80/REX8/R81', 'Regionalzüge mit Nummern, S-Bahn zuerst');
   assert.ok(top[0].steps, 'nachgerechnet (Zeitplan vorhanden)');
 });
 
@@ -139,4 +139,20 @@ test('Ergänzungen zum normalen Netz: S40 ab Franz-Josefs-Bahnhof, 18 bis Stadio
   assert.ok(serves('S40', 'Franz-Josefs-Bahnhof', 'Heiligenstadt'));
   assert.ok(serves('18', 'Schlachthausgasse', 'Stadion'));
   assert.ok(serves('43', 'Dornbach', 'Neuwaldegg'));
+});
+
+test('durchgebundene Züge (S7 wird in Rennweg zur REX2, S2 in Leopoldau zur S7): sitzen bleiben, nichts doppelt', { skip: !HAS }, () => {
+  const day = T - 12 * 60 + 4 * 60; // 4 Uhr
+  const all = (a: string, b: string) => localTrip({ from: at(a, 'S7'), to: at(b, 'S7'), time: day, mots: [1], maxChanges: 0, count: 200 })!;
+  // ein Zug pro Abfahrt – die durchgehende Fahrt ersetzt die beiden Teile
+  const back = all('Praterstern', 'St. Marx');
+  assert.equal(new Set(back.map((t) => t.dep)).size, back.length, 'keine doppelten Abfahrten');
+  assert.ok(back.every((t) => rides(t)[0].line === 'S7'), [...new Set(back.map((t) => rides(t)[0].line))].join(','));
+  // St. Marx → Floridsdorf direkt: auch die Züge, die ab Rennweg REX2 heißen (sitzen bleiben, kein Umstieg)
+  const through = all('St. Marx', 'Floridsdorf');
+  assert.ok(through.length >= 20, `${through.length} direkte Züge am Tag`);
+  assert.ok(through.every((t) => rides(t).length === 1 && rides(t)[0].line === 'S7'));
+  // wer erst nach dem Wechsel einsteigt, sieht den richtigen Namen
+  const after = all('Rennweg', 'Floridsdorf').map((t) => rides(t)[0].line);
+  assert.ok(after.includes('REX2'), [...new Set(after)].join(','));
 });
