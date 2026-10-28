@@ -22,6 +22,8 @@ const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export class GameManager {
   private games = new Map<string, Lobby>();
   private net: Network;
+  /** neue Lobby (Accounts hängen sich für die Statistik an) */
+  onCreate: ((g: Lobby) => void) | null = null;
   private qnet;
 
   constructor(net: Network) {
@@ -47,6 +49,7 @@ export class GameManager {
     while (this.games.has(code));
     const g = mode === 'quiz' ? new QuizGame(code, this.qnet, settings) : new Game(code, this.net, settings as never);
     g.creatorIp = ip;
+    this.onCreate?.(g);
     // geschlossen (Inaktivität / vom Host) → weg damit
     g.once('closed', () => {
       g.removeAllListeners();

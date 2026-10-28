@@ -1,5 +1,6 @@
 // Lobbys (Routenjagd und Quiz): erstellen, beitreten, Einstellungen, Spielablauf, Live-Events
 import type { Express, Request } from 'express';
+import type { AccountUser, Accounts } from '../accounts.ts';
 import type { CreateGameRequest, GameEvent, JoinResponse, SubmitRequest, SubmitResponse, TipKind } from '../../shared/types.ts';
 import { Game } from '../game.ts';
 import { h, MIN, param, token } from '../http.ts';
@@ -8,7 +9,8 @@ import type { GameManager } from '../manager.ts';
 import { QuizGame } from '../quiz.ts';
 import { closeStream, openStream, rateLimit } from '../security.ts';
 
-export function gameRoutes(app: Express, games: GameManager) {
+export function gameRoutes(app: Express, games: GameManager, account?: { accounts: Accounts; optionalUser: (req: Request) => AccountUser | null }) {
+  const limitInvite = rateLimit('invite', 30, 10 * MIN, 'Zu viele Einladungen – bitte kurz warten.');
   const limitCreate = rateLimit('create', 10, 10 * MIN, 'Zu viele neue Lobbys – bitte in ein paar Minuten nochmal.');
   const limitJoin = rateLimit('join', 30, 10 * MIN, 'Zu viele Beitrittsversuche – bitte kurz warten.');
   // jeder Start fragt die Wiener-Linien-API dutzende Male ab
@@ -46,7 +48,7 @@ export function gameRoutes(app: Express, games: GameManager) {
     h((req): JoinResponse => {
       const body = req.body as CreateGameRequest;
       const g = games.create(body?.mode === 'quiz' ? 'quiz' : 'route', body?.settings, req.ip ?? '');
-      const p = g.addPlayer(body?.playerName);
+      const p = g.addPlayer(body?.playerName, account?.optionalUser(req));
       return { playerId: p.id, token: p.token, state: g.state() };
     }),
   );
@@ -57,7 +59,7 @@ export function gameRoutes(app: Express, games: GameManager) {
     limitJoin,
     h((req): JoinResponse => {
       const g = games.get(param(req, 'code'));
-      const p = g.addPlayer(req.body?.playerName);
+      const p = g.addPlayer(req.body?.playerName, account?.optionalUser(req));
       return { playerId: p.id, token: p.token, state: g.state() };
     }),
   );
@@ -80,6 +82,17 @@ export function gameRoutes(app: Express, games: GameManager) {
   app.post('/api/games/:code/host', h((req) => (game(req).setHost(token(req), String(req.body?.playerId ?? ''), req.body?.on !== false), game(req).state())));
   app.post('/api/games/:code/idle', h((req) => (game(req).answerIdle(token(req), req.body?.keep !== false), { ok: true })));
   app.post('/api/games/:code/kick', h((req) => (game(req).kick(token(req), String(req.body?.playerId ?? '')), game(req).state())));
+  // Freunde einladen (bestimmte oder alle) – sie sehen die Einladung, sobald sie die Seite öffnen
+  app.post(
+    '/api/games/:code/invite',
+    limitInvite,
+    h((req) => {
+      const g = member(req);
+      const u = account?.optionalUser(req);
+      if (!account || !u) throw new GameError('Zum Einladen bitte anmelden.', 401);
+      return { invited: account.accounts.invite(u.id, g.id, g.mode, req.body?.to) };
+    }),
+  );
   app.post('/api/games/:code/chat', limitChat, h((req) => game(req).say(token(req), req.body?.text)));
   // Host-Steuerung während einer Runde
   app.post('/api/games/:code/pause', h((req) => (game(req).pause(token(req)), game(req).state())));

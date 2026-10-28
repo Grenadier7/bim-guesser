@@ -150,7 +150,7 @@ export class Game extends Lobby {
     const cur = this.rounds[this.currentRound];
     if (this.phase !== 'playing' || !cur || cur.status !== 'revealed') throw new GameError('Runde ist noch nicht aufgelöst.');
     if (this.currentRound + 1 >= this.rounds.length) {
-      this.phase = 'finished';
+      this.finishGame();
       this.touch();
       this.emitState();
       return;
@@ -283,7 +283,7 @@ export class Game extends Lobby {
           this.generation++; // Vorbereitung weiterer Runden im Hintergrund abbrechen
           this.rounds = this.rounds.slice(0, i);
           this.currentRound = i - 1;
-          this.phase = 'finished';
+          this.finishGame();
           this.touch();
         }
         this.emitState();
@@ -523,6 +523,7 @@ export class Game extends Lobby {
       round.status = 'revealed';
       this.touch();
       this.emitEvent({ type: 'revealed', reveal: round.reveal });
+      this.emit('roundResult', round.reveal);
       this.emitState();
       return round.reveal;
     })();

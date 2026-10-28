@@ -108,7 +108,7 @@ export class QuizGame extends Lobby {
     this.requireHost(token);
     if (this.phase !== 'playing' || this.status !== 'revealed') throw new GameError('Frage ist noch nicht aufgelöst.');
     if (this.current + 1 >= this.questions.length) {
-      this.phase = 'finished';
+      this.finishGame();
       this.status = null;
       this.touch();
       this.emitState();
@@ -259,6 +259,7 @@ export class QuizGame extends Lobby {
     this.pausedAt = null;
     this.touch();
     this.emitState();
+    if (!cancelled) this.emit('quizResult', results);
   }
 
   // -------------------------------------------------------------- Zustand

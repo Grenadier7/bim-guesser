@@ -296,6 +296,8 @@ export interface PlayerPublic {
   score: number;
   isHost: boolean;
   connected: boolean;
+  /** angemeldet: Benutzername des Accounts (Profil antippbar) */
+  account?: string;
 }
 
 export type RoundStatus = 'preparing' | 'open' | 'revealed';
@@ -463,4 +465,105 @@ export interface TrainingResult {
   durationMin: number | null;
   matchedRank: number | null;
   error: string | null;
+}
+
+// ---------------------------------------------------------------- Accounts
+
+export interface LevelInfo {
+  level: number;
+  xp: number;
+  /** XP, ab denen das aktuelle bzw. nächste Level beginnt */
+  levelXp: number;
+  nextXp: number;
+}
+
+export interface MedalPublic {
+  id: string;
+  icon: string;
+  title: string;
+  text: string;
+  /** Zeitpunkt (ms); null = noch nicht erreicht */
+  at: number | null;
+}
+
+export interface FavoriteLine {
+  id: string;
+  mode: Mode;
+  color: string;
+  /** wie oft gefahren */
+  count: number;
+}
+
+export interface FavoriteStation {
+  id: string;
+  name: string;
+  count: number;
+}
+
+export interface AccountStats {
+  games: number;
+  wins: number;
+  rounds: number;
+  /** Ø Routenpunkte je Runde (0–1300) */
+  avgRoute: number;
+  bestRound: number;
+  perfectRounds: number;
+  beatApi: number;
+  quizGames: number;
+  quizWins: number;
+  trainings: number;
+  /** Minuten in Öffis (eigene Routen) */
+  minutes: number;
+  coursesDone: number;
+  coursesMastered: number;
+  /** Lieblingslinien je Verkehrsmittel – zählt mehr, wenn es an der Station Alternativen gab */
+  favorites: { U: FavoriteLine | null; S: FavoriteLine | null; T: FavoriteLine | null; B: FavoriteLine | null };
+  favoriteStation: FavoriteStation | null;
+  recent: { kind: 'game' | 'quiz' | 'training'; at: number; points: number; rank: number | null; players: number | null }[];
+}
+
+export type Relation = 'self' | 'friend' | 'incoming' | 'outgoing' | null;
+
+export interface UserListItem {
+  name: string;
+  level: number;
+  online: boolean;
+  relation: Relation;
+}
+
+export interface Profile {
+  name: string;
+  created: number;
+  level: LevelInfo;
+  online: boolean;
+  relation: Relation;
+  medals: MedalPublic[];
+  /** nur für Freunde und sich selbst */
+  stats: AccountStats | null;
+}
+
+export interface InvitePublic {
+  id: number;
+  from: string;
+  code: string;
+  mode: GameMode;
+  at: number;
+}
+
+export interface Me {
+  name: string;
+  email: string | null;
+  level: LevelInfo;
+  medals: MedalPublic[];
+  /** synchronisierter Spielstand aus dem Browser (Lernstand, Tutorial, Einstellungen …) */
+  data: Record<string, unknown>;
+  friendRequests: number;
+  friendsOnline: string[];
+  invites: InvitePublic[];
+}
+
+export interface FriendsList {
+  friends: UserListItem[];
+  incoming: UserListItem[];
+  outgoing: UserListItem[];
 }
