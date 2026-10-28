@@ -36,8 +36,32 @@ export function takeSettingsLink(): { mode: GameMode; settings: Record<string, u
   }
 }
 
-/** Fenster: Link + JSON; mit `onImport` (nur Host) kann man JSON einfügen und übernehmen */
-export function openSettingsDialog(mode: GameMode, settings: object, onImport: ((s: Record<string, unknown>) => Promise<void>) | null) {
+const short = (v: unknown) => {
+  const s = JSON.stringify(v) ?? 'nichts';
+  return s.length > 40 ? `${s.slice(0, 37)}…` : s;
+};
+
+/**
+ * Was vom Import nicht übernommen wurde: unbekannte Einstellungen und ungültige Werte (der Server verwirft oder
+ * korrigiert sie still). Teil-Objekte zählen, wenn jeder angegebene Wert drin ist (z.B. nur eine Quiz-Häufigkeit).
+ */
+export function importProblems(requested: unknown, applied: unknown, path = ''): string[] {
+  if (requested && typeof requested === 'object' && !Array.isArray(requested)) {
+    if (!applied || typeof applied !== 'object' || Array.isArray(applied)) return [`${path || 'Einstellungen'}: ungültiger Wert ${short(requested)}`];
+    const out: string[] = [];
+    for (const [k, v] of Object.entries(requested)) {
+      const p = path ? `${path}.${k}` : k;
+      if (!(k in (applied as object))) out.push(`„${p}“ gibt es nicht${path ? '' : ' – ignoriert'}`);
+      else out.push(...importProblems(v, (applied as Record<string, unknown>)[k], p));
+    }
+    return out;
+  }
+  if (JSON.stringify(requested) === JSON.stringify(applied)) return [];
+  return [`„${path}“: ${short(requested)} ist ungültig – jetzt ${short(applied)}`];
+}
+
+/** Fenster: Link + JSON; mit `onImport` (nur Host) kann man JSON einfügen und übernehmen – liefert die übernommenen Einstellungen */
+export function openSettingsDialog(mode: GameMode, settings: object, onImport: ((s: Record<string, unknown>) => Promise<Record<string, unknown>>) | null) {
   const json = JSON.stringify(settings, null, 2);
   const link = settingsLink(mode, settings);
   const box = h(
@@ -49,6 +73,7 @@ export function openSettingsDialog(mode: GameMode, settings: object, onImport: (
       <div class="share-row"><input class="share-link" readonly value="${esc(link)}" aria-label="Link"><button class="btn btn-ghost" data-copy="link">Kopieren</button></div>
       <p><b>JSON</b> – zum Aufheben oder Weitergeben${onImport ? '; zum Übernehmen hier einfügen' : ''}:</p>
       <textarea class="share-json" rows="8" spellcheck="false" aria-label="Einstellungen als JSON" ${onImport ? '' : 'readonly'}>${esc(json)}</textarea>
+      <div class="import-problems" role="alert" hidden></div>
       <div class="learn-actions"><button class="btn btn-ghost" data-copy="json">JSON kopieren</button>${onImport ? '<button class="btn btn-primary" id="share-import">Übernehmen</button>' : ''}<button class="btn btn-ghost" id="share-close">Schließen</button></div>
     </div>`,
   );
@@ -68,19 +93,43 @@ export function openSettingsDialog(mode: GameMode, settings: object, onImport: (
       }
     }),
   );
+  const problemsBox = box.querySelector<HTMLElement>('.import-problems')!;
+  const showProblems = (title: string, list: string[]) => {
+    problemsBox.hidden = false;
+    problemsBox.innerHTML = `<b>${esc(title)}</b>${list.length ? `<ul>${list.slice(0, 12).map((p) => `<li>${esc(p)}</li>`).join('')}${list.length > 12 ? `<li>… und ${list.length - 12} weitere</li>` : ''}</ul>` : ''}`;
+  };
   box.querySelector('#share-import')?.addEventListener('click', async () => {
     let v: unknown;
     try {
       v = JSON.parse(box.querySelector<HTMLTextAreaElement>('.share-json')!.value);
-    } catch {
-      return toast('Das ist kein gültiges JSON.');
+    } catch (e) {
+      return showProblems(`Das ist kein gültiges JSON: ${(e as Error).message}`, []);
     }
     // auch ein ganzer Link-Inhalt { mode, settings } ist erlaubt
-    const s = v && typeof v === 'object' && 'settings' in v ? (v as { settings: unknown }).settings : v;
-    if (!s || typeof s !== 'object') return toast('Keine Einstellungen gefunden.');
-    await onImport!(s as Record<string, unknown>);
-    toast('Einstellungen übernommen', 'info');
-    close();
+    const wrapped = v && typeof v === 'object' && 'settings' in v;
+    const s = wrapped ? (v as { settings: unknown }).settings : v;
+    if (!s || typeof s !== 'object' || Array.isArray(s)) return showProblems('Keine Einstellungen gefunden – erwartet wird ein Objekt wie { "rounds": 5, … }.', []);
+    const otherMode = wrapped && (v as { mode?: unknown }).mode !== undefined && (v as { mode?: unknown }).mode !== mode;
+    let applied: Record<string, unknown>;
+    try {
+      applied = await onImport!(s as Record<string, unknown>);
+    } catch (e) {
+      return showProblems((e as Error).message, []);
+    }
+    const problems = importProblems(s, applied);
+    const total = Object.keys(s).length;
+    if (!problems.length) {
+      toast('Einstellungen übernommen', 'info');
+      return close();
+    }
+    const ignoredAll = problems.length >= total;
+    showProblems(
+      ignoredAll
+        ? `Nichts übernommen${otherMode ? ` – das sind Einstellungen für ${(v as { mode?: unknown }).mode === 'quiz' ? 'das Quiz' : 'die Routenjagd'}` : ''}:`
+        : `Übernommen – bis auf ${problems.length} ${problems.length === 1 ? 'Angabe' : 'Angaben'}:`,
+      problems,
+    );
+    box.querySelector<HTMLTextAreaElement>('.share-json')!.value = JSON.stringify(applied, null, 2);
   });
   box.querySelector<HTMLButtonElement>('[data-copy="link"]')!.focus();
 }

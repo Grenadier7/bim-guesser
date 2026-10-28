@@ -66,8 +66,14 @@ export function revealScreen(panel: HTMLElement): Screen {
   let drawRoutes = () => {};
   let lineShown: string | null = null;
 
+  /** Klick-Handler am gemeinsamen Panel – beim Verlassen der Auflösung wieder weg, sonst reagiert die nächste Runde
+   *  (Routen-Baukasten, Tipps) auf Linien-Chips mit Routen der alten Auflösung */
+  const listeners = new AbortController();
+  let alive = true;
+
   /** Linie antippen → ganzer Verlauf auf der Karte; nochmal antippen oder „zurück“ → wieder die Routen */
   function showLine(label: string) {
+    if (!alive) return;
     const ids = label.split('/').filter((id) => app.net.lines.has(id));
     if (!ids.length) return;
     if (lineShown === label) return drawRoutes();
@@ -76,15 +82,19 @@ export function revealScreen(panel: HTMLElement): Screen {
     const stops = [...new Set(ids.flatMap((id) => app.net.patterns(app.net.lines.get(id)!).flat()))].map((id) => app.net.station(id));
     const pts = netLayer().render(netView({ focus: new Set(ids), stops, allLabels: true }));
     if (pts.length) app.map.fitPoints(pts, 14);
-    toast(`${ids.join(', ')}: ganzer Verlauf – nochmal antippen für die Routen`, 'info', { label: '← Routen', run: drawRoutes });
+    toast(`${ids.join(', ')}: ganzer Verlauf – nochmal antippen für die Routen`, 'info', { label: '← Routen', run: () => alive && drawRoutes() });
   }
 
-  panel.addEventListener('click', (e) => {
-    const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-chip-line]');
-    if (!chip || (e.target as HTMLElement).closest('[data-star-line],[data-star-group]')) return;
-    e.stopPropagation();
-    showLine(chip.dataset.chipLine!);
-  });
+  panel.addEventListener(
+    'click',
+    (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-chip-line]');
+      if (!chip || (e.target as HTMLElement).closest('[data-star-line],[data-star-group]')) return;
+      e.stopPropagation();
+      showLine(chip.dataset.chipLine!);
+    },
+    { signal: listeners.signal },
+  );
 
   function render() {
     if (!reveal) return;
@@ -249,6 +259,11 @@ export function revealScreen(panel: HTMLElement): Screen {
 
   let wasHost = isHost();
   return {
+    destroy() {
+      alive = false;
+      listeners.abort();
+      document.querySelector('.toast-action')?.closest('.toast')?.remove();
+    },
     update() {
       // nur neu zeichnen, wenn sich die Host-Rolle ändert (sonst springt die Karte)
       if (isHost() !== wasHost) {

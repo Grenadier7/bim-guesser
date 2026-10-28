@@ -4,7 +4,7 @@ import { api } from '../api.ts';
 import { app, savePrefs, startSession } from '../store.ts';
 import { esc, h, toast } from '../ui.ts';
 import { setPanel, type Screen } from './screen.ts';
-import { takeSettingsLink } from '../settingsShare.ts';
+import { importProblems, takeSettingsLink } from '../settingsShare.ts';
 import { offerTutorial } from '../progress.ts';
 
 const MODES = [
@@ -99,6 +99,9 @@ export function homeScreen(panel: HTMLElement): Screen {
     busy(true);
     try {
       const res = await api.create(name(), mode, settings ?? (mode === 'quiz' ? app.prefs.quiz : app.prefs.settings));
+      // geteilter Link mit Unsinn darin: sagen, was nicht übernommen wurde
+      const problems = settings ? importProblems(settings, res.state.settings) : [];
+      if (problems.length) toast(`Aus dem Link nicht übernommen: ${problems.slice(0, 3).join(' · ')}${problems.length > 3 ? ` … (+${problems.length - 3})` : ''}`);
       startSession({ code: res.state.id, playerId: res.playerId, token: res.token }, res.state);
     } catch (e) {
       toast((e as Error).message);

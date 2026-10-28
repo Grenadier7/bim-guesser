@@ -162,10 +162,16 @@ export function distanceRange(d: DistanceRange): [number, number] {
   return DISTANCES.find((x) => x.id === d)!.range;
 }
 
-export function difficultyMultiplier(s: Pick<GameSettings, 'stations' | 'distance' | 'minTransfers'>): number {
+/**
+ * Start/Ziel als Adressen: die Haltestellen-Auswahl gilt nicht – Faktor wie Bus-Knoten (man muss die Linien der
+ * Gegend kennen und den Weg zur passenden Haltestelle finden)
+ */
+export const ADDRESS_FACTOR = 1.3;
+
+export function difficultyMultiplier(s: Pick<GameSettings, 'stations' | 'distance' | 'minTransfers'> & { endpoints?: GameSettings['endpoints'] }): number {
   // schwierigste gewählte Stufe zählt; ohne Auswahl 0,9 (früher war 0,9 auch die Untergrenze → „wichtige U“ ×0,85 wirkte nie, Befund L-01)
   const factors = STATION_KINDS.filter((k) => s.stations.includes(k.id)).map((k) => k.factor);
-  const pool = factors.length ? Math.max(...factors) : 0.9;
+  const pool = s.endpoints === 'addresses' ? ADDRESS_FACTOR : factors.length ? Math.max(...factors) : 0.9;
   const dist = DISTANCES.find((x) => x.id === s.distance)!.factor;
   return Math.round(pool * dist * (MIN_TRANSFER_FACTORS[s.minTransfers] ?? 1) * 100) / 100;
 }
