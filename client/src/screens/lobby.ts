@@ -32,7 +32,8 @@ import {
 import { api } from '../api.ts';
 import { app, routeState, endSession, inviteLink, isHost, savePrefs, setMobileMap } from '../store.ts';
 import { distM } from '../net.ts';
-import { esc, toast } from '../ui.ts';
+import { accountTag, esc, toast } from '../ui.ts';
+import { inviteButton } from '../accountui.ts';
 import { deferWhileEditing, infoTip, patchQueue, seg, toggleInfo } from '../widgets.ts';
 import { bindKick, kickButton } from './host.ts';
 import type { Screen } from './screen.ts';
@@ -140,7 +141,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     const scroll = panel.scrollTop;
     const players = s.players
       .map(
-        (p) => `<li class="${p.connected ? '' : 'offline'}"><span class="dot"></span>${esc(p.name)}${p.id === app.session?.playerId ? ' <small>(du)</small>' : ''}${p.isHost ? ' <span title="Host">👑</span>' : ''}${kickButton(p)}</li>`,
+        (p) => `<li class="${p.connected ? '' : 'offline'}"><span class="dot"></span>${esc(p.name)}${accountTag(p)}${p.id === app.session?.playerId ? ' <small>(du)</small>' : ''}${p.isHost ? ' <span title="Host">👑</span>' : ''}${kickButton(p)}</li>`,
       )
       .join('');
     const mult = difficultyMultiplier(st);
@@ -257,7 +258,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
       <div class="lobby">
         <div class="lobby-code">
           <div><small>Lobby-Code</small><div class="code">${code}</div></div>
-          <button class="btn btn-ghost" id="copy">🔗 Link kopieren</button>
+          <button class="btn btn-ghost" id="copy">🔗 Link kopieren</button>${inviteButton()}
         </div>
         <h3>Spieler <small>(${s.players.length})</small></h3>
         <ul class="players">${players}</ul>

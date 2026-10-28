@@ -5,7 +5,7 @@
   "description": "Quiz: Errate die schnellste Öffi-Verbindung in Wien",
   "type": "module",
   "engines": {
-    "node": ">=23.6"
+    "node": ">=24.7"
   },
   "scripts": {
     "dev": "concurrently -k -n server,client -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",

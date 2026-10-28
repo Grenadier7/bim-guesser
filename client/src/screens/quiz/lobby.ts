@@ -4,6 +4,7 @@ import { MODE_ICON, MODE_LABEL } from '../../../../shared/rules.ts';
 import { DEFAULT_QUIZ_SETTINGS, FREQUENCY_LABELS, QUIZ_QUESTION_COUNTS, QUIZ_TIMES, QUIZ_TYPES, QUIZ_TYPE_ORDER, type QuizSettings } from '../../../../shared/quiz.ts';
 import { api } from '../../api.ts';
 import { app, endSession, inviteLink, isHost, quizState, savePrefs } from '../../store.ts';
+import { inviteButton } from '../../accountui.ts';
 import { esc, toast } from '../../ui.ts';
 import { deferWhileEditing, patchQueue, seg } from '../../widgets.ts';
 import { bindKick } from '../host.ts';
@@ -54,7 +55,7 @@ export function quizLobbyScreen(panel: HTMLElement): Screen {
       <div class="lobby">
         <div class="lobby-code">
           <div><small>🧠 Quiz · Lobby-Code</small><div class="code">${st.id}</div></div>
-          <button class="btn btn-ghost" id="copy">🔗 Link kopieren</button>
+          <button class="btn btn-ghost" id="copy">🔗 Link kopieren</button>${inviteButton()}
         </div>
         <h3>Spieler <small>(${st.players.length})</small></h3>
         <ul class="players">${playersHtml(st)}</ul>

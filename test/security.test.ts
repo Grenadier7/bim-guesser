@@ -169,7 +169,7 @@ async function spawnServer(opts: { env?: Record<string, string>; mock?: boolean 
         proc.kill();
         await new Promise((r) => proc.once('exit', r));
       }
-      rmSync(stateDir, { recursive: true, force: true });
+      rmSync(stateDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
 }

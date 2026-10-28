@@ -2,7 +2,7 @@
 // (zum Host machen, entfernen) – im Spiel als ausklappbare Leiste (am Handy zugeklappt), in der Lobby an der Spielerliste.
 import { api } from '../api.ts';
 import { app, isHost, openTimer } from '../store.ts';
-import { esc, h, toast } from '../ui.ts';
+import { accountTag, esc, h, toast } from '../ui.ts';
 
 async function run(fn: () => Promise<unknown>) {
   try {
@@ -80,7 +80,7 @@ function fill(el: HTMLElement) {
     ${
       playersOpen && others.length
         ? `<ul class="hb-list">${others
-            .map((p) => `<li class="${p.connected ? '' : 'offline'}"><span>${esc(p.name)}${p.isHost ? ' 👑' : ''}</span>${playerActions(p)}</li>`)
+            .map((p) => `<li class="${p.connected ? '' : 'offline'}"><span>${esc(p.name)}${accountTag(p)}${p.isHost ? ' 👑' : ''}</span>${playerActions(p)}</li>`)
             .join('')}</ul>`
         : ''
     }`;

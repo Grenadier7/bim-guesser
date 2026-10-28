@@ -13,6 +13,10 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<s
 }
 
 /** Linien-Chip, z.B. [🚇 U2] in Linienfarbe */
+/** 👤 hinter Spielernamen mit Account – antippen öffnet das Profil (accountui.ts) */
+export const accountTag = (p: { account?: string }) =>
+  p.account ? ` <button class="acct-tag" data-profile="${esc(p.account)}" title="Profil von ${esc(p.account)}" aria-label="Profil von ${esc(p.account)}">👤</button>` : '';
+
 export function lineChip(mode: Mode, line: string | null, color: string): string {
   const label = line ? esc(line) : '';
   return `<span class="chip chip-${mode}" style="--c:${color}" ${line && mode !== 'W' ? `data-chip-line="${label}"` : ''} title="${MODE_LABEL[mode]}${line ? ' ' + label : ''}">${MODE_ICON[mode]}${label ? `<b>${label}</b>` : ''}</span>`;

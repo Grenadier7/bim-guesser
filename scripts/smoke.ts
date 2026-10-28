@@ -168,8 +168,11 @@ async function main() {
     errors.push(`${step}: ${(e as Error).message.split('\n')[0]}`);
   } finally {
     await browser?.close();
+    // erst nach dem Ende des Servers löschen – unter Windows hält er sonst accounts.db noch offen
+    const exited = new Promise((r) => (server.exitCode != null ? r(null) : server.once('exit', r)));
     server.kill();
-    rmSync(state, { recursive: true, force: true });
+    await exited;
+    rmSync(state, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
   if (errors.length) {
     console.error(`\n✖ Klick-Durchlauf fehlgeschlagen:\n${errors.map((e) => `  - ${e}`).join('\n')}`);

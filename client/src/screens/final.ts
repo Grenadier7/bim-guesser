@@ -2,7 +2,7 @@ import type { RoundReveal } from '../../../shared/types.ts';
 import { fmtTimeLeft, maxRoundPoints } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import { app, routeState, endSession, getReveal, isHost } from '../store.ts';
-import { esc, toast } from '../ui.ts';
+import { accountTag, esc, toast } from '../ui.ts';
 import type { Screen } from './screen.ts';
 import { markPlayed } from '../progress.ts';
 
@@ -46,7 +46,7 @@ export function finalScreen(panel: HTMLElement): Screen {
             ? `<h2>Endstand</h2><ol class="podium">${ranking
                 .map(
                   (p, i) =>
-                    `<li class="${p.id === myId ? 'is-me' : ''}"><span>${medals[i] ?? `${i + 1}.`}</span><b>${esc(p.name)}</b><span class="pts">${p.score.toLocaleString('de-AT')}</span></li>`,
+                    `<li class="${p.id === myId ? 'is-me' : ''}"><span>${medals[i] ?? `${i + 1}.`}</span><b>${esc(p.name)}${accountTag(p)}</b><span class="pts">${p.score.toLocaleString('de-AT')}</span></li>`,
                 )
                 .join('')}</ol>`
             : `<h1>${(me?.score ?? 0).toLocaleString('de-AT')} <small>/ ${max.toLocaleString('de-AT')} Punkte</small></h1>

@@ -1,7 +1,7 @@
 // Quiz – Endstand
 import { api } from '../../api.ts';
 import { app, endSession, isHost, quizState } from '../../store.ts';
-import { esc, toast } from '../../ui.ts';
+import { accountTag, esc, toast } from '../../ui.ts';
 import type { Screen } from '../screen.ts';
 import { markPlayed } from '../../progress.ts';
 
@@ -23,7 +23,7 @@ export function quizFinalScreen(panel: HTMLElement): Screen {
         ${
           ranking.length > 1
             ? `<ol class="podium">${ranking
-                .map((p, i) => `<li class="${p.id === myId ? 'is-me' : ''}"><span>${['🥇', '🥈', '🥉'][i] ?? `${i + 1}.`}</span><b>${esc(p.name)}</b><span class="pts">${p.score.toLocaleString('de-AT')}</span></li>`)
+                .map((p, i) => `<li class="${p.id === myId ? 'is-me' : ''}"><span>${['🥇', '🥈', '🥉'][i] ?? `${i + 1}.`}</span><b>${esc(p.name)}${accountTag(p)}</b><span class="pts">${p.score.toLocaleString('de-AT')}</span></li>`)
                 .join('')}</ol>`
             : `<h1>${(me?.score ?? 0).toLocaleString('de-AT')} <small>/ ${max.toLocaleString('de-AT')} Punkte</small></h1>`
         }
