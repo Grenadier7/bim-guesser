@@ -326,6 +326,8 @@ async function chainRoute(
   labels?: (string | null)[],
 ): Promise<ChainResult | { route: null; error: string }> {
   const tables = legs.map((l) => new LegTimetable(net, l, q.banned ?? []));
+  /** wann die Teilstrecken in den Stichproben tatsächlich gefahren werden (für die Beschriftung) */
+  const rideTimes: number[][] = legs.map(() => []);
   const samples: { total: number; ride: number; route: RouteLeg[] }[] = [];
   let failedLeg = 0;
   for (const offset of SAMPLE_OFFSETS) {
@@ -340,6 +342,7 @@ async function chainRoute(
       const w = i === 0 ? w0 : prev === legs[i].from ? 2 : Math.max(2, walkMin(net, prev, legs[i].from));
       if (i > 0) cur += w;
       const l = await tables[i].firstAfter(cur);
+      if (l) rideTimes[i].push(l.dep);
       if (!l) {
         failed = `Linie ${legs[i].line} fährt um diese Zeit nicht direkt von ${net.station(legs[i].from).name} nach ${net.station(legs[i].to).name}.`;
         failedLeg = i;
@@ -366,7 +369,9 @@ async function chainRoute(
   // („S80/REX8/R81“, Stammstrecke „S1/S2/S3/S4/REX“); sonst wie bisher
   const shown = legs.map((l, i) => {
     if (net.lines.get(l.line)?.mode !== 'S') return labels?.[i] ?? l.line;
-    return lineGroupLabel([l.line, ...tables[i].linesIn(slotTime, slotTime + SAMPLE_OFFSETS[SAMPLE_OFFSETS.length - 1] + 10)]);
+    // um die Zeit, zu der man diese Teilstrecke wirklich fährt – nach langem Fußweg ist das nicht die Abfragezeit
+    const at = rideTimes[i].length ? rideTimes[i] : [slotTime];
+    return lineGroupLabel([l.line, ...tables[i].linesIn(Math.min(...at) - 10, Math.max(...at) + 20)]);
   });
   let pi = 0;
   const route: RouteOption = {

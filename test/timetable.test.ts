@@ -156,3 +156,13 @@ test('durchgebundene Züge (S7 wird in Rennweg zur REX2, S2 in Leopoldau zur S7)
   const after = all('Rennweg', 'Floridsdorf').map((t) => rides(t)[0].line);
   assert.ok(after.includes('REX2'), [...new Set(after)].join(','));
 });
+
+test('Beschriftung nach langem Fußweg: Regionalzüge um die Fahrzeit, nicht um die Abfragezeit (S40/REX4/REX41)', { skip: !HAS }, async () => {
+  const { evaluateUserRoute } = await import('../server/routing.ts');
+  const st = (n: string, l: string) => net.data.stations.find((s) => s.name === n && s.lines.includes(l))!.id;
+  const [fjb, hei] = [st('Franz-Josefs-Bahnhof', 'S40'), st('Heiligenstadt', 'S40')];
+  for (const start of [fjb, st('Siebenhirten', 'U6')]) {
+    const r = await evaluateUserRoute(net, [{ line: 'S40', from: fjb, to: hei }], start, hei, T, 'regular', { countWait: true, avgWait: true, restriction: null }, []);
+    assert.equal(r.route!.legs.find((l) => l.mode !== 'W')!.line, 'S40/REX4/REX41');
+  }
+});
