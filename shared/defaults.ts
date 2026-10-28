@@ -36,8 +36,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   countWait: true,
   /** Ø-Wartezeiten (halber Takt) statt Fahrplan-Glück */
   avgWait: true,
-  /** 'best' = Zeit + Aufschlag je Umstieg · 'fastest' = nur Zeit */
-  goal: 'best',
+  /** 'best' = Zeit + Aufschlag je Umstieg („Umstiege vermeiden“) · 'fastest' = nur Zeit */
+  goal: 'fastest',
   /** X-treme: 'off' · 'noHints' (selbst eintippen) · 'noNames' (+ keine Namen) · 'noMap' (+ leere Karte) */
   xtreme: 'off',
   /** Einschränkungs-Runden: 'never' · 'sometimes' · 'always' */

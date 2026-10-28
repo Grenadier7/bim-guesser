@@ -99,3 +99,20 @@ test('Adressen als Start/Ziel: Haltestellen-Auswahl zählt nicht, Faktor wie Bus
   assert.equal(difficultyMultiplier({ ...s, stations: ['U', 'S', 'T', 'all'] as never, endpoints: 'addresses' }), 1.3);
   assert.equal(difficultyMultiplier({ ...s, endpoints: 'stations' }), 0.85);
 });
+
+test('Wertungs-Modi: drei Modi, „Umstiege vermeiden“ nur bei Realistisch, alte Kombinationen = eigene', async () => {
+  const { SCORING_MODES, scoringModeOf } = await import('../shared/rules.ts');
+  const { DEFAULT_SETTINGS } = await import('../shared/defaults.ts');
+  assert.deepEqual(SCORING_MODES.map((m) => m.id), ['realistic', 'info', 'ride']);
+  for (const m of SCORING_MODES) assert.equal(scoringModeOf(m.settings), m.id);
+  // Standard: Realistisch ohne Umstiegs-Aufschlag
+  assert.equal(scoringModeOf(DEFAULT_SETTINGS), 'realistic');
+  assert.equal(DEFAULT_SETTINGS.goal, 'fastest');
+  assert.equal(transferPenalty(DEFAULT_SETTINGS), 0);
+  // Umstiege vermeiden = Realistisch mit goal 'best' (+2 min je Umstieg)
+  assert.equal(scoringModeOf({ countWait: true, avgWait: true, goal: 'best' }), 'realistic');
+  assert.equal(transferPenalty({ goal: 'best', avgWait: true }), 2);
+  // ältere Kombinationen
+  assert.equal(scoringModeOf({ countWait: false, avgWait: true, goal: 'best' }), null);
+  assert.equal(scoringModeOf({ countWait: true, avgWait: false, goal: 'best' }), null);
+});

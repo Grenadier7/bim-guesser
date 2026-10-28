@@ -120,9 +120,8 @@ verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der S
 1. Auf der Startseite **🏁 Routenjagd** wählen (erstellt eine Lobby, auch alleine) oder **mit Code beitreten** – der Einladungslink `?code=XXXXX` füllt den Code automatisch aus.
 2. In der Lobby stellt der Host alles ein. Sichtbar sind nur Schwierigkeit, Runden, Zeitlimit und „Wo liegt das?“;
    Erklärungen stecken hinter einem **ⓘ** (Maus drüber / antippen). „⚙️ Erweitert“ hat drei Reiter –
-   **🎯 Schwierigkeit** (Haltestellen, Entfernung, Min. Umstiege), **📏 Regeln** (Realistische Wertung, Tipps,
-   🏆 Challenges, **⚡ X-treme**-Kachel), **🕒 Zeit & Netz** (Uhrzeit, Netz, Fokus-Gebiet). ↺ in der Überschrift setzt alles zurück. *Realistische Wertung* (empfohlen)
-   schaltet Wartezeit mitzählen + Ø-Wartezeiten + Beste Route gemeinsam; unter „Einzeln einstellen“ geht es getrennt.
+   **🎯 Schwierigkeit** (Haltestellen, Entfernung, Min. Umstiege), **📏 Regeln** („Was zählt?“, Tipps,
+   🏆 Challenges, **⚡ X-treme**-Kachel), **🕒 Zeit & Netz** (Uhrzeit, Netz, Fokus-Gebiet). ↺ in der Überschrift setzt alles zurück.
    Mit X-treme heißt der Knopf „⚡ X-TREME starten“.
    Im Einzelnen:
    - **Uhrzeit** (unter „Erweitert“): Mo–Fr 12 Uhr, Mo–Fr 17 Uhr, Sa 2 Uhr (Nacht), So 12 Uhr
@@ -147,16 +146,17 @@ verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der S
    - **Runden**: 3 / 5 / 7 / 10
    - **Zeitlimit** 1–10 min oder „∞ Ohne“ in einer Leiste (Standard 4:00) – nach Ablauf wird abgegeben, was eingegeben ist
    - **Wo liegt das?** – Start und Ziel vorher auf der leeren Karte tippen
-   - **Wertung** (unter „Erweitert“, Standard: *Beste Route*): Reisezeit + Aufschlag je Umstieg – Punkte, Ranking
-     und die Liste der Top-Verbindungen richten sich danach. Aufschlag: 2 min mit Ø-Wartezeiten (Warten ist dort
-     schon eingerechnet), 4 min mit echtem Fahrplan.
-     *Schnellste Route*: nur die Reisezeit zählt.
+   - **⚖️ Was zählt?** (unter „Erweitert → Regeln“) – Punkte, Ranking und die Top-Verbindungen richten sich danach:
+     *🧭 Realistisch* (Standard) – Tür zu Tür mit Ø-Wartezeiten (siehe unten), dazu wahlweise **Umstiege vermeiden**
+     (+2 min je Umstieg, Standard aus) · *🕐 Wie die Auskunft* – Tür zu Tür ab der Abfragezeit mit echten Abfahrten
+     (6 Zeitpunkte, Median; ein knapper Anschluss ist Glück) · *🚇 Nur Fahrzeit* – ab dem Einsteigen, echte Abfahrten,
+     Warten am Start egal. Intern sind das drei Werte (`countWait`, `avgWait`, `goal`); andere Kombinationen aus
+     älteren Links zeigt die Lobby als „eigene Kombination“, bis man einen Modus wählt.
    - **⚡ X-treme** (unter „Erweitert“, doppelte Zeit, im Spiel mit Banner): *Ohne Vorschläge* – Ein- und Ausstieg
      selbst eintippen (Auto-Vervollständigung über alle Stationen), keine Route auf der Karte, nur Start und Ziel ·
      *Ohne Namen* – zusätzlich Start/Ziel nur als Punkte · *Ohne Karte* – zusätzlich nichts auf der Karte, nur die
      Namen. Bei „ohne Namen“/„ohne Karte“ ist „Wo liegt das?“ aus.
-   - **Wartezeit mitzählen** – Tür-zu-Tür ab Abfragezeit statt nur Fahrzeit
-   - **Ø-Wartezeiten statt Fahrplan-Glück** (Standard: an) – jede Linie zählt mit ihrer mittleren Fahrzeit, jeder
+   - **Ø-Wartezeiten** (bei *Realistisch*) – jede Linie zählt mit ihrer mittleren Fahrzeit, jeder
      Umstieg mit Umsteigeweg + der erwarteten Wartezeit auf die nächste Linie (für jede Ankunftsminute der folgenden
      Stunde die Zeit bis zur nächsten echten Abfahrt, gemittelt – stimmt auch bei unregelmäßigem Takt; gleichwertige
      Linien wie S1–S4 auf der Stammstrecke zählen zusammen). Ein zufällig perfekter Anschluss bringt so keinen
