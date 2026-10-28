@@ -4263,3 +4263,27 @@ details.host-bar {
   outline-offset: 2px;
   animation: tut-glow 1.6s ease-in-out infinite;
 }
+
+/* ---------------------------------------------------------------- Welcher Bus fährt hier? (Punkt 6) */
+.bq-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.bq-opt {
+  padding: 6px 8px;
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  cursor: pointer;
+  font: inherit;
+}
+.bq-opt.on {
+  border-color: var(--good);
+  background: color-mix(in srgb, var(--good) 12%, var(--panel));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--good) 30%, transparent);
+}
+.bq-opt .chip {
+  font-size: 1.05em;
+}
