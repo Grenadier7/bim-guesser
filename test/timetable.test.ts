@@ -99,19 +99,24 @@ test('schnell genug für den Spielstart: 100 Suchen in unter 4 s', { skip: !HAS 
   assert.ok(ms < 4000, `${Math.round(ms)} ms`);
 });
 
-test('Spielwertung: REX8 Simmering → Stadlau wird angenommen und zählt wie die S80 (gemeinsame Abfahrten)', { skip: !HAS }, async () => {
-  const { evaluateUserRoute } = await import('../server/routing.ts');
+test('Regionalzüge: keine eigenen Linien im Netz, zählen aber auf S-Bahn-Abschnitten mit (S80 Simmering → Stadlau)', { skip: !HAS }, async () => {
+  const { evaluateUserRoute, topRoutes } = await import('../server/routing.ts');
+  assert.equal(net.data.lines.filter((l) => /^(R|REX|CJX)\d+$/.test(l.id)).length, 0, 'nicht im Routen-Baukasten');
   const st = (n: string) => net.data.stations.find((s) => s.name === n && s.lines.includes('S80'))!.id;
   const [a, b] = [st('Simmering'), st('Stadlau')];
   const q = { countWait: true, restriction: null, avgWait: true };
-  const s80 = await evaluateUserRoute(net, [{ line: 'S80', from: a, to: b }], a, b, T, 'regular', q, []);
   const rex = await evaluateUserRoute(net, [{ line: 'REX8', from: a, to: b }], a, b, T, 'regular', q, []);
+  assert.match(rex.error ?? '', /Unbekannte Linie/);
+  const s80 = await evaluateUserRoute(net, [{ line: 'S80', from: a, to: b }], a, b, T, 'regular', q, []);
   assert.equal(s80.error, null);
-  assert.equal(rex.error, null, 'REX8 ist eingebbar');
-  assert.equal(rex.durationMin, s80.durationMin, 'gleichwertig auf diesem Abschnitt');
   // eine Stunde lang: mehr Abfahrten als die S80 allein (alle 30 min)
   const hour = localTrip({ from: at('Simmering', 'S80'), to: at('Stadlau', 'S80'), time: T, mots: [1], maxChanges: 0, count: 20 })!.filter((t) => t.dep < T + 60);
   assert.ok(hour.length >= 4, `${hour.length} Abfahrten/h: ${hour.map((t) => rides(t)[0].line).join(',')}`);
+  // beste Verbindung: zusammengefasst „S80/…“ und mit Ø-Wartezeiten nachgerechnet
+  const top = await topRoutes(net, a, b, T, q);
+  const leg = top[0].legs.find((l) => l.mode !== 'W')!;
+  assert.match(leg.line ?? '', /^S80\/(R|REX)/, leg.line ?? '');
+  assert.ok(top[0].steps, 'nachgerechnet (Zeitplan vorhanden)');
 });
 
 test('Ergänzungen zum normalen Netz: S40 ab Franz-Josefs-Bahnhof, 18 bis Stadion, 43 bis Neuwaldegg, 46 bis Parlament', { skip: !HAS }, () => {

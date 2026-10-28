@@ -11,7 +11,9 @@
 // Nahverkehrszüge (S, R, REX, CJX – keine Railjets/IC/WESTbahn). server/timetable.ts sucht darauf Verbindungen;
 // die Wiener-Linien-Auskunft braucht es dann nur noch für „Aktuell“.
 //
-// Zusätzlich bekommt data/network.json die Regionalzüge (R/REX/CJX) als Linien – damit man sie im Spiel eingeben kann.
+// Regionalzüge (R/REX/CJX) fahren in Wien nur auf S-Bahn-Abschnitten mit – sie zählen dort als S-Bahn (kürzere
+// Wartezeit), sind aber keine eigenen Linien im Netz. Linien mit Ergänzungen (S40, 18, 43, 46) bekommen in
+// data/network.json ihre regulären Haltefolgen aus dem Fahrplan.
 //
 // Lizenz: „Datenquelle: Mobilitätsverbünde Österreich OG – data.mobilitaetsverbuende.at“, Daten verarbeitet
 // (gefiltert, umgerechnet). Achtung Lizenz Abschnitt 6a/7d: nach Ende der Gültigkeit (Fahrplanjahr) nicht mehr
@@ -19,7 +21,7 @@
 import { createReadStream, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
-import type { Line, Mode, NetworkData } from '../shared/types.ts';
+import type { Mode, NetworkData } from '../shared/types.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const NETWORK = path.join(ROOT, 'data/network.json');
@@ -309,7 +311,7 @@ async function main() {
       .join(' ')}`,
   );
 
-  addRailLines(net, data);
+  syncNetwork(net, data);
 }
 
 type Trips = Record<string, { line: string; stops: string[]; times: number[] }[]>;
@@ -387,8 +389,8 @@ function s40FromFjb(out: Trips, nodes: Map<string, Node>) {
   console.log(`  S40 ab Franz-Josefs-Bahnhof: ${n} Fahrten verlängert`);
 }
 
-/** Regionalzüge (R/REX/CJX) als Linien ins Netz – nur Halte, die es im Netz gibt, nur „regulär“ */
-function addRailLines(net: NetworkData, data: { nodes: (string | number)[][]; lines: (string | number)[][]; patterns: [number, number[]][] }) {
+/** Netz an den Fahrplan anpassen: Linien mit Ergänzungen (S40, 18, 43, 46) bekommen ihre regulären Haltefolgen */
+function syncNetwork(net: NetworkData, data: { nodes: (string | number)[][]; lines: (string | number)[][]; patterns: [number, number[]][] }) {
   const efaToStation = new Map<string, string>();
   for (const [sid, ids] of Object.entries(net.efaIds)) for (const id of ids) efaToStation.set(id, sid);
   const stationOf = (key: string) => {
@@ -407,28 +409,10 @@ function addRailLines(net: NetworkData, data: { nodes: (string | number)[][]; li
     const all = [...pats].map((p) => p.split(','));
     return all.filter((p) => !all.some((q) => q !== p && q.length > p.length && q.join(',').includes(p.join(','))));
   };
-  const regional = data.lines.map(([name]) => String(name)).filter((n) => /^(R|REX|CJX)\d+$/.test(n));
+  // Regionalzüge sind keine eigenen Linien im Netz: in Wien fahren sie nur auf S-Bahn-Abschnitten mit und zählen dort
+  // als S-Bahn (eine seltene R1 hätte im Routen-Baukasten sonst den Takt aller S-Bahnen). Früher eingetragene entfernen.
   net.lines = net.lines.filter((l) => !/^(R|REX|CJX)\d+$/.test(l.id));
   for (const s of net.stations) s.lines = s.lines.filter((l) => !/^(R|REX|CJX)\d+$/.test(l));
-  let added = 0;
-  for (const name of regional) {
-    const li = data.lines.findIndex(([n]) => n === name);
-    const pats = new Set<string>();
-    for (const [l, stops] of data.patterns) {
-      if (l !== li) continue;
-      const ids = stops.map((i) => stationOf(String(data.nodes[i][0]))).filter((x): x is string => !!x);
-      const dedup = ids.filter((x, i) => x !== ids[i - 1]);
-      if (dedup.length >= 2) pats.add(dedup.join(','));
-    }
-    // Teilmuster weglassen (kürzere Fahrten derselben Strecke)
-    const all = [...pats].map((p) => p.split(','));
-    const keep = all.filter((p) => !all.some((q) => q !== p && q.length > p.length && q.join(',').includes(p.join(','))));
-    if (!keep.length) continue;
-    const line: Line = { id: name, mode: 'S', color: '#4a6a8a', patterns: keep, nets: keep.map(() => 'r') };
-    net.lines.push(line);
-    for (const id of new Set(keep.flat())) net.stations.find((s) => s.id === id)!.lines.push(name);
-    added++;
-  }
   // Linien mit Ergänzungen: reguläre Haltefolgen aus dem Fahrplan (aktuelle Haltefolgen der Auskunft bleiben)
   for (const name of ['S40', '18', ...FROM_NORMAL_DAY]) {
     const line = net.lines.find((l) => l.id === name);
@@ -455,7 +439,7 @@ function addRailLines(net: NetworkData, data: { nodes: (string | number)[][]; li
     console.log(`  ${name}: ${fresh.length} reguläre Haltefolgen, z.B. ${fresh[0].map((id) => net.stations.find((s) => s.id === id)!.name).join(' → ')}`);
   }
   writeFileSync(NETWORK, JSON.stringify(net));
-  console.log(`✔ data/network.json: ${added} Regionalzug-Linien (${regional.join(', ')})`);
+  console.log('✔ data/network.json: reguläre Haltefolgen aktualisiert');
 }
 
 await main();

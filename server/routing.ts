@@ -75,6 +75,13 @@ function toRouteLeg(net: Network, l: efa.EfaLeg, lineLabel?: string): RouteLeg {
   };
 }
 
+/** Linie im Netz, die denselben Abschnitt fährt (für Regionalzüge, die selbst keine Linie im Netz sind) */
+function equivalentLine(net: Network, mode: Mode, from: string, to: string): string | null {
+  if (mode === 'U' || mode === 'W') return null;
+  for (const l of net.lines.values()) if (modeGroup(l.mode) === modeGroup(mode) && net.servesInOrder(l.id, from, to, 'regular')) return l.id;
+  return null;
+}
+
 /** Verkehrsmittel-Gruppe: Busse und Nachtbusse gelten als gleich */
 const modeGroup = (m: Mode): Mode => (m === 'N' ? 'B' : m);
 
@@ -517,7 +524,9 @@ export async function topRoutes(net: Network, fromId: string, toId: string, slot
         const pt = t.legs.filter((x) => x.mode !== 'W');
         if (pt[k]?.line) names.add(pt[k].line!);
       }
-      return [...names].sort((a, b) => a.localeCompare(b, 'de', { numeric: true })).join('/');
+      // S-Bahnen zuerst, dann Regionalzüge: „S80/R81/REX8“
+      const rank = (n: string) => (/^(R|REX|CJX)\d+$/.test(n) ? 1 : 0);
+      return [...names].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, 'de', { numeric: true })).join('/');
     });
     const legs = rep.legs.map((l, i) => toRouteLeg(net, l, labels[i] ?? undefined));
     candidates.push({
@@ -542,7 +551,8 @@ export async function topRoutes(net: Network, fromId: string, toId: string, slot
       for (const l of pt) {
         const f = net.resolve(l.from);
         const t = net.resolve(l.to);
-        const line = l.line && net.lines.has(l.line) ? l.line : null;
+        // Regionalzug (REX, R …): gleichwertige S-Bahn desselben Abschnitts – zählt mit denselben Abfahrten
+        const line = !f || !t ? null : l.line && net.lines.has(l.line) ? l.line : equivalentLine(net, l.mode, f, t);
         if (!f || !t || !line) return c.option; // nicht nachrechenbar – Stichprobe behalten
         legs.push({ line, from: f, to: t });
       }
