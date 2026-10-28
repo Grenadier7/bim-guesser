@@ -12,7 +12,7 @@
 //     Ein zufällig perfekter Anschluss (an um 16:32, S-Bahn um 16:34) bringt so keinen Vorteil mehr –
 //     eine S-Bahn alle 15 min kostet im Schnitt 7,5 min Warten, eine U-Bahn alle 4 min nur 2.
 import type { LatLon, Mode, NetMode, Restriction, RouteLeg, RouteOption, RouteStep, UserLeg } from '../shared/types.ts';
-import { lineColor, lineGroupLabel, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
+import { lineColor, lineGroupLabel, regionalTrains, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
 import * as efa from './efa.ts';
 import { distM, type Network } from './network.ts';
 
@@ -365,18 +365,23 @@ async function chainRoute(
   const durs = samples.map((s) => s.total);
   const med = median(durs);
   const rep = samples.reduce((b, s) => (Math.abs(s.total - med) < Math.abs(b.total - med) ? s : b));
-  // Beschriftung je Teilstrecke: bei der S-Bahn alle Züge, die dort in dieser Stunde fahren – auch Regionalzüge
-  // („S80/REX8/R81“, Stammstrecke „S1/S2/S3/S4/REX“); sonst wie bisher
-  const shown = legs.map((l, i) => {
-    if (net.lines.get(l.line)?.mode !== 'S') return labels?.[i] ?? l.line;
-    // um die Zeit, zu der man diese Teilstrecke wirklich fährt – nach langem Fußweg ist das nicht die Abfragezeit
+  // Beschriftung je Teilstrecke: bei der S-Bahn alle S-Bahnen, die dort fahren („S1/S2/S3/S4“), dazu getrennt die
+  // Regionalzüge, die im Takt mitzählen – um die Zeit, zu der man die Teilstrecke wirklich fährt (nach langem
+  // Fußweg ist das nicht die Abfragezeit); sonst wie bisher
+  const lineInfo = legs.map((l, i) => {
+    if (net.lines.get(l.line)?.mode !== 'S') return { label: labels?.[i] ?? l.line, with: [] as string[] };
     const at = rideTimes[i].length ? rideTimes[i] : [slotTime];
-    return lineGroupLabel([l.line, ...tables[i].linesIn(Math.min(...at) - 10, Math.max(...at) + 20)]);
+    const names = [l.line, ...tables[i].linesIn(Math.min(...at) - 10, Math.max(...at) + 20)];
+    return { label: lineGroupLabel(names), with: regionalTrains(names) };
   });
   let pi = 0;
   const route: RouteOption = {
     key,
-    legs: rep.route.map((l) => (l.mode === 'W' ? l : { ...l, line: shown[pi++] ?? l.line })),
+    legs: rep.route.map((l) => {
+      if (l.mode === 'W') return l;
+      const info = lineInfo[pi++];
+      return info ? { ...l, line: info.label, ...(info.with.length ? { with: info.with } : {}) } : l;
+    }),
     medianMin: med,
     minMin: Math.min(...durs),
     maxMin: Math.max(...durs),
@@ -384,7 +389,7 @@ async function chainRoute(
     samples: samples.length,
   };
   if (q.avgWait) {
-    const avg = await averagedRoute(net, legs, tables, fromId, toId, slotTime, q.countWait, shown);
+    const avg = await averagedRoute(net, legs, tables, fromId, toId, slotTime, q.countWait, lineInfo.map((x) => x.label), lineInfo.map((x) => x.with));
     if (avg) Object.assign(route, avg);
   }
   return { route, error: null };
@@ -436,6 +441,8 @@ async function averagedRoute(
   slotTime: number,
   countWait: boolean,
   labels?: (string | null)[],
+  /** je Teilstrecke: Regionalzüge, die im Takt mitzählen */
+  extra?: string[][],
 ): Promise<Pick<RouteOption, 'medianMin' | 'rideMin' | 'steps'> | null> {
   let t = slotTime;
   let firstWait = 0;
@@ -472,7 +479,7 @@ async function averagedRoute(
     const wait = meanWait * (i === 0 && !w0 ? FIRST_WAIT_FACTOR : 1);
     if (i > 0 || countWait) {
       const before = t;
-      add('wait', wait, { to: net.station(legs[i].from).name, every: Math.round(every) });
+      add('wait', wait, { to: net.station(legs[i].from).name, every: Math.round(every), ...(extra?.[i]?.length ? { with: extra[i] } : {}) });
       if (i === 0) firstWait = t - before;
     }
     const line = net.lines.get(legs[i].line)!;
@@ -541,7 +548,7 @@ export async function topRoutes(net: Network, fromId: string, toId: string, slot
         const pt = t.legs.filter((x) => x.mode !== 'W');
         if (pt[k]?.line) names.add(pt[k].line!);
       }
-      // S-Bahnen zuerst, dann Regionalzüge: „S80/REX8/R81“, auf der Stammstrecke „S1/S2/S3/S4/REX“
+      // nur die Linien des Netzes („S1/S2/S3“) – Regionalzüge stehen beim Nachrechnen getrennt dabei
       return lineGroupLabel([...names]);
     });
     const legs = rep.legs.map((l, i) => toRouteLeg(net, l, labels[i] ?? undefined));

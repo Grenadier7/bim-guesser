@@ -181,6 +181,8 @@ export interface RouteLeg {
   dep: string;
   arr: string;
   path: LatLon[];
+  /** S-Bahn-Abschnitt: Regionalzüge, die hier mitzählen (Takt gilt für alle zusammen), z.B. ["REX4", "REX41"] */
+  with?: string[];
 }
 
 export interface RouteOption {
@@ -214,6 +216,8 @@ export interface RouteStep {
   color?: string;
   /** wait: Takt (im Schnitt alle … min) */
   every?: number;
+  /** wait/ride: Regionalzüge, die im Takt mitzählen (S-Bahn + REX/R zusammen) */
+  with?: string[];
 }
 
 export interface Guesses {

@@ -53,9 +53,16 @@ export function routeDetails(route: RouteOption, star?: StarFn): string {
       if (l.mode === 'W')
         return `<li class="ld-walk"><span class="ld-time">${esc(l.dep)}</span><span>🚶 ${min ? `${min} min ` : ''}zu Fuß${l.toName && l.toName !== l.fromName ? ` nach ${esc(l.toName)}` : ''}</span></li>`;
       return `<li><span class="ld-time">${esc(l.dep)}</span><span>${lineChip(l.mode, l.line, l.color)}${star && l.line ? star(l.line) : ''} <b>${esc(l.fromName)}</b> → <b>${esc(l.toName)}</b>
-        <small>${esc(l.dep)}–${esc(l.arr)} · ${min} min</small></span></li>`;
+        <small>${esc(l.dep)}–${esc(l.arr)} · ${min} min${withText(l.with, 'auch ')}</small></span></li>`;
     })
     .join('')}<li class="ld-end"><span class="ld-time">${esc(route.legs[route.legs.length - 1]?.arr ?? '')}</span><span>🏁 Ankunft</span></li></ol>${waitNote(route)}`;
+}
+
+/** „ · mit REX4, REX41“ – Regionalzüge, die auf dem S-Bahn-Abschnitt im Takt mitzählen */
+function withText(trains: string[] | undefined, prefix: string): string {
+  if (!trains?.length) return '';
+  const shown = trains.length > 4 ? [...trains.slice(0, 3), `+${trains.length - 3}`] : trains;
+  return ` · <span class="with-trains" title="Der Takt gilt für S-Bahn und diese Regionalzüge zusammen – alle fahren hier gleich">${prefix}${esc(shown.join(', '))}</span>`;
 }
 
 /** Erklärt, warum die gewertete Zeit länger ist als die Beispielfahrt (Wartezeit am Start) */
@@ -71,7 +78,7 @@ function stepsDetails(route: RouteOption, star?: StarFn): string {
     if (st.kind === 'ride')
       return `<li><span class="ld-time">${esc(st.at)}</span><span>${lineChip(st.mode!, st.line!, st.color!)}${star && st.line ? star(st.line) : ''} <b>${esc(st.from!)}</b> → <b>${esc(st.to)}</b> <small>Ø ${st.min} min Fahrt</small></span></li>`;
     if (st.kind === 'wait')
-      return `<li class="ld-wait"><span class="ld-time">${esc(st.at)}</span><span>⏳ Ø ${st.min} min warten <small>(fährt etwa alle ${st.every} min)</small></span></li>`;
+      return `<li class="ld-wait"><span class="ld-time">${esc(st.at)}</span><span>⏳ Ø ${st.min} min warten <small>(fährt etwa alle ${st.every} min${withText(st.with, 'mit ')})</small></span></li>`;
     if (st.kind === 'transfer')
       return `<li class="ld-walk"><span class="ld-time">${esc(st.at)}</span><span>🔀 ${st.min} min umsteigen</span></li>`;
     return `<li class="ld-walk"><span class="ld-time">${esc(st.at)}</span><span>🚶 ${st.min} min zu Fuß nach ${esc(st.to)}</span></li>`;

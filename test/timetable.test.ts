@@ -115,7 +115,9 @@ test('Regionalzüge: keine eigenen Linien im Netz, zählen aber auf S-Bahn-Absch
   // beste Verbindung: zusammengefasst „S80/…“ und mit Ø-Wartezeiten nachgerechnet
   const top = await topRoutes(net, a, b, T, q);
   const leg = top[0].legs.find((l) => l.mode !== 'W')!;
-  assert.equal(leg.line, 'S80/REX8/R81', 'Regionalzüge mit Nummern, S-Bahn zuerst');
+  assert.equal(leg.line, 'S80', 'nur die S-Bahn in der Beschriftung');
+  assert.deepEqual(leg.with, ['REX8', 'R81'], 'Regionalzüge getrennt');
+  assert.deepEqual(top[0].steps!.find((x) => x.kind === 'wait')?.with, ['REX8', 'R81'], 'beim Warten: Takt gilt mit den Regionalzügen');
   assert.ok(top[0].steps, 'nachgerechnet (Zeitplan vorhanden)');
 });
 
@@ -157,12 +159,14 @@ test('durchgebundene Züge (S7 wird in Rennweg zur REX2, S2 in Leopoldau zur S7)
   assert.ok(after.includes('REX2'), [...new Set(after)].join(','));
 });
 
-test('Beschriftung nach langem Fußweg: Regionalzüge um die Fahrzeit, nicht um die Abfragezeit (S40/REX4/REX41)', { skip: !HAS }, async () => {
+test('Regionalzüge nach langem Fußweg: um die Fahrzeit, nicht um die Abfragezeit (S40 mit REX4, REX41)', { skip: !HAS }, async () => {
   const { evaluateUserRoute } = await import('../server/routing.ts');
   const st = (n: string, l: string) => net.data.stations.find((s) => s.name === n && s.lines.includes(l))!.id;
   const [fjb, hei] = [st('Franz-Josefs-Bahnhof', 'S40'), st('Heiligenstadt', 'S40')];
   for (const start of [fjb, st('Siebenhirten', 'U6')]) {
     const r = await evaluateUserRoute(net, [{ line: 'S40', from: fjb, to: hei }], start, hei, T, 'regular', { countWait: true, avgWait: true, restriction: null }, []);
-    assert.equal(r.route!.legs.find((l) => l.mode !== 'W')!.line, 'S40/REX4/REX41');
+    const leg = r.route!.legs.find((l) => l.mode !== 'W')!;
+    assert.equal(leg.line, 'S40');
+    assert.deepEqual(leg.with, ['REX4', 'REX41']);
   }
 });
