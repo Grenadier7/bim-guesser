@@ -115,7 +115,7 @@ test('Regionalzüge: keine eigenen Linien im Netz, zählen aber auf S-Bahn-Absch
   // beste Verbindung: zusammengefasst „S80/…“ und mit Ø-Wartezeiten nachgerechnet
   const top = await topRoutes(net, a, b, T, q);
   const leg = top[0].legs.find((l) => l.mode !== 'W')!;
-  assert.match(leg.line ?? '', /^S80\/(R|REX)/, leg.line ?? '');
+  assert.equal(leg.line, 'S80/REX8/R81', 'Regionalzüge mit Nummern, S-Bahn zuerst');
   assert.ok(top[0].steps, 'nachgerechnet (Zeitplan vorhanden)');
 });
 
