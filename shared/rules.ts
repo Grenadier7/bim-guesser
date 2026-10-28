@@ -208,23 +208,20 @@ export function regularPatterns(line: Line): string[][] {
 /** Regionalzüge (R, REX, CJX) aus dem eigenen Fahrplan – fahren auf S-Bahn-Strecken mit, im Spiel eingebbar */
 export const isRegionalTrain = (l: { id: string }) => /^(R|REX|CJX)\d+$/.test(l.id);
 
+const byNumber = (a: string, b: string) => a.localeCompare(b, 'de', { numeric: true });
+
 /**
- * Gleichwertige Linien eines Abschnitts als eine Beschriftung: S-Bahnen zuerst, dann Regionalzüge (REX, CJX, R) –
- * „S80/REX8/R81“. Auf der Stammstrecke (3+ S-Bahn-Linien) nur „/REX“ ohne Nummern, sonst wird es endlos lang:
- * „S1/S2/S3/S4/REX“.
+ * Gleichwertige Linien eines Abschnitts als eine Beschriftung – nur die Linien des Netzes („S1/S2/S3/S4“, „30/31“).
+ * Regionalzüge fahren mit, stehen aber nicht in der Beschriftung (sonst zu dominant) – siehe regionalTrains.
  */
 export function lineGroupLabel(names: string[]): string {
-  const num = (a: string, b: string) => a.localeCompare(b, 'de', { numeric: true });
-  // „REX“ ohne Nummer = schon zusammengefasst
-  const isReg = (n: string) => n === 'REX' || isRegionalTrain({ id: n });
-  const uniq = [...new Set(names.filter(Boolean))];
-  const other = uniq.filter((n) => !isReg(n)).sort(num);
-  const regional = uniq.filter((n) => isRegionalTrain({ id: n }));
-  if (!regional.length && !uniq.includes('REX')) return other.join('/');
-  const sBahn = other.filter((n) => /^S\d/.test(n));
-  if (sBahn.length >= 3 || !regional.length) return [...other, 'REX'].join('/');
+  return [...new Set(names.filter((n) => n && n !== 'REX' && !isRegionalTrain({ id: n })))].sort(byNumber).join('/');
+}
+
+/** Regionalzüge unter den Linien eines Abschnitts, sortiert REX, CJX, R: ["REX8", "R81"] */
+export function regionalTrains(names: string[]): string[] {
   const kind = (n: string) => (n.startsWith('REX') ? 0 : n.startsWith('CJX') ? 1 : 2);
-  return [...other, ...regional.sort((a, b) => kind(a) - kind(b) || num(a, b))].join('/');
+  return [...new Set(names.filter((n) => n && isRegionalTrain({ id: n })))].sort((a, b) => kind(a) - kind(b) || byNumber(a, b));
 }
 
 /**

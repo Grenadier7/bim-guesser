@@ -117,12 +117,12 @@ test('Wertungs-Modi: drei Modi, „Umstiege vermeiden“ nur bei Realistisch, al
   assert.equal(scoringModeOf({ countWait: true, avgWait: false, goal: 'best' }), null);
 });
 
-test('Beschriftung gleichwertiger Linien: S-Bahn zuerst, dann REX/CJX/R – Stammstrecke nur „/REX“', async () => {
-  const { lineGroupLabel } = await import('../shared/rules.ts');
-  assert.equal(lineGroupLabel(['R81', 'S80', 'REX8']), 'S80/REX8/R81');
-  assert.equal(lineGroupLabel(['CJX5', 'REX51', 'S50']), 'S50/REX51/CJX5');
-  assert.equal(lineGroupLabel(['S2', 'S1', 'REX1', 'S3', 'REX3', 'CJX9', 'S4']), 'S1/S2/S3/S4/REX');
-  assert.equal(lineGroupLabel(['S3', 'REX', 'S1', 'S2', 'REX1']), 'S1/S2/S3/REX', 'schon zusammengefasst – nicht doppelt');
-  assert.equal(lineGroupLabel(['S2', 'S1']), 'S1/S2');
+test('Beschriftung gleichwertiger Linien: nur Linien des Netzes, Regionalzüge getrennt (REX, CJX, R)', async () => {
+  const { lineGroupLabel, regionalTrains } = await import('../shared/rules.ts');
+  assert.equal(lineGroupLabel(['R81', 'S80', 'REX8']), 'S80');
+  assert.deepEqual(regionalTrains(['R81', 'S80', 'REX8']), ['REX8', 'R81']);
+  assert.equal(lineGroupLabel(['S2', 'S1', 'REX1', 'S3', 'REX3', 'CJX9', 'S4']), 'S1/S2/S3/S4');
+  assert.deepEqual(regionalTrains(['S2', 'REX3', 'CJX9', 'REX1', 'R81']), ['REX1', 'REX3', 'CJX9', 'R81']);
   assert.equal(lineGroupLabel(['31', '30']), '30/31');
+  assert.deepEqual(regionalTrains(['31', '30']), []);
 });
