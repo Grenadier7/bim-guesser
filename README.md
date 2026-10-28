@@ -55,6 +55,12 @@ Der Browser fragt dann beim Öffnen nach Benutzer und Passwort.
 Die Startseite zeigt vier Modi als Kacheln. Unten gibt es **„Mit Code beitreten“** – der Code führt automatisch
 in die richtige Lobby (Routenjagd oder Quiz).
 
+**🎓 Tutorial** (für Neue, `client/src/screens/tutorial.ts`): oben ein Hinweis, unten eine Karte – bis man es gemacht
+oder 2 normale Spiele (Routenjagd-/Quiz-Endstand, Training) abgeschlossen hat (`client/src/progress.ts`). Zwei
+geführte Runden mit echter Auskunft und Wertung: Praterstern → Stephansplatz (U1 eintippen, Ausstieg wählen),
+Reumannplatz → Rathaus („Rathaus ist doch U2“ → U2 fährt dort nicht → U1 bis Karlsplatz, U2 bis Rathaus). Sprechblasen
+zeigen den nächsten Schritt und heben das passende Feld hervor; danach die Punktevergabe.
+
 | Modus | Spieler | Worum geht's |
 |---|---|---|
 | 🏁 **Routenjagd** | Lobby, 1–12 | Schnellste Öffi-Verbindung zwischen zwei Stationen finden |
@@ -112,7 +118,7 @@ in die richtige Lobby (Routenjagd oder Quiz).
    - **Fokus-Gebiet**: Kreis auf der Karte (antippen oder Bezirk als Mittelpunkt wählen), Radius 1,5–6 km.
      10–90 % der Stationen werden aus dem Kreis gezogen, der Rest aus ganz Wien. Standardmäßig aus.
    - **Runden**: 3 / 5 / 7 / 10
-   - **Zeitlimit** 1–10 min oder „∞ Ohne“ in einer Leiste (Standard 3:00) – nach Ablauf wird abgegeben, was eingegeben ist
+   - **Zeitlimit** 1–10 min oder „∞ Ohne“ in einer Leiste (Standard 4:00) – nach Ablauf wird abgegeben, was eingegeben ist
    - **Wo liegt das?** – Start und Ziel vorher auf der leeren Karte tippen
    - **Wertung** (unter „Erweitert“, Standard: *Beste Route*): Reisezeit + Aufschlag je Umstieg – Punkte, Ranking
      und die Liste der Top-Verbindungen richten sich danach. Aufschlag: 2 min mit Ø-Wartezeiten (Warten ist dort
@@ -141,6 +147,12 @@ in die richtige Lobby (Routenjagd oder Quiz).
      Oberlaa), die Einstiegs-Station steht markiert und nicht wählbar mittendrin.
      Hält die Linie an der Station nur in eine Richtung (Schleifen/Einbahnen, z.B. 40 bei Schöffelgasse), wird die
      Gegenrichtung ab der nächsten Haltestelle (bis 700 m) angeboten – inkl. Fußweg dorthin.
+   - **📍 Start & Ziel** (Erweitert → Schwierigkeit): *Haltestellen* oder *Adressen* – zufällige echte Adressen
+     (Stadt Wien, OGD), gleichmäßig über die bebaute Fläche verteilt (400-m-Raster, höchstens 3 je Zelle, nur bis
+     1,5 km von einer Haltestelle; `node scripts/build-addresses.ts` → `data/addresses.json`). Die Auskunft rechnet
+     ab der Koordinate, also inkl. Fußweg zur ersten Haltestelle.
+   - **⇅ Einstellungen teilen** (neben ↺): Link öffnet eine neue Lobby mit genau diesen Einstellungen; JSON zum
+     Kopieren und Einfügen.
    - **Abwechslung**: Innerhalb eines Spiels liegen neue Start/Ziele mindestens 1,2 km von allen bisherigen entfernt,
      und keine Strecke mit beiden Enden in derselben Gegend wie eine frühere. Über alle Spiele hinweg werden Stationen,
      die schon oft dran waren, seltener gezogen (Zähler in `data/usage.json`).
@@ -155,6 +167,11 @@ in die richtige Lobby (Routenjagd oder Quiz).
    **Fußwege**: Luftlinie × 1,3 bei 80 m/min (≈ 4,8 km/h), Umsteigen an derselben Station 2 min.
 5. **Host-Steuerung** während der Runde: ⏸ Pause (Zeit steht, alle sehen eine Pause-Anzeige, Pausenzeit zählt
    nicht zur benötigten Zeit), ✖ Runde abbrechen (Lösung wird gezeigt, keine Punkte), ⏹ Spiel beenden.
+   Unter „👥 Spieler“ (Lobby und laufendes Spiel): ✕ kicken, 👑 zum Host machen – es kann mehrere Hosts geben.
+   **💬 Lobby-Chat** unten rechts.
+6. **Inaktive Lobby**: nach 9 min ohne Aktion fragt ein Fenster die Hosts „Lobby behalten?“ (30 s). Keine Antwort →
+   der nächste verbundene Spieler wird Host und gefragt; antwortet niemand oder „Lobby löschen“ → Lobby wird
+   geschlossen (`LOBBY_IDLE_MS`, `LOBBY_IDLE_ANSWER_MS`).
 
 **Training** (Startseite, ohne Lobby): echte Strecken ohne Zeitdruck und Punkte – zum praxisnahen Lernen.
 - *Coach*: nach jeder Teilstrecke Rückmeldung – „genau wie die schnellste Verbindung“, „richtige Linie, aber falsche
@@ -196,6 +213,11 @@ in die richtige Lobby (Routenjagd oder Quiz).
   Ansehen lassen sich Stationen antippen (erscheinen mit „Von hier …“), der exakte Verlauf ist als Stationsliste
   aufklappbar, beim Zeichnen markieren Ⓐ/Ⓑ Start und Ende. ☆ hinter Liniennummern in den Routen-Details von
   Routenjagd und Training merkt Linien ebenfalls zum Üben. Wissen gegen andere testen geht im **🧠 Quiz**-Modus.
+- *🚌 Welcher Bus fährt hier?* (`client/src/learn/busquiz.ts`): Busse lernt man am besten von der Haltestelle aus.
+  10 Stationen (ganz Wien oder ein Bezirk), auf der Karte nur U/S/Bim zur Orientierung; aus 6–9 Bussen antippen,
+  welche hier halten – die falschen halten ganz in der Nähe (bis 1,5 km). Auflösung: Richtungen je Bus, falsche mit
+  nächster Haltestelle und Entfernung, alles auf der Karte. Stationen mit Fehlern kommen am Ende nochmal;
+  übersehene Busse lassen sich ⭐ merken.
 - **Netzkarte** (`client/src/netmap.ts`): alle U-, S-Bahn- und Bim-Linien plus die Kurs-Busse 13A/10A/48A. Jede
   Strecke zwischen zwei Stationen ist eine weiche Kurve, die exakt durch die Stationspunkte läuft – Linien
   treffen sich genau in den Umsteigepunkten. Punkte bei jeder Kreuzung außer Bim–Bim, große Knoten mit Namen;

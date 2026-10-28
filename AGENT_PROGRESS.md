@@ -160,6 +160,12 @@ Algorithmus-/Deploy-Review (Agent, Repro-Skripte in docs/analysis/evidence/agent
       Tests: 118 Einheit/API (3 bewusst übersprungen mit Begründung), E2E: home, learn-quiz, matrix (26), multiplayer (15), a11y (14), errors (2), tips (1).
       Wichtige Messung: Spielstart (leerer Cache) Mittel 6–21 s → 3–8 s.
 
+- [x] Feedback 1–20 (Branch `feature/feedback-1-20`, 2026-10-28): Kicken/Hosts/Chat/inaktive Lobby (1, 18, 19),
+      „findet nix“ (2, 10), Baukasten-Ausstiege und Fußwege (3, 4, 11), Einbahn-Pfeile (5), Bus-Lernen (6),
+      Linie in der Auflösung (7), ☆ für S1/S2/S3 (8), Texte/Zeitlimit (9, 12), Adressen (13), Einstellungen teilen (14),
+      Kurven-Routen + Legende (15, 15b), 92B-Meldung (16), Handy-Klappen (16b), Tutorial (17b).
+      Nicht umsetzbar: REX/R (17) – die WL-Auskunft liefert keine ÖBB-Regionalzüge (Proben ohne Treffer).
+
 ## Offen / Nächste Schritte
 
 1. Auf Nutzer warten (Phase 4 `feature/accounts` erst nach Freigabe).
