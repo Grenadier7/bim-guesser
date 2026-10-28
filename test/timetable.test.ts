@@ -113,3 +113,25 @@ test('Spielwertung: REX8 Simmering → Stadlau wird angenommen und zählt wie di
   const hour = localTrip({ from: at('Simmering', 'S80'), to: at('Stadlau', 'S80'), time: T, mots: [1], maxChanges: 0, count: 20 })!.filter((t) => t.dep < T + 60);
   assert.ok(hour.length >= 4, `${hour.length} Abfahrten/h: ${hour.map((t) => rides(t)[0].line).join(',')}`);
 });
+
+test('Ergänzungen zum normalen Netz: S40 ab Franz-Josefs-Bahnhof, 18 bis Stadion, 43 bis Neuwaldegg, 46 bis Parlament', { skip: !HAS }, () => {
+  const direct = (a: string, b: string, line: string, mots: number[]) =>
+    localTrip({ from: at(a, line), to: at(b, line), time: T, mots, maxChanges: 0, count: 6 })!.filter((t) => rides(t)[0].line === line);
+  // S40: FJB → Heiligenstadt in 5 min (Fahrplan 2024), regelmäßig
+  const s40 = direct('Franz-Josefs-Bahnhof', 'Heiligenstadt', 'S40', [1]);
+  assert.ok(s40.length >= 2, 'S40 fährt ab Franz-Josefs-Bahnhof');
+  assert.equal(s40[0].arr - s40[0].dep, 5);
+  assert.ok(direct('Heiligenstadt', 'Franz-Josefs-Bahnhof', 'S40', [1]).length >= 2, 'und zurück');
+  // 18: Schlachthausgasse → Stadion
+  const t18 = direct('Hauptbahnhof', 'Stadion', '18', [4]);
+  assert.ok(t18.length >= 4, '18 fährt bis Stadion');
+  assert.ok(direct('Stadion', 'Schlachthausgasse', '18', [4]).length >= 4, 'und zurück');
+  // 43 und 46 wie an normalen Tagen
+  assert.ok(direct('Schottentor', 'Neuwaldegg', '43', [4]).length >= 4, '43 bis Neuwaldegg');
+  assert.ok(direct('Joachimsthalerplatz', 'Parlament/Volkstheater', '46', [4]).length >= 4, '46 bis Parlament');
+  // im Netz (Routen-Baukasten) gibt es die Strecken auch
+  const serves = (line: string, a: string, b: string) => net.servesInOrder(line, net.data.stations.find((s) => s.name === a && s.lines.includes(line))!.id, net.data.stations.find((s) => s.name === b && s.lines.includes(line))!.id, 'regular');
+  assert.ok(serves('S40', 'Franz-Josefs-Bahnhof', 'Heiligenstadt'));
+  assert.ok(serves('18', 'Schlachthausgasse', 'Stadion'));
+  assert.ok(serves('43', 'Dornbach', 'Neuwaldegg'));
+});

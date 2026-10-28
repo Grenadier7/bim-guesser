@@ -35,6 +35,33 @@ const RAIL_LINE = /^(S\d+|R\d+|REX\d+|CJX\d+)$/;
 /** Bahn-Betreiber im Bahn-Datensatz: ÖBB, Raaberbahn */
 const RAIL_AGENCIES = new Set(['01', '03']);
 
+// ---------------------------------------------------------------- Ergänzungen zum „normalen“ Netz
+// Der Referenztag (30.6.2026) hat bei einigen Linien Baustellen – geprüft gegen März, Mai, September, Oktober und
+// November 2026.
+
+/**
+ * Diese Linien kommen von einem normalen Tag desselben Typs: 43 fuhr am 30.6. nur bis Dornbach (sonst Neuwaldegg),
+ * 46 nur bis Josefstädter Straße (sonst Parlament/Volkstheater). 15./12./13.9.2026 sind bei beiden normal (an den
+ * Oktober-Wochenenden fährt der 46 nach Hütteldorf).
+ */
+const NORMAL_DAYS: Record<string, string> = { wd: '20260915', sa: '20260912', su: '20260913' };
+const FROM_NORMAL_DAY = new Set(['43', '46']);
+/**
+ * 18 bis Stadion: Strecke vom Referenztag (Burggasse – Gürtel – Hauptbahnhof – Schlachthausgasse), ab
+ * Schlachthausgasse verlängert zum Stadion – Halte und Fahrzeiten der Verlängerung vom 15.9.2026 (ab September fährt
+ * der 18 zum Stadion; sein Gürtel-Abschnitt ist dann allerdings Baustelle, deshalb nicht der ganze Tag).
+ */
+const EXTEND_18 = { line: '18', at: 'Schlachthausgasse', end: 'Stadion', sampleDay: '20260915' };
+/**
+ * S40 wieder ab Franz-Josefs-Bahnhof wie vor den Bauarbeiten (am Referenztag ab Heiligenstadt): Fahrzeiten aus dem
+ * Fahrplan 2024 – Franz-Josefs-Bahnhof ab :07, Spittelau :09, Heiligenstadt :12.
+ */
+const S40_FJB: [string, number][] = [
+  ['Franz-Josefs-Bahnhof', 0],
+  ['Spittelau', 2],
+  ['Heiligenstadt', 5],
+];
+
 // ---------------------------------------------------------------- CSV
 
 function splitCsv(line: string): string[] {
@@ -116,6 +143,8 @@ async function main() {
   const out: Record<string, { line: string; stops: string[]; times: number[] }[]> = { wd: [], sa: [], su: [] };
   /** Ende der Gültigkeit (frühestes Ende der Datensätze) – danach laut Lizenz nicht mehr öffentlich verwenden */
   let validUntil = '99991231';
+  /** Fahrten des 18 vom 15.9. – nur als Vorlage für die Verlängerung zum Stadion */
+  const samples18: { stops: string[]; times: number[] }[] = [];
 
   for (const src of SOURCES) {
     if (!existsSync(src.dir)) throw new Error(`fehlt: ${src.dir} – GTFS von data.mobilitaetsverbuende.at herunterladen und entpacken`);
@@ -176,13 +205,15 @@ async function main() {
     };
 
     // Fahrten: an welchen Referenztagen (und als Nachtfahrt vom Vortag)
-    const tripInfo = new Map<string, { line: string; on: string[]; night: string[] }>();
+    const tripInfo = new Map<string, { line: string; on: string[]; night: string[]; sample: boolean }>();
     await eachRow(path.join(src.dir, 'trips.txt'), (r) => {
       const line = routeLine.get(r.route_id);
       if (!line) return;
-      const on = Object.entries(days).filter(([, d]) => runs(r.service_id, d)).map(([k]) => k);
-      const night = Object.entries(days).filter(([, d]) => runs(r.service_id, prevDay(d))).map(([k]) => k);
-      if (on.length || night.length) tripInfo.set(r.trip_id, { line, on, night });
+      const useDays = FROM_NORMAL_DAY.has(line) ? NORMAL_DAYS : days;
+      const on = Object.entries(useDays).filter(([, d]) => runs(r.service_id, d)).map(([k]) => k);
+      const night = Object.entries(useDays).filter(([, d]) => runs(r.service_id, prevDay(d))).map(([k]) => k);
+      const sample = line === EXTEND_18.line && runs(r.service_id, EXTEND_18.sampleDay);
+      if (on.length || night.length || sample) tripInfo.set(r.trip_id, { line, on, night, sample });
     });
     console.log(`  ${tripInfo.size} Fahrten an den Referenztagen`);
 
@@ -219,14 +250,18 @@ async function main() {
         seg.times.push(t);
       }
       if (seg.stops.length > 1) segs.push(seg);
+      if (info.sample) samples18.push(...segs.map((x) => ({ stops: [...x.stops], times: [...x.times] })));
       for (const s of segs) {
-        for (const d of info.on) out[d].push({ line: info.line, ...s });
+        for (const d of info.on) out[d].push({ line: info.line, stops: [...s.stops], times: [...s.times] });
         // nach Mitternacht vom Vortag (z.B. Samstag 2 Uhr = Freitagnacht): Zeiten um 24 h verschieben
         if (s.times[s.times.length - 1] >= 1440)
           for (const d of info.night) out[d].push({ line: info.line, stops: s.stops, times: s.times.map((x) => x - 1440) });
       }
     }
   }
+
+  extend18(out, samples18, nodes);
+  s40FromFjb(out, nodes);
 
   // ---------------------------------------------------------------- kompakt schreiben
   const usedNodes = new Set<string>();
@@ -277,6 +312,81 @@ async function main() {
   addRailLines(net, data);
 }
 
+type Trips = Record<string, { line: string; stops: string[]; times: number[] }[]>;
+const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[xs.length >> 1];
+
+/** 18: Fahrten, die an der Schlachthausgasse enden/beginnen, bis zum Stadion verlängern (Vorlage vom 15.9.) */
+function extend18(out: Trips, samples: { stops: string[]; times: number[] }[], nodes: Map<string, Node>) {
+  const name = (k: string) => nodes.get(k)!.name;
+  // häufigste Halte-Folge nach bzw. vor der Schlachthausgasse, je Halt der Median der Fahrzeit
+  const template = (dir: 'out' | 'in') => {
+    const found = new Map<string, number[][]>();
+    for (const s of samples) {
+      const i = s.stops.findIndex((k) => name(k) === EXTEND_18.at);
+      if (i < 0) continue;
+      const part = dir === 'out' ? s.stops.slice(i + 1) : s.stops.slice(0, i);
+      if (!part.length || !part.some((k) => name(k) === EXTEND_18.end)) continue;
+      const offs = dir === 'out' ? s.times.slice(i + 1).map((t) => t - s.times[i]) : s.times.slice(0, i).map((t) => s.times[i] - t);
+      const key = part.join('|');
+      (found.get(key) ?? found.set(key, []).get(key)!).push(offs);
+    }
+    const best = [...found.entries()].sort((a, b) => b[1].length - a[1].length)[0];
+    if (!best) throw new Error('18: keine Vorlage für die Verlängerung zum Stadion gefunden');
+    const stops = best[0].split('|');
+    return { stops, offs: stops.map((_, j) => median(best[1].map((o) => o[j]))) };
+  };
+  const outT = template('out');
+  const inT = template('in');
+  let n = 0;
+  for (const list of Object.values(out))
+    for (const t of list) {
+      if (t.line !== EXTEND_18.line || t.stops.some((k) => name(k) === EXTEND_18.end)) continue;
+      if (name(t.stops[t.stops.length - 1]) === EXTEND_18.at) {
+        const end = t.times[t.times.length - 1];
+        t.stops.push(...outT.stops);
+        t.times.push(...outT.offs.map((o) => end + o));
+        n++;
+      } else if (name(t.stops[0]) === EXTEND_18.at) {
+        const start = t.times[0];
+        t.stops.unshift(...inT.stops);
+        t.times.unshift(...inT.offs.map((o) => start - o));
+        n++;
+      }
+    }
+  console.log(`  18 bis ${EXTEND_18.end}: ${n} Fahrten verlängert (${outT.stops.map(name).join(' → ')}, +${outT.offs.at(-1)} min; zurück ${inT.stops.map(name).join(' → ')})`);
+}
+
+/** S40: Fahrten ab/bis Heiligenstadt wieder ab/bis Franz-Josefs-Bahnhof (über Spittelau) */
+function s40FromFjb(out: Trips, nodes: Map<string, Node>) {
+  // Knoten der Bahnhöfe so, wie sie die REX4 benutzt (gleiche Gleise)
+  const keyOf = new Map<string, string>();
+  for (const list of Object.values(out)) for (const t of list) if (t.line === 'REX4') for (const k of t.stops) keyOf.set(nodes.get(k)!.name, k);
+  const keys = S40_FJB.map(([n]) => keyOf.get(n));
+  if (keys.some((k) => !k)) throw new Error(`S40: Bahnhöfe nicht gefunden (${S40_FJB.map(([n]) => n).join(', ')})`);
+  const [fjb, spittelau, heili] = keys as string[];
+  const toSpittelau = S40_FJB[1][1];
+  const toHeili = S40_FJB[2][1];
+  let n = 0;
+  for (const list of Object.values(out))
+    for (const t of list) {
+      if (t.line !== 'S40' || t.stops.includes(fjb)) continue;
+      if (t.stops[0] === heili) {
+        // stadtauswärts: FJB → Spittelau → Heiligenstadt → …
+        const at = t.times[0];
+        t.stops.unshift(fjb, spittelau);
+        t.times.unshift(at - toHeili, at - toHeili + toSpittelau);
+        n++;
+      } else if (t.stops[t.stops.length - 1] === heili) {
+        // stadteinwärts: … → Heiligenstadt → Spittelau → FJB
+        const at = t.times[t.times.length - 1];
+        t.stops.push(spittelau, fjb);
+        t.times.push(at + (toHeili - toSpittelau), at + toHeili);
+        n++;
+      }
+    }
+  console.log(`  S40 ab Franz-Josefs-Bahnhof: ${n} Fahrten verlängert`);
+}
+
 /** Regionalzüge (R/REX/CJX) als Linien ins Netz – nur Halte, die es im Netz gibt, nur „regulär“ */
 function addRailLines(net: NetworkData, data: { nodes: (string | number)[][]; lines: (string | number)[][]; patterns: [number, number[]][] }) {
   const efaToStation = new Map<string, string>();
@@ -284,6 +394,18 @@ function addRailLines(net: NetworkData, data: { nodes: (string | number)[][]; li
   const stationOf = (key: string) => {
     const m = /^at:49:(\d+)$/.exec(key);
     return m ? (efaToStation.get(String(60200000 + Number(m[1]))) ?? null) : null;
+  };
+  /** Haltefolgen einer Linie aus dem Fahrplan als Station-IDs (ohne Teilstücke längerer Folgen) */
+  const patternsOf = (li: number): string[][] => {
+    const pats = new Set<string>();
+    for (const [l, stops] of data.patterns) {
+      if (l !== li) continue;
+      const ids = stops.map((i) => stationOf(String(data.nodes[i][0]))).filter((x): x is string => !!x);
+      const dedup = ids.filter((x, i) => x !== ids[i - 1]);
+      if (dedup.length >= 2) pats.add(dedup.join(','));
+    }
+    const all = [...pats].map((p) => p.split(','));
+    return all.filter((p) => !all.some((q) => q !== p && q.length > p.length && q.join(',').includes(p.join(','))));
   };
   const regional = data.lines.map(([name]) => String(name)).filter((n) => /^(R|REX|CJX)\d+$/.test(n));
   net.lines = net.lines.filter((l) => !/^(R|REX|CJX)\d+$/.test(l.id));
@@ -306,6 +428,31 @@ function addRailLines(net: NetworkData, data: { nodes: (string | number)[][]; li
     net.lines.push(line);
     for (const id of new Set(keep.flat())) net.stations.find((s) => s.id === id)!.lines.push(name);
     added++;
+  }
+  // Linien mit Ergänzungen: reguläre Haltefolgen aus dem Fahrplan (aktuelle Haltefolgen der Auskunft bleiben)
+  for (const name of ['S40', '18', ...FROM_NORMAL_DAY]) {
+    const line = net.lines.find((l) => l.id === name);
+    const li = data.lines.findIndex(([n]) => n === name);
+    if (!line || li < 0) continue;
+    const fresh = patternsOf(li);
+    const patterns: string[][] = [];
+    const nets: string[] = [];
+    line.patterns.forEach((p, i) => {
+      const c = line.nets[i].replace('r', '');
+      if (c) (patterns.push(p), nets.push(c));
+    });
+    for (const p of fresh) {
+      const i = patterns.findIndex((q) => q.join(',') === p.join(','));
+      if (i >= 0) nets[i] = `${nets[i]}r`;
+      else (patterns.push(p), nets.push('r'));
+    }
+    line.patterns = patterns;
+    line.nets = nets;
+    for (const id of new Set(fresh.flat())) {
+      const st = net.stations.find((s) => s.id === id)!;
+      if (!st.lines.includes(name)) st.lines.push(name);
+    }
+    console.log(`  ${name}: ${fresh.length} reguläre Haltefolgen, z.B. ${fresh[0].map((id) => net.stations.find((s) => s.id === id)!.name).join(' → ')}`);
   }
   writeFileSync(NETWORK, JSON.stringify(net));
   console.log(`✔ data/network.json: ${added} Regionalzug-Linien (${regional.join(', ')})`);

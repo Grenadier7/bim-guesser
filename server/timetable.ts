@@ -413,10 +413,9 @@ export function localTrip(q: TripQuery): EfaTrip[] | null {
   const mots = q.mots ? new Set(q.mots) : null;
   const count = q.count ?? 5;
   const t = q.time - day.start;
-  if (q.maxChanges === 0 && !from.address && !to.address) {
-    if (q.via) return null;
-    return direct(d, day, from.list[0].node, to.list[0].node, t, count, mots);
-  }
+  // direkt (für die Wartezeiten je Teilstrecke): alle Linien, die A → B fahren – ein Zwischenhalt (via) ist hier
+  // überflüssig, die Auskunft brauchte ihn nur, weil sie sonst bloß die schnellste Linie liefert
+  if (q.maxChanges === 0 && !from.address && !to.address) return direct(d, day, from.list[0].node, to.list[0].node, t, count, mots);
   const maxRides = q.maxChanges != null ? q.maxChanges + 1 : MAX_RIDES_DEFAULT;
   const search = (tt: number, f: Access[], g: Access[], fp: EfaPoint | null, gp: EfaPoint | null) =>
     raptor(d, day, f, g, tt, maxRides, mots).map((j) => toTrip(d, day, j, fp, gp));
