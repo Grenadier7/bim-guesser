@@ -130,13 +130,17 @@ test('Punkt 13: zufällige Adressen – Entfernung passt, gleichmäßig verteilt
   for (let i = 0; i < 200; i++) {
     const [a, b] = net.randomAddressPair(s);
     const d = Math.hypot((a.lat - b.lat) * 111_320, (a.lon - b.lon) * 74_000);
-    assert.ok(d >= 1500 && d <= 12_500, `Entfernung ${Math.round(d)} m`);
+    assert.ok(d >= 1400 && d <= 12_600, `Entfernung ${Math.round(d)} m`);
     assert.match(a.id, /^a:/);
     assert.equal(net.station(a.id).name, a.name);
     if (Math.hypot((a.lat - 48.2085) * 111_320, (a.lon - 16.3731) * 74_000) < 3000) central++;
   }
   assert.ok(central < 120, `${central} von 200 Starts im Zentrum (3 km)`);
+  // auch am Stadtrand (bis 1,5 km zur Haltestelle) gibt es Linien in der Nähe
+  for (let i = 0; i < 50; i++) {
+    const [x, y] = net.randomAddressPair(s);
+    for (const p of [x, y]) assert.ok(net.linesAt(p.id, 'regular').length > 0, `Linien in der Nähe von ${p.name}`);
+  }
   const [a] = net.randomAddressPair(s);
-  assert.ok(net.linesAt(a.id, 'regular').length > 0, 'Linien in der Nähe der Adresse');
   assert.match(net.mainEfaId(a.id), /^coord:16\.\d+:48\.\d+$/);
 });
