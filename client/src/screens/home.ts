@@ -4,6 +4,7 @@ import { api } from '../api.ts';
 import { app, savePrefs, startSession } from '../store.ts';
 import { esc, h, toast } from '../ui.ts';
 import { setPanel, type Screen } from './screen.ts';
+import { takeSettingsLink } from '../settingsShare.ts';
 
 const MODES = [
   {
@@ -82,11 +83,11 @@ export function homeScreen(panel: HTMLElement): Screen {
     el.querySelectorAll('button').forEach((x) => ((x as HTMLButtonElement).disabled = b));
   };
 
-  async function createLobby(mode: GameMode) {
+  async function createLobby(mode: GameMode, settings?: Record<string, unknown>) {
     if (pending) return;
     busy(true);
     try {
-      const res = await api.create(name(), mode, mode === 'quiz' ? app.prefs.quiz : app.prefs.settings);
+      const res = await api.create(name(), mode, settings ?? (mode === 'quiz' ? app.prefs.quiz : app.prefs.settings));
       startSession({ code: res.state.id, playerId: res.playerId, token: res.token }, res.state);
     } catch (e) {
       toast((e as Error).message);
@@ -127,5 +128,11 @@ export function homeScreen(panel: HTMLElement): Screen {
   codeIn.addEventListener('keydown', (e) => e.key === 'Enter' && join());
   setPanel(panel, el);
   if (urlCode) (inviteName ?? codeIn).focus();
+  // geteilter Einstellungs-Link (Punkt 14): gleich eine Lobby mit diesen Einstellungen
+  const shared = takeSettingsLink();
+  if (shared) {
+    toast('Neue Lobby mit den geteilten Einstellungen …', 'info');
+    void createLobby(shared.mode, shared.settings);
+  }
   return {};
 }

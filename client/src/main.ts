@@ -167,7 +167,8 @@ async function init() {
     panel.innerHTML = `<div class="loading"><p class="err">Server nicht erreichbar: ${esc((e as Error).message)}</p></div>`;
     return;
   }
-  if (!(await restoreSession())) render();
+  // geteilter Einstellungs-Link → Startseite (legt die Lobby an) statt in die alte Lobby zurück
+  if (new URLSearchParams(location.search).has('settings') || !(await restoreSession())) render();
   setInterval(tick, 250);
   // ☆ hinter Liniennummern (z.B. in der Routenjagd-Auflösung): Linie für „Lernen → Üben“ merken
   // ☆ für mehrere gleichwertige Linien („S1/S2/S3“): alle merken, in der Meldung „nur S1“ wählbar (Punkt 8)

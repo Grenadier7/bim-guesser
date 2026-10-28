@@ -36,6 +36,7 @@ import { esc, toast } from '../ui.ts';
 import { deferWhileEditing, infoTip, patchQueue, seg, toggleInfo } from '../widgets.ts';
 import { bindKick, kickButton } from './host.ts';
 import type { Screen } from './screen.ts';
+import { openSettingsDialog } from '../settingsShare.ts';
 
 /**
  * Haltestellen je Verkehrsmittel: Kästchen an/aus (an = alle, aus = keine) und darunter ein
@@ -290,7 +291,9 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         <details class="advanced" ${advancedOpen ? 'open' : ''}>
           <summary>⚙️ Erweiterte Einstellungen</summary>
           <div class="tabs adv-tabs">${ADV_TABS.map((t) => `<button data-adv="${t.id}" class="${advTab === t.id ? 'on' : ''}">${t.label}</button>`).join('')}${
-            host ? '<button type="button" class="icon-reset" id="resetAll" title="Alle Einstellungen zurücksetzen" aria-label="Alle Einstellungen zurücksetzen">↺</button>' : ''
+            `<button type="button" class="icon-reset" id="shareSettings" title="Einstellungen teilen: Link oder JSON (Import für Hosts)" aria-label="Einstellungen teilen">⇅</button>${
+              host ? '<button type="button" class="icon-reset" id="resetAll" title="Alle Einstellungen zurücksetzen" aria-label="Alle Einstellungen zurücksetzen">↺</button>' : ''
+            }`
           }</div>
           <div class="adv-body">${advancedTab()}</div>
 
@@ -378,6 +381,9 @@ export function lobbyScreen(panel: HTMLElement): Screen {
       const [lat, lon] = districtCenter(id);
       sendFocus({ lat, lon });
     });
+    panel.querySelector('#shareSettings')?.addEventListener('click', () =>
+      openSettingsDialog('route', routeState().settings, host ? (s) => send(s as Partial<GameSettings>) : null),
+    );
     panel.querySelector('#resetAll')?.addEventListener('click', (e) => {
       // sitzt in der Überschrift von "Erweitert" – nicht auf-/zuklappen
       e.preventDefault();

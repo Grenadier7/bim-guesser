@@ -4126,3 +4126,42 @@ details.host-bar {
 .net-z-arrows .net-arrows {
   display: none;
 }
+
+/* ---------------------------------------------------------------- Einstellungen teilen */
+
+.share-row {
+  display: flex;
+  gap: 6px;
+}
+
+.share-link {
+  flex: 1;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font: inherit;
+  font-size: 13px;
+}
+
+.share-json {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+}
+
+.settings-share .idle-box {
+  max-width: 560px;
+  width: 100%;
+}
+
+.settings-tools {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 16px;
+}

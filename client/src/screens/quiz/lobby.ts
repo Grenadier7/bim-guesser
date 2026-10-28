@@ -8,6 +8,7 @@ import { esc, toast } from '../../ui.ts';
 import { deferWhileEditing, patchQueue, seg } from '../../widgets.ts';
 import { bindKick } from '../host.ts';
 import type { Screen } from '../screen.ts';
+import { openSettingsDialog } from '../../settingsShare.ts';
 import { areaOf, playersHtml } from './common.ts';
 
 // ---------------------------------------------------------------- Lobby
@@ -72,7 +73,7 @@ export function quizLobbyScreen(panel: HTMLElement): Screen {
           <div class="qtypes">${typeRows}</div>
           ${host ? `<button class="btn btn-ghost" id="resetW" ${isDefault ? 'disabled' : ''}>↺ Standard-Häufigkeiten</button>` : ''}
         </details>
-        ${host ? '<button class="link reset-settings" id="resetAll">↺ Alle Einstellungen zurücksetzen</button>' : ''}
+        <div class="settings-tools"><button class="link" id="shareSettings">⇅ Einstellungen teilen</button>${host ? '<button class="link reset-settings" id="resetAll">↺ Alle Einstellungen zurücksetzen</button>' : ''}</div>
         ${
           host
             ? `<button class="btn btn-primary btn-big" id="start">${st.players.length > 1 ? `Quiz starten (${st.players.length} Spieler)` : 'Quiz starten'}</button>`
@@ -110,6 +111,9 @@ export function quizLobbyScreen(panel: HTMLElement): Screen {
       r.addEventListener('change', () => send({ weights: { ...s.weights, [t]: Number(r.value) } as QuizSettings['weights'] }));
     });
     panel.querySelector('#resetW')?.addEventListener('click', () => send({ weights: { ...DEFAULT_QUIZ_SETTINGS.weights } }));
+    panel.querySelector('#shareSettings')?.addEventListener('click', () =>
+      openSettingsDialog('quiz', quizState().settings, host ? (x) => send(x as Partial<QuizSettings>) : null),
+    );
     panel.querySelector('#resetAll')?.addEventListener('click', () => {
       if (!confirm('Alle Quiz-Einstellungen auf den Standard zurücksetzen?')) return;
       send(structuredClone(DEFAULT_QUIZ_SETTINGS));
