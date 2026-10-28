@@ -102,8 +102,11 @@ verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der S
   `data/raw/timetables/`, „Railway Timetable Data (GTFS) – Reference Data for Timetable Changeover“ nach
   `data/raw/timetables-trains/` entpacken (beides nicht im Repo), dann `npm run build:timetable`. Das baut den Auszug
   für die drei Referenztage aus `data/network.json` (nur Wien, nur Linien des Spiels + Nahverkehrszüge, Nachtfahrten
-  vom Vortag) und trägt die Regionalzüge als Linien ins Netz ein (Eingabe im Routen-Baukasten; Netzkarte, Lernen und
-  Quiz blenden sie aus).
+  vom Vortag). Regionalzüge sind **keine eigenen Linien** im Routen-Baukasten: in Wien fahren sie nur auf
+  S-Bahn-Abschnitten mit (jeder Abschnitt hat auch eine S-Bahn) – wer dort die S-Bahn wählt, bekommt ihre Abfahrten
+  automatisch mitgezählt, die Top-Verbindungen zeigen sie als „S80/R81/REX8“. Ergänzungen zum normalen Netz:
+  S40 wieder ab Franz-Josefs-Bahnhof (Fahrzeiten 2024), 18 bis Stadion, 43 bis Neuwaldegg und 46 bis Parlament
+  (am Referenztag Baustellen, siehe `scripts/build-timetable.ts`).
 - Suche: Fußwege zwischen Halten bis 500 m, von/zu Adressen bis 1,5 km (Luftlinie × 1,3, 80 m/min), Umsteigen 2 min,
   bis 4 Umstiege. Abgeglichen mit der Auskunft: bei gleicher Abfahrt gleiche Ankunft; die eigene Suche findet nie eine
   langsamere Verbindung (sie geht manchmal lieber 400 m zu Fuß, wo die Auskunft auf einen Bus wartet).
