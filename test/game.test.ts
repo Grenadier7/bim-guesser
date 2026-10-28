@@ -105,3 +105,19 @@ test('Regression L-11: Statistik lässt sich sofort sichern (beim Beenden des Se
   const saved = JSON.parse(readFileSync(path.join(process.env.STATE_DIR!, 'usage.json'), 'utf8'));
   assert.ok(saved.s1 >= 1 && saved.s2 >= 1);
 });
+
+test('Regression Punkt 2: „max. 1 Umstieg“ verlangt bei Schwer/Profi nicht 2 Umstiege (sonst findet sich nie eine Strecke)', () => {
+  const { g } = newGame({ ...base, minTransfers: 2 });
+  const minFor = (restriction: string | null) => (g as unknown as { minTransfersFor(r: object): number }).minTransfersFor({ restriction });
+  assert.equal(minFor('oneTransfer'), 1);
+  assert.equal(minFor(null), 2);
+  assert.equal(minFor('noBus'), 2);
+});
+
+test('Regression Punkt 10: „Linie gesperrt“ sperrt parallel fahrende Linien mit (S2 → auch S1)', () => {
+  const { g } = newGame();
+  const id = (n: string) => net.data.stations.find((s) => s.name === n)!.id;
+  const leg = { mode: 'S', line: 'S2', fromStation: id('Siemensstraße'), toStation: id('Matzleinsdorfer Platz'), path: [] };
+  const banned = (g as unknown as { pickBan(r: object): string[] }).pickBan({ key: 'x', legs: [leg] });
+  assert.ok(banned.includes('S2') && banned.includes('S1'), banned.join(','));
+});
