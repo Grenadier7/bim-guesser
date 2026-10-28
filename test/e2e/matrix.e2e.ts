@@ -84,7 +84,8 @@ async function buildAndSubmit(p: Page, s: Sess) {
   const r = st.rounds[st.currentRound];
   const from = net.stations.find((x) => x.id === r.from!.id)!;
   const input = p.locator('.line-input');
-  for (const id of from.lines.filter((l) => !/^N/.test(l))) {
+  // Tageslinien zuerst; manche Haltestellen bedient (je nach Zeit) nur ein Nachtbus
+  for (const id of [...from.lines.filter((l) => !/^N/.test(l)), ...from.lines.filter((l) => /^N/.test(l))]) {
     await input.fill(id);
     await input.press('Enter');
     // X-treme „ohne Vorschläge“: Ausstieg eintippen – irgendeine andere Station der Linie
