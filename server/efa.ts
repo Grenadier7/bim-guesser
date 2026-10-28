@@ -309,12 +309,23 @@ export interface TripQuery {
   via?: string;
 }
 
+/** „coord:lon:lat“ (Adresse) oder EFA-Haltestellen-ID */
+function place(id: string): { type: string; name: string } {
+  if (id.startsWith('coord:')) {
+    const [, lon, lat] = id.split(':');
+    return { type: 'coord', name: `${lon}:${lat}:WGS84[dd.ddddd]` };
+  }
+  return { type: 'stopID', name: id };
+}
+
 export async function trip(q: TripQuery): Promise<EfaTrip[]> {
+  const o = place(q.from);
+  const d = place(q.to);
   const params: Record<string, string> = {
-    type_origin: 'stopID',
-    name_origin: q.from,
-    type_destination: 'stopID',
-    name_destination: q.to,
+    type_origin: o.type,
+    name_origin: o.name,
+    type_destination: d.type,
+    name_destination: d.name,
     itdTripDateTimeDepArr: 'dep',
     calcNumberOfTrips: String(q.count ?? 5),
     useRealtime: '0',

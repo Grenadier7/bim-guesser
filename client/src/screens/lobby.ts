@@ -232,6 +232,12 @@ export function lobbyScreen(panel: HTMLElement): Screen {
           ${xtremeTile()}`;
       }
       return `
+          <div class="setting"><span>📍 Start & Ziel ${infoTip(
+            '<b>Haltestellen:</b> Start und Ziel sind Stationen.<br><b>Adressen:</b> zufällige echte Adressen (Stadt Wien), gleichmäßig über die Stadt verteilt – erst zu Fuß zur passenden Haltestelle. Die Haltestellen-Auswahl unten bestimmt dann nur den Punkte-Faktor.',
+          )}</span>${seg('endpoints', [
+            { value: 'stations', label: '🚏 Haltestellen' },
+            { value: 'addresses', label: '🏠 Adressen' },
+          ], st.endpoints ?? 'stations', ro)}</div>
           <div class="setting"><span>Haltestellen ${infoTip(
             STATION_GROUPS.map((g) => `<b>${g.icon} ${g.label}:</b> ${g.levels.map((l) => `${esc(l.short)} = ${esc(l.hint)}`).join(' · ')}`).join('<br>') +
               '<br>Kästchen an/aus, darunter die Stufe wählen. Der Punkte-Multiplikator richtet sich nach der schwierigsten Auswahl.',

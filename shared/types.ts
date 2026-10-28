@@ -153,6 +153,8 @@ export interface GameSettings {
   /** Tipps erlaubt */
   /** Tipps: keine / günstig / teuer */
   tips: TipLevel;
+  /** Start und Ziel: Haltestellen oder zufällige Adressen (Punkt 13) */
+  endpoints: 'stations' | 'addresses';
 }
 
 // ---------------------------------------------------------------- Routen

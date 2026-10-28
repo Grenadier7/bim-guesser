@@ -52,6 +52,7 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   else if (tl === true) out.tips = 'cheap';
   else if (tl === false) out.tips = 'off';
   if (s.goal === 'best' || s.goal === 'fastest') out.goal = s.goal;
+  if (s.endpoints === 'stations' || s.endpoints === 'addresses') out.endpoints = s.endpoints;
   if (s.xtreme === 'off' || s.xtreme === 'noHints' || s.xtreme === 'noNames' || s.xtreme === 'noMap') out.xtreme = s.xtreme;
   // ohne Namen / ohne Karte: "Wo liegt das?" ergibt keinen Sinn
   if (xtremeBlocksLocate(out.xtreme)) out.locate = false;

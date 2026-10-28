@@ -214,7 +214,10 @@ export class Game extends Lobby {
       if (gen !== this.generation) return [];
       let a: Station, b: Station;
       try {
-        [a, b] = this.net.randomPair(this.settings, this.usedStations, this.pastPairs);
+        [a, b] =
+          this.settings.endpoints === 'addresses' && this.net.hasAddresses
+            ? this.net.randomAddressPair(this.settings, this.pastPairs)
+            : this.net.randomPair(this.settings, this.usedStations, this.pastPairs);
       } catch (e) {
         if (e instanceof NoPairError) throw new GameError(e.message, 422);
         throw e;
@@ -247,7 +250,7 @@ export class Game extends Lobby {
       if (ptLegs - 1 < wanted && attempt < 12) continue;
       this.usedStations.add(a.id).add(b.id);
       this.pastPairs.push({ a, b });
-      this.net.markUsed(a.id, b.id);
+      if (!this.net.isAddress(a.id)) this.net.markUsed(a.id, b.id);
       round.from = a;
       round.to = b;
       round.routes = routes;

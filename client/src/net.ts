@@ -35,8 +35,20 @@ export class NetIndex {
     for (const l of data.lines) this.lines.set(l.id, l);
   }
 
+  /** Adressen als Start/Ziel (Punkt 13): ohne Linien, nicht in `stations` (Suche, Netzkarte bleiben unberührt) */
+  private virtual = new Map<string, Station>();
+
   station(id: string): Station {
-    return this.stations.get(id)!;
+    return this.stations.get(id) ?? this.virtual.get(id)!;
+  }
+
+  /** Start/Ziel aus dem Spielzustand bekannt machen (Haltestelle: schon da; Adresse: neu anlegen) */
+  ensure(ref: { id: string; name: string; lat: number; lon: number }): Station {
+    const known = this.stations.get(ref.id) ?? this.virtual.get(ref.id);
+    if (known) return known;
+    const st: Station = { id: ref.id, name: ref.name, lat: ref.lat, lon: ref.lon, modes: [], lines: [], district: 0 };
+    this.virtual.set(ref.id, st);
+    return st;
   }
 
   patterns(line: Line): string[][] {

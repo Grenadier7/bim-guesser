@@ -42,6 +42,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   xtreme: 'off',
   /** Einschränkungs-Runden: 'never' · 'sometimes' · 'always' */
   restrictions: 'never',
+  /** Start/Ziel: 'stations' Haltestellen · 'addresses' zufällige Adressen */
+  endpoints: 'stations',
   /** Tipps: 'off' (keine) · 'cheap' (günstig) · 'expensive' (teuer – bei X-treme automatisch) */
   tips: 'cheap',
 };

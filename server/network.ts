@@ -46,8 +46,18 @@ export class Network {
   private usageSave: NodeJS.Timeout | null = null;
   private byNorm = new Map<string, Station[]>();
 
+  /** Adressen als Start/Ziel (Punkt 13): eigene „Stationen“ ohne Linien – nicht in `stations`, damit sie nie
+   *  versehentlich als Haltestelle erkannt werden */
+  private virtual = new Map<string, Station>();
+  private addresses: [number, number, string, number][] = [];
+
   constructor(data: NetworkData) {
     this.data = data;
+    try {
+      this.addresses = (JSON.parse(readFileSync(path.join(path.dirname(FILE), 'addresses.json'), 'utf8')) as { addresses: [number, number, string, number][] }).addresses;
+    } catch {
+      /* ohne Adressdaten nur Haltestellen */
+    }
     for (const s of data.stations) {
       this.stations.set(s.id, s);
       const k = normName(s.name);
@@ -109,7 +119,7 @@ export class Network {
   }
 
   station(id: string): Station {
-    const s = this.stations.get(id);
+    const s = this.stations.get(id) ?? this.virtual.get(id);
     if (!s) throw new Error(`Unbekannte Station ${id}`);
     return s;
   }
@@ -120,7 +130,51 @@ export class Network {
   }
 
   mainEfaId(stationId: string): string {
+    const v = this.virtual.get(stationId);
+    if (v) return `coord:${v.lon}:${v.lat}`;
     return this.data.efaIds[stationId][0];
+  }
+
+  get hasAddresses(): boolean {
+    return this.addresses.length > 0;
+  }
+
+  /**
+   * Zufälliges Adress-Paar (gleichmäßig über die bebaute Fläche, siehe scripts/build-addresses.ts) mit denselben
+   * Regeln wie bei Haltestellen: Entfernung, Fokus-Kreis, Abwechslung zu früheren Runden.
+   */
+  randomAddressPair(s: GameSettings, past: PastPair[] = []): [Station, Station] {
+    if (this.addresses.length < 2) throw new NoPairError('Keine Adressdaten vorhanden – bitte „Haltestellen“ wählen.');
+    const [minD, maxD] = distanceRange(s.distance);
+    const all = this.addresses.map(([lat, lon, name, district], i) => ({ i, lat, lon, name, district }));
+    const inFocus = s.focus ? all.filter((x) => distM(x, s.focus!) <= s.focus!.radiusM) : [];
+    // je Ende: mit Wahrscheinlichkeit `share` aus dem Fokus-Kreis, sonst aus ganz Wien
+    const pick = () => {
+      const pool = inFocus.length && Math.random() < s.focus!.share ? inFocus : all;
+      return pool[Math.floor(Math.random() * pool.length)];
+    };
+    const points = past.flatMap((p) => [p.a, p.b]);
+    for (let n = 0; n < 3000; n++) {
+      const a = pick();
+      const b = pick();
+      const d = distM(a, b);
+      const min = n < 1000 ? minD : Math.min(minD, 1500);
+      if (a === b || d < min || d > maxD) continue;
+      if (n < 2000 && points.some((p) => distM(p, a) < AVOID_POINT_M || distM(p, b) < AVOID_POINT_M)) continue;
+      return [this.addVirtual(a), this.addVirtual(b)];
+    }
+    throw new NoPairError('Kein passendes Adress-Paar gefunden – bitte andere Entfernung wählen.');
+  }
+
+  private addVirtual(x: { i: number; lat: number; lon: number; name: string; district: number }): Station {
+    const id = `a:${x.i}`;
+    const st: Station = { id, name: x.name, lat: x.lat, lon: x.lon, modes: [], lines: [], district: x.district };
+    this.virtual.set(id, st);
+    return st;
+  }
+
+  isAddress(id: string): boolean {
+    return this.virtual.has(id);
   }
 
   /** EFA-Haltestelle -> unsere Station (über ID, sonst Name + Nähe) */
@@ -151,6 +205,12 @@ export class Network {
 
   /** Linien, die im gewählten Netz an der Station halten */
   linesAt(stationId: string, net: NetMode): Line[] {
+    // Adresse: Linien der Haltestellen in der Nähe (≤ 500 m) – für den Tipp „Linien am Start/Ziel“
+    if (this.virtual.has(stationId)) {
+      const at = this.station(stationId);
+      const near = [...this.stations.values()].filter((s) => distM(s, at) <= 500);
+      return [...new Set(near.flatMap((s) => this.linesAt(s.id, net)))];
+    }
     return this.station(stationId)
       .lines.map((id) => this.lines.get(id)!)
       .filter((l) => linePatterns(l, net).some((p) => p.includes(stationId)));

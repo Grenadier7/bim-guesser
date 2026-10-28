@@ -20,8 +20,8 @@ export function roundScreen(panel: HTMLElement): Screen {
   const auth = app.session!;
   const { playerId } = auth;
   app.net.mode = s.settings.network;
-  const from = app.net.station(round.from!.id);
-  const to = app.net.station(round.to!.id);
+  const from = app.net.ensure(round.from!);
+  const to = app.net.ensure(round.to!);
   const multi = s.players.length > 1;
   // X-treme: Haltestellen eintippen, keine Route auf der Karte, je nach Stufe ohne Namen / ohne Karte
   const xt = s.settings.xtreme ?? 'off';
