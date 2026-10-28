@@ -202,7 +202,8 @@ for (const r of TRAIN_ROWS)
       assert.ok(from, `Start „${fromName}“ nicht im Netz`);
       const input = p.locator('.line-input');
       let done = false;
-      for (const id of from.lines.filter((l) => !/^N/.test(l))) {
+      // Tageslinien zuerst; nachts hält an manchen Stationen nur ein Nachtbus
+      for (const id of [...from.lines.filter((l) => !/^N/.test(l)), ...from.lines.filter((l) => /^N/.test(l))]) {
         await input.fill(id);
         await input.press('Enter');
         if (await p.locator('.leg-form .alight-select').isVisible({ timeout: 800 }).catch(() => false)) {
