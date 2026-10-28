@@ -28,6 +28,7 @@ import {
   fmtDuration,
   maxRoundPoints,
   maxRoundPointsWithBonus,
+  ADDRESS_FACTOR,
 } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import { app, routeState, endSession, inviteLink, isHost, savePrefs, setMobileMap } from '../store.ts';
@@ -182,7 +183,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
               'Ein Kreis auf der Karte, aus dem Start und Ziel bevorzugt kommen – z.B. für jemanden, der sich in einem Grätzl besonders gut auskennt. „Anteil“ = so viele Stationen kommen im Schnitt aus dem Kreis, der Rest aus ganz Wien.',
               !!focus,
               ro,
-              focus ? `${inCircle} passende Haltestellen im Kreis` : '',
+              focus && st.endpoints !== 'addresses' ? `${inCircle} passende Haltestellen im Kreis` : '',
             )}
           </div>
           ${
@@ -232,19 +233,25 @@ export function lobbyScreen(panel: HTMLElement): Screen {
           )}</span>${seg('restrictions', RESTRICTION_FREQUENCIES.map((r) => ({ value: r.id, label: r.label })), st.restrictions, ro)}</div>
           ${xtremeTile()}`;
       }
+      const addr = st.endpoints === 'addresses';
       return `
           <div class="setting"><span>📍 Start & Ziel ${infoTip(
-            '<b>Haltestellen:</b> Start und Ziel sind Stationen.<br><b>Adressen:</b> zufällige echte Adressen (Stadt Wien), gleichmäßig über die Stadt verteilt – erst zu Fuß zur passenden Haltestelle. Die Haltestellen-Auswahl unten bestimmt dann nur den Punkte-Faktor.',
+            `<b>Haltestellen:</b> Start und Ziel sind Stationen.<br><b>Adressen:</b> ${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} echte Adressen (Stadt Wien), gleichmäßig über die Stadt verteilt – erst zu Fuß zur passenden Haltestelle. Punkte ×${ADDRESS_FACTOR.toLocaleString('de-AT')} wie Bus-Knoten.`,
           )}</span>${seg('endpoints', [
             { value: 'stations', label: '🚏 Haltestellen' },
-            { value: 'addresses', label: '🏠 Adressen' },
-          ], st.endpoints ?? 'stations', ro)}</div>
-          <div class="setting"><span>Haltestellen ${infoTip(
+            ...(app.net.data.addressCount ? [{ value: 'addresses', label: '🏠 Adressen' }] : []),
+          ], st.endpoints ?? 'stations', ro)}
+            ${addr ? `<small class="hint">${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} Adressen · Punkte ×${mult.toLocaleString('de-AT')}</small>` : ''}</div>
+          ${
+            addr
+              ? ''
+              : `<div class="setting"><span>Haltestellen ${infoTip(
             STATION_GROUPS.map((g) => `<b>${g.icon} ${g.label}:</b> ${g.levels.map((l) => `${esc(l.short)} = ${esc(l.hint)}`).join(' · ')}`).join('<br>') +
               '<br>Kästchen an/aus, darunter die Stufe wählen. Der Punkte-Multiplikator richtet sich nach der schwierigsten Auswahl.',
           )}</span>
             ${stationPicker(st.stations, ro)}
-            <small class="hint">${esc(stationsText(st.stations))} · Punkte ×${mult.toLocaleString('de-AT')}</small></div>
+            <small class="hint">${esc(stationsText(st.stations))} · Punkte ×${mult.toLocaleString('de-AT')}</small></div>`
+          }
           <div class="setting"><span>Entfernung</span>${seg('distance', DISTANCES.map((d) => ({ value: d.id, label: d.label })), st.distance, ro)}</div>
           <div class="setting"><span>Min. Umstiege ${infoTip(
             'So viele Umstiege hat die beste Verbindung <b>mindestens</b>. 0 = auch Direktverbindungen, 2 = nur Strecken mit 2+ Umstiegen.<br>Leicht 0 · Mittel 1 · Schwer und Profi 2. Mehr Umstiege = mehr Punkte (×1 / ×1,05 / ×1,1).',
@@ -266,7 +273,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         <h3>Einstellungen ${ro ? '<small>– nur der Host kann sie ändern</small>' : ''}</h3>
         <div class="setting"><span>Schwierigkeit</span>
           ${seg('difficulty', [...DIFFICULTY_PRESETS.map((d) => ({ value: d.id, label: d.label })), ...(st.difficulty === 'custom' ? [{ value: 'custom', label: 'Eigene' }] : [])], st.difficulty, ro)}
-          <small class="hint">${poolCount(st.stations)} Haltestellen${st.distance !== 'medium' ? ` · ${DISTANCES.find((d) => d.id === st.distance)!.label}` : ''}${st.minTransfers ? ` · mind. ${st.minTransfers} Umstieg${st.minTransfers > 1 ? 'e' : ''}` : ''} · <b>Punkte ×${mult.toLocaleString('de-AT')}</b> ${infoTip(esc(stationsText(st.stations)))}</small></div>
+          <small class="hint">${st.endpoints === 'addresses' ? `${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} Adressen` : `${poolCount(st.stations)} Haltestellen`}${st.distance !== 'medium' ? ` · ${DISTANCES.find((d) => d.id === st.distance)!.label}` : ''}${st.minTransfers ? ` · mind. ${st.minTransfers} Umstieg${st.minTransfers > 1 ? 'e' : ''}` : ''} · <b>Punkte ×${mult.toLocaleString('de-AT')}</b> ${st.endpoints === 'addresses' ? '' : infoTip(esc(stationsText(st.stations)))}</small></div>
         <div class="setting"><span>Runden</span>${seg('rounds', [3, 5, 7, 10].map((n) => ({ value: String(n), label: String(n) })), String(st.rounds), ro)}</div>
 
         <div class="setting"><span>⏱ Zeitlimit ${infoTip(
@@ -389,7 +396,20 @@ export function lobbyScreen(panel: HTMLElement): Screen {
       sendFocus({ lat, lon });
     });
     panel.querySelector('#shareSettings')?.addEventListener('click', () =>
-      openSettingsDialog('route', routeState().settings, host ? (s) => send(s as Partial<GameSettings>) : null),
+      openSettingsDialog(
+        'route',
+        routeState().settings,
+        host
+          ? async (s) => {
+              const st = (await api.settings(app.session!, s as Partial<GameSettings>)) as GameState;
+              const keep: Partial<GameSettings> = { ...st.settings };
+              for (const k of NOT_REMEMBERED) delete keep[k];
+              app.prefs.settings = keep;
+              savePrefs();
+              return st.settings as unknown as Record<string, unknown>;
+            }
+          : null,
+      ),
     );
     panel.querySelector('#resetAll')?.addEventListener('click', (e) => {
       // sitzt in der Überschrift von "Erweitert" – nicht auf-/zuklappen

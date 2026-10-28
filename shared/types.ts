@@ -63,6 +63,8 @@ export interface NetworkPublic {
   districts: District[];
   /** Ø-Takt je Linie in Minuten (Schlüssel wd7, wd12, wd20, sa12, su12; null = fährt da nicht) – aus data/headways.json */
   headways?: Record<string, Record<string, number | null>>;
+  /** so viele Adressen kennt der Server als Start/Ziel (0 = keine Adressdaten) */
+  addressCount?: number;
 }
 
 /** data/headways.json (scripts/build-headways.ts) */
