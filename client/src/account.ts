@@ -7,6 +7,7 @@
 import type { FriendsList, Me, Profile, UserListItem } from '../../shared/types.ts';
 import { ApiError } from './api.ts';
 import { loadJson, onSaveJson, saveJson } from './storage.ts';
+import { mergeProgress } from '../../shared/progress.ts';
 
 /** synchronisierte Schlüssel: 'merge' = beim Anmelden zusammenführen, 'account' = Account gewinnt */
 const SYNC: Record<string, 'merge' | 'account'> = {
@@ -62,21 +63,6 @@ export const accountApi = {
 // ---------------------------------------------------------------- Sync
 
 const readLocal = (k: string) => loadJson<unknown>(k, null);
-
-/** Fortschritt zusammenführen: Objekte je Schlüssel, Zahlen das Maximum, Ja/Nein „oder“, Listen vereinigt */
-export function mergeProgress(a: unknown, b: unknown): unknown {
-  if (a == null) return b;
-  if (b == null) return a;
-  if (Array.isArray(a) && Array.isArray(b)) return [...new Set([...a, ...b].map((x) => JSON.stringify(x)))].map((x) => JSON.parse(x));
-  if (typeof a === 'number' && typeof b === 'number') return Math.max(a, b);
-  if (typeof a === 'boolean' && typeof b === 'boolean') return a || b;
-  if (typeof a === 'object' && typeof b === 'object' && !Array.isArray(a) && !Array.isArray(b)) {
-    const out: Record<string, unknown> = { ...(a as object) };
-    for (const [k, v] of Object.entries(b as object)) out[k] = mergeProgress(out[k], v);
-    return out;
-  }
-  return b;
-}
 
 /** Account-Stand in den Browser schreiben (true = es hat sich etwas geändert) */
 function applyServer(data: Record<string, unknown>, merge: boolean): { changedLocal: boolean; upload: Record<string, unknown> } {

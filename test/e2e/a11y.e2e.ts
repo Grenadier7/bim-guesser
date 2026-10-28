@@ -52,6 +52,24 @@ async function audit(p: Page, name: string) {
 const SCREENS: { name: string; go: (p: Page) => Promise<void> }[] = [
   { name: 'start', go: async (p) => void (await p.locator('.mode-learn').waitFor()) },
   {
+    name: 'account-anmelden',
+    go: async (p) => {
+      await p.locator('#acct-btn').click();
+      await p.locator('form[data-form=login]').waitFor();
+    },
+  },
+  {
+    name: 'account-profil',
+    go: async (p) => {
+      await p.locator('#acct-btn').click();
+      await p.locator('.acct-tabs [data-tab=register]').click();
+      await p.locator('form[data-form=register] input[name=name]').fill(`A11y${Math.random().toString(36).slice(2, 7)}`);
+      await p.locator('form[data-form=register] input[name=password]').fill('passwort123');
+      await p.locator('form[data-form=register] button').click();
+      await p.locator('.acct-body .medals').waitFor();
+    },
+  },
+  {
     name: 'routenjagd-lobby',
     go: async (p) => {
       await setName(p, 'A11y');

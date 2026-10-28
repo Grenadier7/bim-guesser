@@ -4329,7 +4329,7 @@ details.host-bar {
   padding: 2px 8px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--good) 14%, var(--panel));
-  color: var(--good);
+  color: color-mix(in srgb, var(--good) 65%, #000);
   font-weight: 700;
   font-size: 13px;
   white-space: nowrap;
@@ -4453,12 +4453,18 @@ details.host-bar {
   border-radius: var(--radius);
   background: var(--panel);
   text-align: center;
-  opacity: 0.45;
+}
+/* noch nicht erreicht: grau und gestrichelt – Text bleibt gut lesbar (Kontrast), nur das Symbol wird blass */
+.medal.locked {
+  background: var(--bg);
+  border: 1px dashed #b9bec6;
+  color: var(--muted);
+}
+.medal.locked span {
   filter: grayscale(1);
+  opacity: 0.4;
 }
 .medal.on {
-  opacity: 1;
-  filter: none;
   box-shadow: var(--shadow);
 }
 .medal span {
@@ -4612,4 +4618,14 @@ details.host-bar {
 .import-problems ul {
   margin: 6px 0 0;
   padding-left: 18px;
+}
+
+/* unsichtbar, aber für Passwort-Manager vorhanden (Benutzername im Formular „Passwort ändern“) */
+.vh {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }

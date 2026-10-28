@@ -39,7 +39,7 @@ document.addEventListener('keydown', (e) => e.key === 'Escape' && !sheet.hidden 
 
 function levelBar(l: LevelInfo): string {
   const pct = Math.round(((l.xp - l.levelXp) / Math.max(1, l.nextXp - l.levelXp)) * 100);
-  return `<div class="lvl"><span class="lvl-badge">Lv ${l.level}</span><div class="lvl-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
+  return `<div class="lvl"><span class="lvl-badge">Lv ${l.level}</span><div class="lvl-bar" role="progressbar" aria-label="Fortschritt bis Level ${l.level + 1}" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>
     <small>${l.xp - l.levelXp} / ${l.nextXp - l.levelXp} XP bis Level ${l.level + 1}</small></div>`;
 }
 
@@ -50,7 +50,7 @@ function medalsHtml(ms: MedalPublic[]): string {
       .sort((a, b) => Number(!!b.at) - Number(!!a.at))
       .map(
         (m) =>
-          `<div class="medal ${m.at ? 'on' : ''}" title="${esc(m.text)}${m.at ? ` – ${new Date(m.at).toLocaleDateString('de-AT')}` : ''}"><span>${m.icon}</span><b>${esc(m.title)}</b><small>${esc(m.text)}</small></div>`,
+          `<div class="medal ${m.at ? 'on' : 'locked'}" title="${m.at ? '' : 'noch nicht erreicht: '}${esc(m.text)}${m.at ? ` – ${new Date(m.at).toLocaleDateString('de-AT')}` : ''}"><span>${m.icon}</span><b>${esc(m.title)}</b><small>${esc(m.text)}</small></div>`,
       )
       .join('')}</div>`;
 }
@@ -148,7 +148,8 @@ async function body(): Promise<string> {
   if (tab === 'settings')
     return `<form class="acct-form" data-form="email"><label class="field"><span>E-Mail <small class="muted">(für „Passwort vergessen“)</small></span>
         <input name="email" type="email" maxlength="120" value="${esc(me.email ?? '')}" autocomplete="email"></label><button class="btn btn-ghost">Speichern</button></form>
-      <form class="acct-form" data-form="password"><label class="field"><span>Bisheriges Passwort</span><input name="old" type="password" required autocomplete="current-password"></label>
+      <form class="acct-form" data-form="password"><input class="vh" type="text" name="username" autocomplete="username" value="${esc(me.name)}" tabindex="-1" aria-hidden="true">
+        <label class="field"><span>Bisheriges Passwort</span><input name="old" type="password" required autocomplete="current-password"></label>
         <label class="field"><span>Neues Passwort</span><input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
         <button class="btn btn-ghost">Passwort ändern</button><small class="muted">Andere Geräte werden dabei abgemeldet.</small></form>
       <button class="btn btn-ghost" id="logout">Abmelden</button>`;
@@ -156,7 +157,11 @@ async function body(): Promise<string> {
   return `<div class="profile-head"><h3>${esc(me.name)}</h3></div>${levelBar(p.level)}${medalsHtml(p.medals)}${p.stats ? statsHtml(p.stats) : ''}`;
 }
 
+/** jede Anzeige bekommt eine Nummer – eine ältere, langsamere Antwort überschreibt nie eine neuere */
+let renderGen = 0;
+
 async function render() {
+  const gen = ++renderGen;
   const me = account.me;
   const tabs: [Tab, string][] = me
     ? [
@@ -172,14 +177,17 @@ async function render() {
   sheet.innerHTML = `<div class="acct-box">
       <div class="acct-top"><b>${me ? '👤 Account' : '👤 Account – Fortschritt auf allen Geräten'}</b><button class="icon-btn" id="acct-close" aria-label="Schließen">✕</button></div>
       ${tab === 'reset' || tab === 'forgot' ? '' : `<div class="acct-tabs">${tabs.map(([t, l]) => `<button data-tab="${t}" class="${t === tab && !viewing ? 'on' : ''}">${l}</button>`).join('')}</div>`}
-      <div class="acct-body"><div class="loading"><div class="spinner"></div></div></div></div>`;
+      <div class="acct-body" tabindex="0"><div class="loading"><div class="spinner"></div></div></div></div>`;
   sheet.querySelector('#acct-close')!.addEventListener('click', close);
   const box = sheet.querySelector<HTMLElement>('.acct-body')!;
+  let html: string;
   try {
-    box.innerHTML = await body();
+    html = await body();
   } catch (e) {
-    box.innerHTML = `<p class="err">${esc((e as Error).message)}</p>`;
+    html = `<p class="err">${esc((e as Error).message)}</p>`;
   }
+  if (gen !== renderGen) return;
+  box.innerHTML = html;
   bind();
   (sheet.querySelector<HTMLInputElement>('.acct-form input:not([value]), .acct-form input[value=""], #people-q') ?? sheet.querySelector<HTMLInputElement>('.acct-form input'))?.focus();
 }
@@ -223,6 +231,8 @@ function bind() {
   q?.addEventListener('input', () => {
     clearTimeout(t);
     t = setTimeout(() => {
+      // inzwischen anderer Reiter oder ein Profil offen: nicht dazwischenfunken (sonst wären z.B. Eingaben weg)
+      if (!q.isConnected || tab !== 'people' || viewing) return;
       peopleQuery = q.value;
       void render().then(() => {
         const n = sheet.querySelector<HTMLInputElement>('#people-q');

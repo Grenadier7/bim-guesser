@@ -12,14 +12,24 @@ import { createApp } from '../server/app.ts';
 import type { Lobby } from '../server/lobby.ts';
 import { Network } from '../server/network.ts';
 import { COURSES } from '../client/src/learn/courses/list.ts';
+import type { GameManager } from '../server/manager.ts';
+import { installEfaMock } from './support/efa-mock.ts';
 
 const net = Network.load();
 const mails: { to: string; text: string }[] = [];
 let base = '';
 let server: http.Server;
+let games: GameManager;
+let accounts: Accounts;
+/** echtes fetch für die HTTP-Aufrufe an den Testserver – die Auskunfts-Attrappe ersetzt globalThis.fetch */
+const realFetch = globalThis.fetch;
 
 before(async () => {
-  const { app } = createApp({ net, version: 'test', accountsDb: ':memory:', mail: async (to, _s, text) => void mails.push({ to, text }) });
+  await installEfaMock();
+  const made = createApp({ net, version: 'test', accountsDb: ':memory:', mail: async (to, _s, text) => void mails.push({ to, text }) });
+  const { app } = made;
+  games = made.games;
+  accounts = made.accounts;
   server = http.createServer(app);
   await new Promise<void>((r) => server.listen(0, r));
   base = `http://localhost:${(server.address() as AddressInfo).port}`;
@@ -29,17 +39,25 @@ after(() => server?.close());
 /** ein „Browser“ mit eigenem Cookie */
 function browser() {
   let cookie = '';
-  const call = async (method: string, url: string, body?: unknown, json = true) => {
-    const res = await fetch(base + url, {
+  const call = async (method: string, url: string, body?: unknown, json = true, extra: Record<string, string> = {}) => {
+    const res = await realFetch(base + url, {
       method,
-      headers: { ...(body !== undefined ? { 'Content-Type': json ? 'application/json' : 'text/plain' } : {}), ...(cookie ? { Cookie: cookie } : {}) },
+      headers: { ...(body !== undefined ? { 'Content-Type': json ? 'application/json' : 'text/plain' } : {}), ...(cookie ? { Cookie: cookie } : {}), ...extra },
       body: body === undefined ? undefined : json ? JSON.stringify(body) : String(body),
     });
     const set = res.headers.get('set-cookie');
     if (set) cookie = /bg_sid=([^;]*)/.exec(set)![1] ? `bg_sid=${/bg_sid=([^;]*)/.exec(set)![1]}` : '';
     return { status: res.status, body: await res.json().catch(() => null), setCookie: set };
   };
-  return { call, get cookie() { return cookie; } };
+  return {
+    call,
+    get cookie() {
+      return cookie;
+    },
+    set cookie(c: string) {
+      cookie = c;
+    },
+  };
 }
 
 const uniq = (p: string) => `${p}${Math.random().toString(36).slice(2, 7)}`;
@@ -243,5 +261,300 @@ describe('Statistik', () => {
     assert.equal(s.favoriteStation?.name, 'Karlsplatz');
     assert.equal(s.favorites.U?.id, 'U1');
     acc.close();
+  });
+});
+
+// ================================================================ gründlich: Sitzungen, Konto, Grenzen
+
+/** Account anlegen, „Browser“ ist angemeldet */
+async function newUser(prefix: string, email = true) {
+  const b = browser();
+  const name = uniq(prefix);
+  const r = await b.call('POST', '/api/auth/register', { name, password: 'passwort1', ...(email ? { email: `${name.toLowerCase()}@example.org` } : {}) });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const id = accounts.userFor(b.cookie.split('=')[1])!.id;
+  return { b, name, id };
+}
+const db = () => (accounts as unknown as { db: import('node:sqlite').DatabaseSync }).db;
+
+describe('Sitzungen und Konto', () => {
+  test('mehrere Geräte: Passwort ändern meldet die anderen ab, dieses bleibt; falsches altes Passwort 401', async () => {
+    const { b, name } = await newUser('Sitz');
+    const other = browser();
+    assert.equal((await other.call('POST', '/api/auth/login', { name, password: 'passwort1' })).status, 200);
+    assert.equal((await b.call('POST', '/api/me/password', { old: 'falsch999', password: 'neuesPw123' })).status, 401);
+    assert.equal((await b.call('POST', '/api/me/password', { old: 'passwort1', password: 'kurz' })).status, 400);
+    assert.equal((await b.call('POST', '/api/me/password', { old: 'passwort1', password: 'neuesPw123' })).status, 200);
+    assert.equal((await b.call('GET', '/api/me')).body.user.name, name);
+    assert.equal((await other.call('GET', '/api/me')).body.user, null);
+    assert.equal((await browser().call('POST', '/api/auth/login', { name, password: 'passwort1' })).status, 401);
+    assert.equal((await browser().call('POST', '/api/auth/login', { name, password: 'neuesPw123' })).status, 200);
+  });
+
+  test('Abmelden beendet nur diese Sitzung; abgelaufene Sitzung gilt nicht; kaputtes Cookie = nicht angemeldet', async () => {
+    const { b, name, id } = await newUser('Ablauf');
+    const other = browser();
+    await other.call('POST', '/api/auth/login', { name, password: 'passwort1' });
+    await b.call('POST', '/api/auth/logout', {});
+    assert.equal((await b.call('GET', '/api/me')).body.user, null);
+    assert.equal((await other.call('GET', '/api/me')).body.user.name, name);
+    db().prepare('UPDATE sessions SET expires = 1 WHERE user_id = ?').run(id);
+    assert.equal((await other.call('GET', '/api/me')).body.user, null);
+    const fake = browser();
+    fake.cookie = 'bg_sid=gibtsnichtgibtsnichtgibtsnicht12345';
+    assert.equal((await fake.call('GET', '/api/me')).body.user, null);
+    assert.equal((await fake.call('PUT', '/api/me/data', { data: {} })).status, 401);
+  });
+
+  test('Cookie über HTTPS (Proxy) mit Secure, über HTTP ohne', async () => {
+    const b = browser();
+    const name = uniq('Sec');
+    const r = await b.call('POST', '/api/auth/register', { name, password: 'passwort1' }, true, { 'X-Forwarded-Proto': 'https' });
+    assert.match(r.setCookie!, /; Secure/);
+    const plain = await browser().call('POST', '/api/auth/login', { name, password: 'passwort1' });
+    assert.doesNotMatch(plain.setCookie!, /Secure/);
+  });
+
+  test('gleichzeitig dreimal derselbe Name → genau einer klappt', async () => {
+    const name = uniq('Zwilling');
+    const rs = await Promise.all([1, 2, 3].map(() => browser().call('POST', '/api/auth/register', { name, password: 'passwort1' })));
+    assert.deepEqual(rs.map((r) => r.status).sort(), [200, 409, 409]);
+  });
+
+  test('E-Mail ändern (ungültig → 400), danach Anmelden und Reset über die neue Adresse; ohne Adresse kein Reset', async () => {
+    const { b, name } = await newUser('Mail', false);
+    assert.equal((await b.call('PUT', '/api/me/email', { email: 'kaputt@' })).status, 400);
+    const r = await b.call('PUT', '/api/me/email', { email: `NEU.${name}@Example.org` });
+    assert.equal(r.body.email, `neu.${name.toLowerCase()}@example.org`);
+    assert.equal((await browser().call('POST', '/api/auth/login', { name: `neu.${name}@example.org`, password: 'passwort1' })).status, 200);
+    mails.length = 0;
+    await browser().call('POST', '/api/auth/forgot', { email: `neu.${name}@example.org` });
+    assert.equal(mails.length, 1);
+    await b.call('PUT', '/api/me/email', { email: '' });
+    mails.length = 0;
+    await browser().call('POST', '/api/auth/forgot', { email: `neu.${name}@example.org` });
+    assert.equal(mails.length, 0);
+  });
+
+  test('Reset: zu kurzes Passwort verbraucht den Link nicht; abgelaufener oder falscher Link 400; zwei Accounts mit einer Adresse', async () => {
+    const shared = `${uniq('fam')}@example.org`;
+    const na = uniq('Mama');
+    const nb = uniq('Kind');
+    await browser().call('POST', '/api/auth/register', { name: na, password: 'passwort1', email: shared });
+    await browser().call('POST', '/api/auth/register', { name: nb, password: 'passwort1', email: shared });
+    mails.length = 0;
+    await browser().call('POST', '/api/auth/forgot', { email: shared });
+    assert.equal(mails.length, 1, 'eine Mail mit beiden Links');
+    const links = [...mails[0].text.matchAll(/^(\S+): \S+\?reset=([A-Za-z0-9_-]+)$/gm)].map((m) => ({ name: m[1], token: m[2] }));
+    assert.deepEqual(links.map((l) => l.name).sort(), [na, nb].sort());
+    const tKind = links.find((l) => l.name === nb)!.token;
+    assert.equal((await browser().call('POST', '/api/auth/reset', { token: tKind, password: 'kurz' })).status, 400);
+    const ok = browser();
+    assert.equal((await ok.call('POST', '/api/auth/reset', { token: tKind, password: 'kindNeu123' })).status, 200);
+    assert.equal((await ok.call('GET', '/api/me')).body.user.name, nb, 'Reset meldet den richtigen Account an');
+    assert.equal((await browser().call('POST', '/api/auth/login', { name: na, password: 'passwort1' })).status, 200, 'anderer Account unverändert');
+    assert.equal((await browser().call('POST', '/api/auth/reset', { token: 'falsch', password: 'egalegal1' })).status, 400);
+    mails.length = 0;
+    await browser().call('POST', '/api/auth/forgot', { email: shared });
+    const line = mails[0].text.split('\n').find((l) => l.startsWith(`${na}:`))!;
+    const tMama = /\?reset=([A-Za-z0-9_-]+)/.exec(line)![1];
+    db().prepare('UPDATE resets SET expires = 1').run();
+    assert.equal((await browser().call('POST', '/api/auth/reset', { token: tMama, password: 'mamaNeu123' })).status, 400);
+  });
+
+  test('Passwort vergessen ohne Mailversand → 503 mit Erklärung', async () => {
+    const { app } = createApp({ net, version: 'test', accountsDb: ':memory:', mail: undefined });
+    const srv = http.createServer(app);
+    await new Promise<void>((r) => srv.listen(0, r));
+    const res = await realFetch(`http://localhost:${(srv.address() as AddressInfo).port}/api/auth/forgot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'x@example.org' }),
+    });
+    assert.equal(res.status, 503);
+    assert.match((await res.json()).error, /nicht eingerichtet/);
+    srv.close();
+  });
+
+  test('Spielstand: Grenzen – zu groß 413, kein Objekt 400, nur gültige oeffi-Schlüssel', async () => {
+    const { b } = await newUser('Daten');
+    assert.equal((await b.call('PUT', '/api/me/data', { data: { 'oeffi-big-v1': 'x'.repeat(250_000) } })).status, 413);
+    assert.equal((await b.call('PUT', '/api/me/data', { data: [1, 2] })).status, 400);
+    assert.equal((await b.call('PUT', '/api/me/data', { data: 'text' })).status, 400);
+    await b.call('PUT', '/api/me/data', { data: { x: 1, 'oeffi-ok-v1': { a: 1 }, 'OEFFI-gross': 1, 'oeffi-../x': 1 } });
+    assert.deepEqual(Object.keys((await b.call('GET', '/api/me')).body.user.data), ['oeffi-ok-v1']);
+  });
+
+  test('CSRF: alle ändernden Account-Anfragen nur als JSON', async () => {
+    const { b, name } = await newUser('Csrf');
+    const cases: [string, string][] = [
+      ['PUT', '/api/me/data'],
+      ['PUT', '/api/me/email'],
+      ['POST', '/api/me/password'],
+      ['POST', '/api/auth/logout'],
+      ['POST', `/api/friends/${name}`],
+      ['DELETE', `/api/friends/${name}`],
+    ];
+    for (const [m, u] of cases) assert.equal((await b.call(m, u, 'a=b', false)).status, 415, `${m} ${u}`);
+    assert.equal((await b.call('GET', '/api/me')).body.user.name, name, 'noch angemeldet');
+  });
+});
+
+describe('Leute, Freunde, Profile – Grenzfälle', () => {
+  test('Freund: sich selbst 400, unbekannt 404, doppelte Anfrage bleibt eine, beide Seiten können beenden', async () => {
+    const a = await newUser('Ida');
+    const b = await newUser('Jan');
+    assert.equal((await a.b.call('POST', `/api/friends/${a.name}`, {})).status, 400);
+    assert.equal((await a.b.call('POST', '/api/friends/gibtsnichtxyz', {})).status, 404);
+    await a.b.call('POST', `/api/friends/${b.name}`, {});
+    assert.equal((await a.b.call('POST', `/api/friends/${b.name}`, {})).body.relation, 'outgoing');
+    assert.equal((await b.b.call('GET', '/api/friends')).body.incoming.length, 1);
+    assert.equal((await b.b.call('POST', `/api/friends/${a.name.toUpperCase()}`, {})).body.relation, 'friend', 'Groß/klein egal');
+    await b.b.call('DELETE', `/api/friends/${a.name}`, {});
+    assert.equal((await a.b.call('GET', '/api/friends')).body.friends.length, 0);
+    assert.equal((await browser().call('GET', '/api/friends')).status, 401);
+    assert.equal((await browser().call('POST', `/api/friends/${a.name}`, {})).status, 401);
+  });
+
+  test('Suche: % und _ sind normale Zeichen; ohne Anmeldung ohne Beziehung; nie E-Mails; Profil unbekannt 404', async () => {
+    const a = await newUser('Kai');
+    assert.equal((await a.b.call('GET', '/api/users?q=%25')).body.length, 0);
+    assert.equal((await a.b.call('GET', '/api/users?q=_')).body.length, 0);
+    const anon = (await browser().call('GET', `/api/users?q=${a.name}`)).body;
+    assert.equal(anon[0].name, a.name);
+    assert.equal(anon[0].relation, null);
+    assert.equal((await a.b.call('GET', `/api/users?q=${a.name}`)).body[0].relation, 'self');
+    assert.equal((await browser().call('GET', '/api/users/gibtsnichtxyz')).status, 404);
+    const p = (await browser().call('GET', `/api/users/${a.name}`)).body;
+    assert.equal(p.stats, null);
+    assert.equal(p.medals.length, 14);
+    assert.equal(JSON.stringify(p).includes('@'), false, 'keine E-Mail im Profil');
+    assert.equal(JSON.stringify(anon).includes('@'), false, 'keine E-Mail in der Liste');
+  });
+
+  test('Einladungen: nur angemeldet, nur Mitglieder, nur Freunde; neue ersetzt alte; verschwindet mit der Lobby', async () => {
+    const a = await newUser('Lea');
+    const b = await newUser('Max');
+    await a.b.call('POST', `/api/friends/${b.name}`, {});
+    await b.b.call('POST', `/api/friends/${a.name}`, {});
+    const lobby = (await a.b.call('POST', '/api/games', { mode: 'route', playerName: 'x', settings: {} })).body;
+    const code = lobby.state.id;
+    assert.equal(lobby.state.players[0].account, a.name, 'Account-Name am Spieler');
+    assert.equal((await browser().call('POST', `/api/games/${code}/invite`, { token: lobby.token, to: 'all' })).status, 401);
+    assert.equal((await a.b.call('POST', `/api/games/${code}/invite`, { token: 'falsch', to: 'all' })).status, 403);
+    assert.equal((await a.b.call('POST', `/api/games/${code}/invite`, { token: lobby.token, to: [] })).status, 400);
+    await a.b.call('POST', `/api/games/${code}/invite`, { token: lobby.token, to: [b.name] });
+    await a.b.call('POST', `/api/games/${code}/invite`, { token: lobby.token, to: 'all' });
+    const inv = (await b.b.call('GET', '/api/me')).body.user.invites;
+    assert.equal(inv.length, 1, 'zweite Einladung ersetzt die erste');
+    assert.equal(inv[0].mode, 'route');
+    await a.b.call('DELETE', `/api/me/invites/${inv[0].id}`, {});
+    assert.equal((await b.b.call('GET', '/api/me')).body.user.invites.length, 1, 'fremde Einladung löschen geht nicht');
+    const anon = (await browser().call('POST', `/api/games/${code}/join`, { playerName: 'Gast' })).body;
+    assert.equal(anon.state.players.find((p: { name: string }) => p.name === 'Gast').account, undefined, 'ohne Anmeldung kein Account am Spieler');
+    (games.get(code) as unknown as { close(r: string): void }).close('Test');
+    assert.equal((await b.b.call('GET', '/api/me')).body.user.invites.length, 0, 'Lobby zu → Einladung weg');
+    assert.deepEqual((await a.b.call('GET', '/api/me')).body.user.friendsOnline, [b.name]);
+  });
+});
+
+describe('Statistik aus echten Spielabläufen', () => {
+  test('Quiz: zwei Accounts, A antwortet alles richtig → Sieg, Quiz-Ass, XP; B ohne Medaille', async () => {
+    const a = await newUser('Quizzer');
+    const b = await newUser('Rater');
+    const lobby = (await a.b.call('POST', '/api/games', { mode: 'quiz', playerName: 'A', settings: { questions: 5, modes: ['U', 'S'], weights: { draw: 1 } } })).body;
+    const code = lobby.state.id;
+    const jb = (await b.b.call('POST', `/api/games/${code}/join`, { playerName: 'B' })).body;
+    const xpBefore = accounts.level(a.id).xp;
+    let st = (await a.b.call('POST', `/api/games/${code}/start`, { token: lobby.token })).body;
+    const qs = (games.get(code) as unknown as { questions: { correct: unknown; type: string; multi?: boolean; options?: { id: string }[] }[] }).questions;
+    for (let i = 0; i < st.total; i++) {
+      const q = qs[i];
+      const wrong = q.type === 'locate' ? [48.0, 16.0] : q.multi ? [] : ((q.options ?? []).find((o) => o.id !== q.correct)?.id ?? 'x');
+      await b.b.call('POST', `/api/games/${code}/quiz/answer`, { token: jb.token, index: i, answer: wrong });
+      st = (await a.b.call('POST', `/api/games/${code}/quiz/answer`, { token: lobby.token, index: i, answer: q.correct })).body;
+      assert.equal(st.status, 'revealed');
+      st = (await a.b.call('POST', `/api/games/${code}/next`, { token: lobby.token })).body;
+    }
+    assert.equal(st.phase, 'finished');
+    const sa = accounts.stats(a.id);
+    assert.equal(sa.quizGames, 1);
+    assert.equal(sa.quizWins, 1);
+    assert.ok(accounts.medals(a.id).find((m) => m.id === 'quiz-ace')!.at, 'Quiz-Ass');
+    assert.ok(accounts.level(a.id).xp >= xpBefore + 10 + 20, 'XP für Quiz und Sieg');
+    const sb = accounts.stats(b.id);
+    assert.equal(sb.quizGames, 1);
+    assert.equal(sb.quizWins, 0);
+    assert.equal(accounts.medals(b.id).find((m) => m.id === 'quiz-ace')!.at, null);
+    assert.equal(sb.recent[0].kind, 'quiz');
+    assert.equal(sb.recent[0].rank, 2);
+  });
+
+  test('Routenjagd über HTTP: Runden und Spielende werden gezählt (Auskunfts-Attrappe)', async () => {
+    const a = await newUser('Jaeger');
+    const lobby = (await a.b.call('POST', '/api/games', { mode: 'route', playerName: 'A', settings: {} })).body;
+    const code = lobby.state.id;
+    await a.b.call('PUT', `/api/games/${code}/settings`, {
+      token: lobby.token,
+      settings: { rounds: 3, locate: false, restrictions: 'never', minTransfers: 0, roundTimeLimitSec: null, stations: ['U'] },
+    });
+    let st = (await a.b.call('POST', `/api/games/${code}/start`, { token: lobby.token })).body;
+    assert.equal(st.phase, 'playing', JSON.stringify(st).slice(0, 300));
+    for (let r = 0; r < 3; r++) {
+      const round = st.rounds[r];
+      const sub = await a.b.call('POST', `/api/games/${code}/rounds/${r}/submit`, { token: lobby.token, legs: [{ line: 'U6', from: round.from.id, to: round.to.id }], guesses: null });
+      assert.equal(sub.status, 200, JSON.stringify(sub.body));
+      st = (await a.b.call('POST', `/api/games/${code}/next`, { token: lobby.token })).body;
+    }
+    assert.equal(st.phase, 'finished');
+    const s = accounts.stats(a.id);
+    assert.equal(s.rounds, 3);
+    assert.equal(s.games, 1);
+    assert.equal(s.wins, 0, 'allein ist kein Sieg');
+    assert.ok(accounts.medals(a.id).find((m) => m.id === 'first-game')!.at);
+    assert.equal(s.recent[0].kind, 'game');
+  });
+
+  test('Training: ausgewertete Strecke zählt einmal (auch bei mehrfachem Auswerten), Lieblingslinie U6', async () => {
+    const a = await newUser('Trainer');
+    const st = (n: string) => net.data.stations.find((x) => x.name === n && x.lines.includes('U6'))!.id;
+    const round = (await a.b.call('POST', '/api/training/round', { settings: { difficulty: 'easy' }, pair: { from: st('Westbahnhof'), to: st('Spittelau') } })).body;
+    assert.ok(round.id, JSON.stringify(round).slice(0, 200));
+    const legs = [{ line: 'U6', from: st('Westbahnhof'), to: st('Spittelau') }];
+    for (let i = 0; i < 3; i++) assert.equal((await a.b.call('POST', `/api/training/${round.id}/evaluate`, { legs })).status, 200);
+    const s = accounts.stats(a.id);
+    assert.equal(s.trainings, 1);
+    assert.equal(s.favorites.U?.id, 'U6');
+    assert.equal((await browser().call('POST', `/api/training/${round.id}/evaluate`, { legs })).status, 200, 'ohne Anmeldung: kein Fehler');
+  });
+
+  test('Level: Kurse aus dem Spielstand zählen, „alle Kurse“-Medaille erst bei allen 9', async () => {
+    const a = await newUser('Lerner');
+    const courses: Record<string, unknown> = Object.fromEntries(COURSES.slice(0, 8).map((c) => [c.id, { done: true, best: 1, total: 1, mastered: true }]));
+    await a.b.call('PUT', '/api/me/data', { data: { 'oeffi-courses-v1': courses } });
+    let me = (await a.b.call('GET', '/api/me')).body.user;
+    assert.equal(me.level.xp, 8 * 100);
+    assert.equal(me.medals.find((m: { id: string }) => m.id === 'all-courses').at, null);
+    courses[COURSES[8].id] = { done: true, best: 1, total: 1 };
+    await a.b.call('PUT', '/api/me/data', { data: { 'oeffi-courses-v1': courses } });
+    me = (await a.b.call('GET', '/api/me')).body.user;
+    assert.ok(me.medals.find((m: { id: string }) => m.id === 'all-courses').at);
+    assert.equal(me.medals.find((m: { id: string }) => m.id === 'master').at, null, 'einer noch nicht gemeistert');
+    assert.equal((await a.b.call('GET', `/api/users/${a.name}`)).body.stats.coursesDone, 9);
+  });
+});
+
+describe('Zwei Geräte gleichzeitig', () => {
+  test('Kurse und Tutorial werden zusammengeführt (älteres Gerät überschreibt nichts), gemerkte Linien: zuletzt gespeichert gilt', async () => {
+    const a = await newUser('Zwei');
+    const other = browser();
+    await other.call('POST', '/api/auth/login', { name: a.name, password: 'passwort1' });
+    // Gerät 1: Kurs U-Bahn fertig, Tutorial gemacht · Gerät 2 (älterer Stand): Kurs S-Bahn, Tutorial nicht
+    await a.b.call('PUT', '/api/me/data', { data: { 'oeffi-courses-v1': { ubahn: { done: true, best: 5, total: 6 } }, 'oeffi-progress-v1': { tutorialDone: true, played: 3 }, 'oeffi-my-lines-v1': ['U1', 'U2'] } });
+    await other.call('PUT', '/api/me/data', { data: { 'oeffi-courses-v1': { sbahn: { done: true, best: 2, total: 4 }, ubahn: { done: true, best: 3, total: 6 } }, 'oeffi-progress-v1': { tutorialDone: false, played: 1 }, 'oeffi-my-lines-v1': ['U1'] } });
+    const d = (await a.b.call('GET', '/api/me')).body.user.data;
+    assert.deepEqual(d['oeffi-courses-v1'], { ubahn: { done: true, best: 5, total: 6 }, sbahn: { done: true, best: 2, total: 4 } });
+    assert.deepEqual(d['oeffi-progress-v1'], { tutorialDone: true, played: 3 });
+    assert.deepEqual(d['oeffi-my-lines-v1'], ['U1'], 'abgewählte Linie bleibt abgewählt');
   });
 });

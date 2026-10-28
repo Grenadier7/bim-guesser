@@ -26,6 +26,7 @@ import type {
   UserListItem,
 } from '../shared/types.ts';
 import { isSpecialLine } from '../shared/rules.ts';
+import { MONOTONE_KEYS, mergeProgress } from '../shared/progress.ts';
 import { GameError, type Lobby } from './lobby.ts';
 import type { Network } from './network.ts';
 import { STATE_DIR } from './paths.ts';
@@ -324,7 +325,9 @@ export class Accounts {
     const data = this.data(userId);
     for (const [k, v] of Object.entries(patch as Record<string, unknown>)) {
       if (!/^oeffi-[a-z0-9-]{1,40}$/.test(k)) continue;
-      if (v == null) delete data[k];
+      // Kurse/Tutorial: nie zurück – ein zweites Gerät mit älterem Stand überschreibt nichts
+      if (MONOTONE_KEYS.includes(k)) data[k] = v == null ? data[k] : mergeProgress(data[k], v);
+      else if (v == null) delete data[k];
       else data[k] = v;
     }
     const json = JSON.stringify(data);

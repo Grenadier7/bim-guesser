@@ -122,3 +122,176 @@ test('Passwort vergessen: Mail mit Link → neues Passwort → angemeldet', asyn
   assert.deepEqual(t.errors, []);
   await t.context.close();
 });
+
+/** Account direkt über die API (zweiter „Mensch“ ohne Browser) – liefert einen Aufrufer mit eigenem Cookie */
+async function apiUser(name: string) {
+  let cookie = '';
+  const call = async (method: string, url: string, body: unknown = {}) => {
+    const r = await fetch(app.base + url, {
+      method,
+      headers: { ...(method !== 'GET' ? { 'Content-Type': 'application/json' } : {}), ...(cookie ? { Cookie: cookie } : {}) },
+      body: method !== 'GET' ? JSON.stringify(body) : undefined,
+    });
+    const set = r.headers.get('set-cookie');
+    if (set) cookie = set.split(';')[0];
+    return r.json();
+  };
+  await call('POST', '/api/auth/register', { name, password: 'passwort123' });
+  return call;
+}
+
+/** Account-Stand am Server, aus der Seite heraus (Cookie der Seite) */
+const serverData = (p: Page) => p.evaluate(async () => (await (await fetch('/api/me')).json()).user?.data ?? null);
+
+async function waitFor<T>(fn: () => Promise<T>, ok: (v: T) => boolean, what: string, ms = 10_000): Promise<T> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const v = await fn();
+    if (ok(v)) return v;
+    if (Date.now() > end) throw new Error(`Zeit abgelaufen: ${what} – zuletzt ${JSON.stringify(v).slice(0, 300)}`);
+    await new Promise((r) => setTimeout(r, 300));
+  }
+}
+
+test('Sync im laufenden Betrieb, Abmelden räumt den Browser auf, Wiederanmelden holt alles zurück, kein Vermischen', async () => {
+  const name = uniq('Sync');
+  const t = await app.page();
+  const p = t.page;
+  await p.goto(app.base);
+  await register(p, name);
+  await p.locator('#acct-close').click();
+  // Linie merken (Netzkarte) → landet im Account
+  await p.locator('.mode-learn').click();
+  await p.locator('#hub-search').fill('U6');
+  await p.locator('#atlas-search').press('Enter');
+  await p.locator('.atlas-card [data-star="U6"]').first().click();
+  await waitFor(() => serverData(p), (d) => JSON.stringify(d?.['oeffi-my-lines-v1'] ?? []).includes('U6'), 'U6 im Account');
+  // Einstellung der Routenjagd (7 Runden) → landet im Account
+  await p.goto(app.base);
+  await p.locator('.mode-route').click();
+  await p.locator('[data-k="rounds"][data-v="7"]').click();
+  await waitFor(() => serverData(p), (d) => (d?.['oeffi-guesser-prefs-v2'] as { settings?: { rounds?: number } })?.settings?.rounds === 7, 'Runden im Account');
+  await p.locator('#leave').click();
+
+  // Abmelden: Spielstand weg aus dem Browser, Name bleibt
+  await p.locator('#acct-btn').click();
+  await p.locator('.acct-tabs [data-tab=settings]').click();
+  await p.locator('#logout').click();
+  await p.locator('#acct-btn:not(.on)').waitFor();
+  assert.equal(await p.evaluate(() => localStorage.getItem('oeffi-my-lines-v1')), null);
+
+  // jemand anderes meldet sich am selben Gerät an → bekommt nichts vom ersten Account
+  const other = uniq('Fremd');
+  await register(p, other);
+  const od = await serverData(p);
+  assert.equal(od['oeffi-my-lines-v1'], undefined, 'fremder Lernstand nicht übernommen');
+  await p.locator('.acct-tabs [data-tab=settings]').click();
+  await p.locator('#logout').click();
+  await p.locator('#acct-btn:not(.on)').waitFor();
+
+  // wieder anmelden → alles zurück
+  await p.locator('#acct-btn').click();
+  await p.locator('form[data-form=login] input[name=name]').fill(name);
+  await p.locator('form[data-form=login] input[name=password]').fill('passwort123');
+  await p.locator('form[data-form=login] button.btn-primary').click();
+  await p.locator('#acct-btn.on', { hasText: name }).waitFor();
+  await waitFor(() => p.evaluate(() => localStorage.getItem('oeffi-my-lines-v1')), (v) => !!v && v.includes('U6'), 'U6 lokal zurück');
+  const prefs = JSON.parse((await p.evaluate(() => localStorage.getItem('oeffi-guesser-prefs-v2')))!);
+  assert.equal(prefs.settings.rounds, 7);
+  assert.equal(prefs.name, name);
+  assert.deepEqual(t.errors, []);
+  await t.context.close();
+});
+
+test('Profil eines Fremden, E-Mail und Passwort ändern, Einladung ablehnen, Name im Einladungslink', async () => {
+  const name = uniq('Prof');
+  const stranger = uniq('Fremd');
+  const sCall = await apiUser(stranger);
+  const t = await app.page();
+  const p = t.page;
+  await p.goto(app.base);
+  await register(p, name);
+  // Leute → Fremder → nur Level und Medaillen
+  await p.locator('.acct-tabs [data-tab=people]').click();
+  await p.locator('#people-q').fill(stranger);
+  await p.locator(`.user-link[data-profile="${stranger}"]`).click();
+  await p.locator('.acct-body', { hasText: 'Statistik und Lieblingslinien sehen nur Freunde' }).waitFor();
+  await p.locator('[data-back]').click();
+  // Einstellungen: E-Mail, Passwort (falsch, dann richtig)
+  await p.locator('.acct-tabs [data-tab=settings]').click();
+  await p.locator('form[data-form=email] input[name=email]').fill('kaputt@');
+  await p.locator('form[data-form=email] button').click();
+  await p.locator('form[data-form=email] input[name=email]').fill(`${name.toLowerCase()}@example.org`);
+  await p.locator('form[data-form=email] button').click();
+  await p.locator('.toast', { hasText: 'E-Mail gespeichert' }).waitFor();
+  await p.locator('form[data-form=password] input[name=old]').fill('falschfalsch');
+  await p.locator('form[data-form=password] input[name=password]').fill('ganzneu12345');
+  await p.locator('form[data-form=password] button').click();
+  await p.locator('.toast', { hasText: 'bisherige Passwort stimmt nicht' }).waitFor();
+  await p.locator('form[data-form=password] input[name=old]').fill('passwort123');
+  await p.locator('form[data-form=password] button').click();
+  await p.locator('.toast', { hasText: 'Passwort geändert' }).waitFor();
+  await p.locator('#acct-close').click();
+
+  // Fremder wird Freund und lädt ein → Banner → ablehnen → bleibt weg
+  await sCall('POST', `/api/friends/${name}`);
+  await p.reload();
+  await p.locator('#acct-btn .badge').waitFor();
+  await p.locator('#acct-btn').click();
+  await p.locator('.acct-tabs [data-tab=friends]').click();
+  await p.locator(`[data-befriend="${stranger}"]`).click();
+  await p.locator(`[data-unfriend="${stranger}"]`, { hasText: 'Freunde' }).waitFor();
+  const lobby = await sCall('POST', '/api/games', { mode: 'route', playerName: stranger, settings: {} });
+  await sCall('POST', `/api/games/${lobby.state.id}/invite`, { token: lobby.token, to: [name] });
+  await p.reload();
+  await p.locator('.invite-banner', { hasText: stranger }).waitFor();
+  await p.locator('[data-drop-invite]').click();
+  await p.locator('.invite-banner').waitFor({ state: 'detached' });
+  await p.reload();
+  await p.waitForTimeout(800);
+  assert.equal(await p.locator('.invite-banner').count(), 0, 'abgelehnt bleibt abgelehnt');
+  // Einladungslink: Name ist schon eingetragen
+  await p.goto(`${app.base}/?code=${lobby.state.id}`);
+  assert.equal(await p.locator('#inviteName').inputValue(), name);
+  assert.deepEqual(t.errors, []);
+  await t.context.close();
+});
+
+test('Routenjagd angemeldet: Runde und Spiel zählen, Medaille wird gemeldet, Statistik im Profil', async () => {
+  const name = uniq('Jagd');
+  const t = await app.page();
+  const p = t.page;
+  await p.goto(app.base);
+  await register(p, name);
+  await p.locator('#acct-close').click();
+  await p.locator('.mode-route').click();
+  await p.locator('#start').waitFor();
+  const s = await p.evaluate(() => JSON.parse(sessionStorage.getItem('oeffi-guesser-session')!));
+  await fetch(`${app.base}/api/games/${s.code}/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: s.token, settings: { rounds: 1, locate: false, restrictions: 'never', minTransfers: 0, stations: ['U'], roundTimeLimitSec: null } }),
+  });
+  await p.locator('#start').click();
+  await p.locator('.line-input').waitFor({ timeout: 180_000 });
+  const st = (await (await fetch(`${app.base}/api/games/${s.code}?token=${s.token}`)).json()).state;
+  const from = st.rounds[0].from;
+  const net = await (await fetch(`${app.base}/api/network`)).json();
+  const line = net.stations.find((x: { id: string }) => x.id === from.id).lines.find((l: string) => /^U\d$/.test(l));
+  await p.locator('.line-input').fill(line);
+  await p.locator('.line-input').press('Enter');
+  const v = await p.locator('.leg-form .alight-select option:not([disabled])').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value).filter(Boolean));
+  await p.locator('.leg-form .alight-select').selectOption(v[0]);
+  await p.locator('[data-act=submit]').click();
+  await p.locator('.btn-big', { hasText: 'Zum Endergebnis' }).click({ timeout: 180_000 });
+  await p.locator('.final').waitFor();
+  // nachfragen (sonst alle 20 s) → neue Medaille wird gemeldet
+  await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await p.locator('.toast', { hasText: 'Neue Medaille: Erstes Spiel' }).waitFor({ timeout: 15_000 });
+  await p.locator('#acct-btn').click();
+  await p.locator('.stat', { hasText: 'Routenjagden' }).filter({ hasText: '1' }).waitFor();
+  await p.locator('.recent li', { hasText: 'Routenjagd' }).waitFor();
+  await t.shot('account-after-game');
+  assert.deepEqual(t.errors, []);
+  await t.context.close();
+});
