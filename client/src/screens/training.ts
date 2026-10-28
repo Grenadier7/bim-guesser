@@ -12,6 +12,7 @@ import { HINTS, compass, explain, hintText, legFeedback, lineDirections, routeSe
 import { chain, esc, h, lineChip, makeExpandable, routeDetails, toast } from '../ui.ts';
 import { loadingHtml, type Screen } from './screen.ts';
 import { loadMerged, saveJson } from '../storage.ts';
+import { markPlayed } from '../progress.ts';
 
 // ---------------------------------------------------------------- Speicher
 
@@ -302,6 +303,7 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
       renderSetup();
       return;
     }
+    markPlayed('training');
     renderReview(res);
   }
 

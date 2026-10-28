@@ -4,10 +4,12 @@ import { api } from '../api.ts';
 import { app, routeState, endSession, getReveal, isHost } from '../store.ts';
 import { esc, toast } from '../ui.ts';
 import type { Screen } from './screen.ts';
+import { markPlayed } from '../progress.ts';
 
 export function finalScreen(panel: HTMLElement): Screen {
   app.map.clear();
   app.map.overview();
+  markPlayed();
   let reveals: RoundReveal[] = [];
 
   Promise.all(routeState().rounds.map((r) => getReveal(r.index).catch(() => null)))

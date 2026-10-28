@@ -14,6 +14,7 @@ import { revealScreen } from './screens/reveal.ts';
 import { roundScreen } from './screens/round.ts';
 import { loadingHtml, type Screen } from './screens/screen.ts';
 import { trainingScreen } from './screens/training.ts';
+import { tutorialScreen } from './screens/tutorial.ts';
 import { ChatWidget } from './chat.ts';
 import { hideIdle, idleCheck } from './idle.ts';
 import { app, currentRound, inviteLink, isHost, me, openTimer, restoreSession, serverNow, setMapBig, setMobileMap } from './store.ts';
@@ -67,6 +68,7 @@ function mount(key: string): Screen {
   if (key === 'home') return homeScreen(panel);
   if (key === 'learn') return learnScreen(panel, back);
   if (key === 'training') return trainingScreen(panel, back);
+  if (key === 'tutorial') return tutorialScreen(panel, back);
   if (key === 'lobby') return lobbyScreen(panel);
   if (key === 'final') return finalScreen(panel);
   if (key === 'qlobby') return quizLobbyScreen(panel);

@@ -39,7 +39,7 @@ export const app = {
   clockOffset: 0,
   reveals: new Map<number, RoundReveal>(),
   /** Bildschirm außerhalb einer Lobby */
-  view: 'home' as 'home' | 'learn' | 'training',
+  view: 'home' as 'home' | 'learn' | 'training' | 'tutorial',
   prefs: loadMerged<Prefs>(PREFS_KEY, { name: '', settings: {}, quiz: {} }),
   onChange: () => {},
   /** Chat-Nachrichten und Verlauf (vom Chat-Fenster gesetzt) */

@@ -3,12 +3,14 @@ import { api } from '../../api.ts';
 import { app, endSession, isHost, quizState } from '../../store.ts';
 import { esc, toast } from '../../ui.ts';
 import type { Screen } from '../screen.ts';
+import { markPlayed } from '../../progress.ts';
 
 // ---------------------------------------------------------------- Endstand
 
 export function quizFinalScreen(panel: HTMLElement): Screen {
   app.map.clear();
   app.map.overview();
+  markPlayed();
   function render() {
     const st = quizState();
     const myId = app.session!.playerId;
