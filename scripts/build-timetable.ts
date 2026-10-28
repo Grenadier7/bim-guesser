@@ -142,7 +142,8 @@ async function main() {
   /** Linien: Name → [mode, mot] */
   const lines = new Map<string, { mode: Mode; mot: number }>();
   /** Fahrten je Tag: [Linie, Halte (Knoten-Keys), Zeiten (min)] */
-  const out: Record<string, { line: string; stops: string[]; times: number[] }[]> = { wd: [], sa: [], su: [] };
+  /** cont: durchgebundener Zug – ab Position `at` heißt er `line` (z.B. S7 → REX2 ab Rennweg) */
+  const out: Record<string, { line: string; stops: string[]; times: number[]; cont?: { line: string; at: number } }[]> = { wd: [], sa: [], su: [] };
   /** Ende der Gültigkeit (frühestes Ende der Datensätze) – danach laut Lizenz nicht mehr öffentlich verwenden */
   let validUntil = '99991231';
   /** Fahrten des 18 vom 15.9. – nur als Vorlage für die Verlängerung zum Stadion */
@@ -207,7 +208,7 @@ async function main() {
     };
 
     // Fahrten: an welchen Referenztagen (und als Nachtfahrt vom Vortag)
-    const tripInfo = new Map<string, { line: string; on: string[]; night: string[]; sample: boolean }>();
+    const tripInfo = new Map<string, { line: string; on: string[]; night: string[]; sample: boolean; block: string; cont?: { line: string; at: number } }>();
     await eachRow(path.join(src.dir, 'trips.txt'), (r) => {
       const line = routeLine.get(r.route_id);
       if (!line) return;
@@ -215,7 +216,7 @@ async function main() {
       const on = Object.entries(useDays).filter(([, d]) => runs(r.service_id, d)).map(([k]) => k);
       const night = Object.entries(useDays).filter(([, d]) => runs(r.service_id, prevDay(d))).map(([k]) => k);
       const sample = line === EXTEND_18.line && runs(r.service_id, EXTEND_18.sampleDay);
-      if (on.length || night.length || sample) tripInfo.set(r.trip_id, { line, on, night, sample });
+      if (on.length || night.length || sample) tripInfo.set(r.trip_id, { line, on, night, sample, block: src.kind === 'rail' ? (r.block_id ?? '') : '' });
     });
     console.log(`  ${tripInfo.size} Fahrten an den Referenztagen`);
 
@@ -232,32 +233,72 @@ async function main() {
       if (++rows % 2_000_000 === 0) console.log(`  … ${rows} Haltezeiten`);
     });
 
+    // Durchgebundene Züge: gleicher Zug (block_id), die Linie wechselt unterwegs – S7 wird in Rennweg zur REX2, S2 in
+    // Leopoldau zur S7. Zusätzlich als eine Fahrt (Linie des ersten Teils), damit man sitzen bleiben kann – sonst wäre
+    // es ein Umstieg mit Umsteigezeit, und z.B. Simmering → Praterstern hätte zu wenige direkte Züge.
+    const blocks = new Map<string, string[]>();
+    for (const [tid, info] of tripInfo) if (info.block && st.has(tid)) (blocks.get(info.block) ?? blocks.set(info.block, []).get(info.block)!).push(tid);
+    let through = 0;
+    for (const ids of blocks.values()) {
+      const seq = ids.map((id) => ({ id, list: st.get(id)!.sort((a, b) => a[0] - b[0]) })).sort((a, b) => a.list[0][2] - b.list[0][2]);
+      for (let i = 0; i + 1 < seq.length; i++) {
+        const [A, B] = [seq[i], seq[i + 1]];
+        const [a, b] = [tripInfo.get(A.id)!, tripInfo.get(B.id)!];
+        if (a.line === b.line || A.list.length < 2 || B.list.length < 2) continue;
+        const end = A.list[A.list.length - 1];
+        const start = B.list[0];
+        const gap = start[2] - end[2];
+        // gleicher Bahnhof, höchstens 5 min, keine Kehrtwende (sonst wäre es einfach die Rückfahrt)
+        if (end[1] !== start[1] || gap < 0 || gap > 5 || B.list[1][1] === A.list[A.list.length - 2][1] || !inBox(nodes.get(end[1])!)) continue;
+        const on = a.on.filter((d) => b.on.includes(d));
+        const night = a.night.filter((d) => b.night.includes(d));
+        if (!on.length && !night.length) continue;
+        const id = `${A.id}+${B.id}`;
+        st.set(id, [...A.list.slice(0, -1), [end[0], end[1], start[2]], ...B.list.slice(1).map(([q, n, t]) => [q + 1_000_000, n, t] as [number, string, number])]);
+        tripInfo.set(id, { line: a.line, on, night, sample: false, block: '', cont: { line: b.line, at: A.list.length - 1 } });
+        // an diesen Tagen ersetzt die durchgehende Fahrt die beiden Teile (sonst stünde derselbe Zug doppelt da)
+        for (const x of [a, b]) {
+          x.on = x.on.filter((d) => !on.includes(d));
+          x.night = x.night.filter((d) => !night.includes(d));
+        }
+        through++;
+      }
+    }
+    if (through) console.log(`  ${through} durchgebundene Fahrten (Linienwechsel im selben Zug)`);
+
     for (const [tid, list] of st) {
       const info = tripInfo.get(tid)!;
       list.sort((a, b) => a[0] - b[0]);
       // Abschnitte innerhalb der Box; derselbe Knoten hintereinander (Steigwechsel) nur einmal
-      let seg: { stops: string[]; times: number[] } = { stops: [], times: [] };
+      let seg: { stops: string[]; times: number[]; contAt?: number } = { stops: [], times: [] };
       const segs: (typeof seg)[] = [];
-      for (const [, node, t] of list) {
+      list.forEach(([, node, t], k) => {
         if (!inBox(nodes.get(node)!)) {
           if (seg.stops.length > 1) segs.push(seg);
           seg = { stops: [], times: [] };
-          continue;
+          return;
         }
         if (seg.stops[seg.stops.length - 1] === node) {
           seg.times[seg.times.length - 1] = t;
-          continue;
+          if (k === info.cont?.at) seg.contAt = seg.stops.length - 1;
+          return;
         }
+        if (k === info.cont?.at) seg.contAt = seg.stops.length;
         seg.stops.push(node);
         seg.times.push(t);
-      }
+      });
       if (seg.stops.length > 1) segs.push(seg);
       if (info.sample) samples18.push(...segs.map((x) => ({ stops: [...x.stops], times: [...x.times] })));
       for (const s of segs) {
-        for (const d of info.on) out[d].push({ line: info.line, stops: [...s.stops], times: [...s.times] });
+        // durchgebunden: nur wenn der Wechsel in diesem Abschnitt liegt, sonst ist es einfach die eine Linie
+        const cont = info.cont && s.contAt != null && s.contAt > 0 && s.contAt < s.stops.length - 1 ? { line: info.cont.line, at: s.contAt } : undefined;
+        // ganz nach dem Wechsel (oder genau dort beginnend): Linie des zweiten Teils
+        const after = !!info.cont && (s.contAt === 0 || (s.contAt == null && list.findIndex(([, n]) => n === s.stops[0]) > info.cont.at));
+        const line = after ? info.cont!.line : info.line;
+        for (const d of info.on) out[d].push({ line, stops: [...s.stops], times: [...s.times], ...(cont ? { cont } : {}) });
         // nach Mitternacht vom Vortag (z.B. Samstag 2 Uhr = Freitagnacht): Zeiten um 24 h verschieben
         if (s.times[s.times.length - 1] >= 1440)
-          for (const d of info.night) out[d].push({ line: info.line, stops: s.stops, times: s.times.map((x) => x - 1440) });
+          for (const d of info.night) out[d].push({ line, stops: s.stops, times: s.times.map((x) => x - 1440), ...(cont ? { cont } : {}) });
       }
     }
   }
@@ -273,18 +314,19 @@ async function main() {
   const lineList = [...lines.keys()].sort();
   const lineIdx = new Map(lineList.map((k, i) => [k, i]));
   const patterns = new Map<string, number>();
-  const patternList: [number, number[]][] = [];
+  const patternList: ([number, number[]] | [number, number[], number, number])[] = [];
   const trips: Record<string, number[][]> = {};
   for (const [day, list] of Object.entries(out)) {
     trips[day] = list
       .map((t) => {
         const stops = t.stops.map((s) => nodeIdx.get(s)!);
-        const pk = `${t.line}|${stops.join(',')}`;
+        const pk = `${t.line}|${stops.join(',')}|${t.cont ? `${t.cont.line}@${t.cont.at}` : ''}`;
         let p = patterns.get(pk);
         if (p == null) {
           p = patternList.length;
           patterns.set(pk, p);
-          patternList.push([lineIdx.get(t.line)!, stops]);
+          // [Linie, Halte] – durchgebunden zusätzlich [Linie ab dort, Position]
+          patternList.push(t.cont ? [lineIdx.get(t.line)!, stops, lineIdx.get(t.cont.line)!, t.cont.at] : [lineIdx.get(t.line)!, stops]);
         }
         // [Muster, erste Zeit, Abstände …]
         return [p, t.times[0], ...t.times.slice(1).map((x, i) => x - t.times[i])];
@@ -334,8 +376,17 @@ function extend18(out: Trips, samples: { stops: string[]; times: number[] }[], n
     }
     const best = [...found.entries()].sort((a, b) => b[1].length - a[1].length)[0];
     if (!best) throw new Error('18: keine Vorlage für die Verlängerung zum Stadion gefunden');
-    const stops = best[0].split('|');
-    return { stops, offs: stops.map((_, j) => median(best[1].map((o) => o[j]))) };
+    let stops = best[0].split('|');
+    let offs = stops.map((_, j) => median(best[1].map((o) => o[j])));
+    // Wendeschleife beim Stadion (Stadion → Dr.-Natterer-Gasse → Stadion) weglassen: Endstation ist Stadion
+    if (dir === 'out') {
+      const k = stops.findIndex((x) => name(x) === EXTEND_18.end);
+      (stops = stops.slice(0, k + 1)), (offs = offs.slice(0, k + 1));
+    } else {
+      const k = stops.map(name).lastIndexOf(EXTEND_18.end);
+      (stops = stops.slice(k)), (offs = offs.slice(k));
+    }
+    return { stops, offs };
   };
   const outT = template('out');
   const inT = template('in');
@@ -390,7 +441,7 @@ function s40FromFjb(out: Trips, nodes: Map<string, Node>) {
 }
 
 /** Netz an den Fahrplan anpassen: Linien mit Ergänzungen (S40, 18, 43, 46) bekommen ihre regulären Haltefolgen */
-function syncNetwork(net: NetworkData, data: { nodes: (string | number)[][]; lines: (string | number)[][]; patterns: [number, number[]][] }) {
+function syncNetwork(net: NetworkData, data: { nodes: (string | number)[][]; lines: (string | number)[][]; patterns: ([number, number[]] | [number, number[], number, number])[] }) {
   const efaToStation = new Map<string, string>();
   for (const [sid, ids] of Object.entries(net.efaIds)) for (const id of ids) efaToStation.set(id, sid);
   const stationOf = (key: string) => {
@@ -400,8 +451,8 @@ function syncNetwork(net: NetworkData, data: { nodes: (string | number)[][]; lin
   /** Haltefolgen einer Linie aus dem Fahrplan als Station-IDs (ohne Teilstücke längerer Folgen) */
   const patternsOf = (li: number): string[][] => {
     const pats = new Set<string>();
-    for (const [l, stops] of data.patterns) {
-      if (l !== li) continue;
+    for (const [l, stops, contLine, contAt] of data.patterns) {
+      if (l !== li || contLine != null || contAt != null) continue;
       const ids = stops.map((i) => stationOf(String(data.nodes[i][0]))).filter((x): x is string => !!x);
       const dedup = ids.filter((x, i) => x !== ids[i - 1]);
       if (dedup.length >= 2) pats.add(dedup.join(','));
