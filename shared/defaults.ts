@@ -29,7 +29,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   /** Runden: 3 · 5 · 7 · 10 */
   rounds: 5,
   /** Zeitlimit in Sekunden (60 · 120 · 180 · 240 · 300 · 600) oder null = ohne */
-  roundTimeLimitSec: 180,
+  roundTimeLimitSec: 240,
   /** "Wo liegt das?" vor jeder Runde */
   locate: true,
   /** Wartezeit ab Abfragezeit mitzählen */

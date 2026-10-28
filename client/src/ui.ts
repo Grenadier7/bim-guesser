@@ -79,7 +79,7 @@ function stepsDetails(route: RouteOption, star?: StarFn): string {
   const end = route.steps!.length ? route.steps![route.steps!.length - 1] : null;
   const endAt = end ? addMin(end.at, end.min) : '';
   return `<ol class="leg-detail">${rows.join('')}<li class="ld-end"><span class="ld-time">${esc(endAt)}</span><span>🏁 Ankunft – <b>${route.medianMin} min</b></span></li></ol>
-    <p class="wait-note">Berechnet mit Ø-Wartezeiten (halber Takt) und Umsteigezeit – genau diese Minuten zählen.</p>`;
+    <p class="wait-note">Berechnet mit Ø-Wartezeiten (halber Takt) und Umsteigezeit.</p>`;
 }
 
 function addMin(hhmm: string, min: number): string {
