@@ -53,7 +53,9 @@ async function main() {
       .replace(/\s+/g, ' ')
       .trim();
     // nur echte Hausnummern (keine Bauplätze, Brückennamen ohne Nummer …)
-    if (!name || !/\d/.test(name) || !nearStop({ lat, lon })) continue;
+    // nur „Straßenname Hausnummer“ (z.B. „Thaliastraße 42“, „Am Hof 4-6“) – keine Kleingarten-Parzellen, Grundstücks-
+    // nummern oder Mistplätze
+    if (!/^[A-ZÄÖÜa-zäöüß][\p{L}.' -]*[a-zäöüß.] \d+[a-z]?(-\d+[a-z]?)?$/u.test(name) || /\b[A-ZÄÖÜ]{3,}\b/.test(name) || !nearStop({ lat, lon })) continue;
     usable++;
     const c = `${Math.floor((lat * latM) / CELL_M)}:${Math.floor((lon * lonM) / CELL_M)}`;
     const list = cells.get(c) ?? cells.set(c, []).get(c)!;
