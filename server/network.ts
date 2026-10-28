@@ -205,11 +205,16 @@ export class Network {
 
   /** Linien, die im gewählten Netz an der Station halten */
   linesAt(stationId: string, net: NetMode): Line[] {
-    // Adresse: Linien der Haltestellen in der Nähe (≤ 500 m) – für den Tipp „Linien am Start/Ziel“
+    // Adresse: Linien der Haltestellen in der Nähe (≤ 500 m, am Stadtrand bis 200 m weiter als die nächste) – für den
+    // Tipp „Linien am Start/Ziel“
     if (this.virtual.has(stationId)) {
       const at = this.station(stationId);
-      const near = [...this.stations.values()].filter((s) => distM(s, at) <= 500);
-      return [...new Set(near.flatMap((s) => this.linesAt(s.id, net)))];
+      const all = [...this.stations.values()]
+        .filter((s) => s.lines.length && distM(s, at) <= 3000)
+        .map((s) => ({ d: distM(s, at), lines: this.linesAt(s.id, net) }))
+        .filter((x) => x.lines.length);
+      const reach = Math.max(500, Math.min(...all.map((x) => x.d)) + 200);
+      return [...new Set(all.filter((x) => x.d <= reach).flatMap((x) => x.lines))];
     }
     return this.station(stationId)
       .lines.map((id) => this.lines.get(id)!)
