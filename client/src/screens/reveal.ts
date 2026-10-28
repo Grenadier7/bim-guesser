@@ -62,6 +62,30 @@ export function revealScreen(panel: HTMLElement): Screen {
   }
   load();
 
+  /** Routen der Auflösung zeichnen (nach dem Anschauen einer ganzen Linie zurück) */
+  let drawRoutes = () => {};
+  let lineShown: string | null = null;
+
+  /** Linie antippen → ganzer Verlauf auf der Karte; nochmal antippen oder „zurück“ → wieder die Routen */
+  function showLine(label: string) {
+    const ids = label.split('/').filter((id) => app.net.lines.has(id));
+    if (!ids.length) return;
+    if (lineShown === label) return drawRoutes();
+    lineShown = label;
+    app.map.showReveal([], []);
+    const stops = [...new Set(ids.flatMap((id) => app.net.patterns(app.net.lines.get(id)!).flat()))].map((id) => app.net.station(id));
+    const pts = netLayer().render(netView({ focus: new Set(ids), stops, allLabels: true }));
+    if (pts.length) app.map.fitPoints(pts, 14);
+    toast(`${ids.join(', ')}: ganzer Verlauf – nochmal antippen für die Routen`, 'info', { label: '← Routen', run: drawRoutes });
+  }
+
+  panel.addEventListener('click', (e) => {
+    const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-chip-line]');
+    if (!chip || (e.target as HTMLElement).closest('[data-star-line],[data-star-group]')) return;
+    e.stopPropagation();
+    showLine(chip.dataset.chipLine!);
+  });
+
   function render() {
     if (!reveal) return;
     const s = routeState();
@@ -75,6 +99,12 @@ export function revealScreen(panel: HTMLElement): Screen {
       .filter((e) => e.route)
       .map((e) => ({ key: `p:${e.playerId}`, name: e.playerId === myId ? 'Du' : e.playerName, route: e.route!, isMe: e.playerId === myId }));
     // Netzkarte blass als Hintergrund, darüber die Routen: kräftig die beste + eigene, die anderen blass
+    drawRoutes = () => {
+      lineShown = null;
+      app.map.clearLearn();
+      netLayer().render(netView({ dimAll: true, hubs: false, labels: false }));
+      app.map.showReveal(reveal!.routes.map(smoothRoute), playerRoutes.map((p) => ({ ...p, route: smoothRoute(p.route) })), [best.key, ...(mine?.route ? [`p:${myId}`] : [])]);
+    };
     netLayer().render(netView({ dimAll: true, hubs: false, labels: false }));
     app.map.showReveal(reveal.routes.map(smoothRoute), playerRoutes.map((p) => ({ ...p, route: smoothRoute(p.route) })), [best.key, ...(mine?.route ? [`p:${myId}`] : [])]);
     pinned = null;

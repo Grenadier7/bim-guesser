@@ -44,3 +44,17 @@ test('N-1: Linien einer Gegend – Stephansplatz 600 m: U1/U3 und Busse 1A/2A/3A
   const d1 = linesInArea({ kind: 'district', id: 1 }, new Set(['U']), net.lines, net.stations).map((x) => x.line.id);
   assert.deepEqual([...d1].sort(), ['U1', 'U2', 'U3', 'U4']);
 });
+
+test('Punkt 8: Stern für gleichwertige Linien („S1/S2“) – ein Knopf für die ganze Gruppe', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { NetIndex } = await import('../client/src/net.ts');
+  const { app } = await import('../client/src/store.ts');
+  app.net = new NetIndex(JSON.parse(readFileSync(new URL('../data/network.json', import.meta.url), 'utf8')));
+  const { starMini, setMine } = await import('../client/src/learn/model.ts');
+  assert.match(starMini('S1/S2'), /data-star-group="S1\/S2"/);
+  assert.match(starMini('U6'), /data-star-line="U6"/);
+  assert.equal(starMini('XYZ'), '');
+  setMine('S1', true);
+  assert.match(starMini('S1/S2'), /✬/, 'teilweise gemerkt');
+  setMine('S1', false);
+});

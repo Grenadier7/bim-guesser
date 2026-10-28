@@ -4106,3 +4106,19 @@ details.host-bar {
   font-size: 13px;
   color: #7a4d00;
 }
+
+.toast-action {
+  margin-left: 8px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+[data-chip-line] {
+  cursor: pointer;
+}

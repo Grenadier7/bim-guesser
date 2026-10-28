@@ -170,6 +170,33 @@ async function init() {
   if (!(await restoreSession())) render();
   setInterval(tick, 250);
   // ☆ hinter Liniennummern (z.B. in der Routenjagd-Auflösung): Linie für „Lernen → Üben“ merken
+  // ☆ für mehrere gleichwertige Linien („S1/S2/S3“): alle merken, in der Meldung „nur S1“ wählbar (Punkt 8)
+  document.addEventListener('click', (e) => {
+    const g = (e.target as HTMLElement).closest<HTMLElement>('[data-star-group]');
+    if (!g) return;
+    e.stopPropagation();
+    const ids = g.dataset.starGroup!.split('/');
+    const refresh = () =>
+      document.querySelectorAll<HTMLElement>(`[data-star-group="${CSS.escape(g.dataset.starGroup!)}"]`).forEach((x) => {
+        const all = ids.every(isMine);
+        x.textContent = all ? '⭐' : ids.some(isMine) ? '✬' : '☆';
+        x.classList.toggle('on', all);
+      });
+    if (ids.every(isMine)) {
+      for (const id of ids) setMine(id, false);
+      refresh();
+      return toast(`${ids.join(', ')} nicht mehr gemerkt`, 'info');
+    }
+    for (const id of ids) setMine(id, true);
+    refresh();
+    toast(`${ids.join(', ')} gemerkt – zum Üben unter 📚 Lernen`, 'info', {
+      label: `nur ${ids[0]}`,
+      run: () => {
+        for (const id of ids.slice(1)) setMine(id, false);
+        refresh();
+      },
+    });
+  });
   document.addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest<HTMLElement>('[data-star-line]');
     if (!b) return;

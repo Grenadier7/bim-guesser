@@ -23,10 +23,16 @@ export function setMine(id: string, on: boolean) {
   saveJson(MY_LINES_KEY, mine);
 }
 /** kleiner ☆-Knopf zum Merken – überall einsetzbar, ein Klick-Handler in main.ts erledigt den Rest */
-export const starMini = (id: string) =>
-  app.net.lines.has(id)
-    ? `<button class="star-mini ${isMine(id) ? 'on' : ''}" data-star-line="${id}" title="Linie für „Lernen → Üben“ merken">${isMine(id) ? '⭐' : '☆'}</button>`
-    : '';
+export const starMini = (id: string) => {
+  const ids = id.split('/').filter((x) => app.net.lines.has(x));
+  if (!ids.length) return '';
+  if (ids.length === 1)
+    return `<button class="star-mini ${isMine(id) ? 'on' : ''}" data-star-line="${id}" title="Linie für „Lernen → Üben“ merken">${isMine(id) ? '⭐' : '☆'}</button>`;
+  // mehrere gleichwertige Linien: ein Stern merkt alle (in der Meldung kann man auf „nur die erste“ umschalten)
+  const all = ids.every(isMine);
+  const some = ids.some(isMine);
+  return `<button class="star-mini ${all ? 'on' : ''}" data-star-group="${ids.join('/')}" title="${ids.join(', ')} merken">${all ? '⭐' : some ? '✬' : '☆'}</button>`;
+};
 export function addMine(ids: string[]) {
   mine = [...new Set([...mine, ...ids])];
   saveJson(MY_LINES_KEY, mine);
