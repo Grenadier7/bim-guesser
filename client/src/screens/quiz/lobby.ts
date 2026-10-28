@@ -112,7 +112,18 @@ export function quizLobbyScreen(panel: HTMLElement): Screen {
     });
     panel.querySelector('#resetW')?.addEventListener('click', () => send({ weights: { ...DEFAULT_QUIZ_SETTINGS.weights } }));
     panel.querySelector('#shareSettings')?.addEventListener('click', () =>
-      openSettingsDialog('quiz', quizState().settings, host ? (x) => send(x as Partial<QuizSettings>) : null),
+      openSettingsDialog(
+        'quiz',
+        quizState().settings,
+        host
+          ? async (x) => {
+              const st = (await api.settings(app.session!, x as Partial<QuizSettings>)) as QuizState;
+              app.prefs.quiz = st.settings;
+              savePrefs();
+              return st.settings as unknown as Record<string, unknown>;
+            }
+          : null,
+      ),
     );
     panel.querySelector('#resetAll')?.addEventListener('click', () => {
       if (!confirm('Alle Quiz-Einstellungen auf den Standard zurücksetzen?')) return;

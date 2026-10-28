@@ -92,3 +92,10 @@ test('Regression L-04/L-05: Zeitbonus nie über 10 %, kaputte Zeiten geben 0 sta
   assert.equal(scoreRoute(Number.NaN, 30), 0);
   assert.equal(scoreRoute(30, Number.POSITIVE_INFINITY), 0);
 });
+
+test('Adressen als Start/Ziel: Haltestellen-Auswahl zählt nicht, Faktor wie Bus-Knoten (×1,3)', () => {
+  const s = { stations: ['Ukey'] as never, distance: 'medium' as const, minTransfers: 0 as const };
+  assert.equal(difficultyMultiplier({ ...s, endpoints: 'addresses' }), 1.3);
+  assert.equal(difficultyMultiplier({ ...s, stations: ['U', 'S', 'T', 'all'] as never, endpoints: 'addresses' }), 1.3);
+  assert.equal(difficultyMultiplier({ ...s, endpoints: 'stations' }), 0.85);
+});

@@ -4287,3 +4287,16 @@ details.host-bar {
 .bq-opt .chip {
   font-size: 1.05em;
 }
+
+/* Einstellungs-Import: was nicht übernommen wurde */
+.import-problems {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border-left: 4px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 10%, var(--panel));
+}
+.import-problems ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}

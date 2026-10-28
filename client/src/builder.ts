@@ -16,6 +16,8 @@ const WALK_WARN_M = 1200;
  * Fußwege, abgestuft – deutlich, wenn es wohl ein Versehen ist, aber nicht nervig, wenn man absichtlich geht:
  * bis 250 m nur leise (Bahnsteig, Ecke weiter), bis 700 m ein Hinweis, darüber deutlich (aber nie blockierend).
  */
+/** Start/Ziel ist eine Adresse (Punkt 13): keine Linien, ID „a:…“ */
+const isAddress = (s: Station) => s.id.startsWith('a:');
 const WALK_QUIET_M = 250;
 const WALK_LOUD_M = 700;
 /** Gehzeit wie in der Auswertung: Luftlinie × 1,3 bei 80 m/min */
@@ -288,7 +290,19 @@ export class RouteBuilder {
     // Linie hält nicht hier: je nach Entfernung leise, Hinweis oder deutlich (Punkt 4)
     const boardName = this.net.station(this.board!).name;
     const servesHere = this.net.patterns(line).some((p) => p.includes(pos.id));
-    if (boardDist > WALK_LOUD_M && !this.opts.hideDistances)
+    // Start an einer Adresse: zu Fuß zur Haltestelle ist normal – deutlich nur, wenn es viel nähere Haltestellen gibt
+    if (isAddress(pos) && !this.opts.hideDistances) {
+      const nearest = this.nearestStop(pos);
+      if (nearest && boardDist > Math.max(WALK_LOUD_M, nearest.dist + 500))
+        form.append(
+          h(
+            'div',
+            { class: 'walk-alert walk-loud', role: 'status' },
+            `⚠️ <b>Die ${esc(line.id)} hält erst bei ${esc(boardName)}</b> – ${walkText(boardDist)}. Die nächste Haltestelle wäre ${esc(nearest.station.name)} (${walkText(nearest.dist)}).`,
+          ),
+        );
+      else form.append(h('div', { class: 'walk-note' }, `🚶 ${walkText(boardDist)} zur Haltestelle ${esc(boardName)}`));
+    } else if (boardDist > WALK_LOUD_M && !this.opts.hideDistances)
       form.append(
         h(
           'div',
@@ -327,12 +341,25 @@ export class RouteBuilder {
    * Auswahl der Ausstiege: die Linie von Endstation zu Endstation (z.B. U1 Leopoldau oben … Oberlaa unten),
    * die Einstiegs-Station mittendrin markiert und nicht wählbar.
    */
+  /** nächste Haltestelle mit Linien (für Adressen) */
+  private nearestStop(p: Station): { station: Station; dist: number } | null {
+    let best: { station: Station; dist: number } | null = null;
+    for (const st of this.net.stations.values()) {
+      if (!st.lines.length) continue;
+      const d = distM(st, p);
+      if (!best || d < best.dist) best = { station: st, dist: d };
+    }
+    return best;
+  }
+
   private alightSelect(line: Line, board: string, selected: string | null): HTMLSelectElement {
     const sel = h('select', { class: 'alight-select' });
     const { up, down } = this.net.lineThrough(line, board);
+    // Ziel ist eine Adresse: die Haltestelle der Linie, die ihr am nächsten liegt (bis 1,5 km), markieren
+    const nearDest = isAddress(this.dest) ? (this.net.boardOptions(line, this.dest, 1).find((o) => o.dist <= 1500) ?? null) : null;
     // Gegenrichtung mit anderem Einstieg: Wert "einstieg>ausstieg"
     const opt = (s: Station, alt?: Station) =>
-      `<option value="${alt ? `${alt.id}>` : ''}${s.id}">${esc(s.name)}${s.id === this.dest.id ? ' 🏁' : ''}${alt && alt.id !== board ? ` ↩ ab ${esc(alt.name)}` : ''}</option>`;
+      `<option value="${alt ? `${alt.id}>` : ''}${s.id}">${esc(s.name)}${s.id === this.dest.id ? ' 🏁' : ''}${s.id === nearDest?.station.id ? ` 📍 ${fmtDist(nearDest.dist)} zum Ziel` : ''}${alt && alt.id !== board ? ` ↩ ab ${esc(alt.name)}` : ''}</option>`;
     const here = this.net.station(board);
     // Reihenfolge wie auf dem Linienplan: obere Stationen · "↑ Richtung …" · hier · "↓ Richtung …" · untere Stationen.
     // Die Überschriften sind leere <optgroup>s, damit sie fett direkt neben der aktuellen Station stehen.

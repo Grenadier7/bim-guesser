@@ -115,7 +115,7 @@ export class Network {
 
   publicData(): NetworkPublic {
     const { efaIds: _omit, ...pub } = this.data;
-    return { ...pub, headways: loadHeadways() };
+    return { ...pub, headways: loadHeadways(), addressCount: this.addresses.length };
   }
 
   station(id: string): Station {
