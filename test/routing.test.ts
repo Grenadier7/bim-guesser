@@ -104,3 +104,13 @@ test('Linie fährt im Fenster gar nicht → verständlicher Fehler statt Absturz
   assert.equal(r.route, null);
   assert.match(r.error ?? '', /U3/);
 });
+
+test('Regression Punkt 16: Linie fährt den Abschnitt nicht → Meldung mit Vorschlag der Auskunft', async () => {
+  setup({ phase: 0, every: 5 }, 5);
+  // auf dem Abschnitt X → C fährt zu dieser Zeit nur eine andere U-Bahn (statt der gewählten U3)
+  timetable.set(`${X}>${C}`, { phase: 1, every: 5, ride: 6, line: 'U2' });
+  const r = await routing.evaluateUserRoute(net, legs, A, C, SLOT, 'regular', { countWait: false, avgWait: false, restriction: null }, []);
+  assert.equal(r.route, null);
+  assert.match(r.error ?? '', /U3 fährt um diese Zeit nicht direkt/);
+  assert.match(r.error ?? '', /laut Auskunft.*U2 bis/);
+});

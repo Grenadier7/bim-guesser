@@ -270,6 +270,22 @@ class LegTimetable {
   }
 }
 
+/**
+ * Linie fährt den Abschnitt zu dieser Zeit nicht durch (z.B. 92B mittags nur ab Donaustadtbrücke): was schlägt die
+ * Auskunft für genau diesen Abschnitt vor? Leer, wenn sie auch nichts weiß.
+ */
+async function suggestion(net: Network, leg: UserLeg, slotTime: number): Promise<string> {
+  try {
+    const trips = await efa.trip({ from: net.mainEfaId(leg.from), to: net.mainEfaId(leg.to), time: slotTime, count: 1 });
+    const pt = trips[0]?.legs.filter((l) => l.mode !== 'W') ?? [];
+    if (!pt.length) return '';
+    const parts = pt.map((l) => `${l.line ?? '?'} bis ${efa.cleanName(l.to.name)}`);
+    return ` So geht es laut Auskunft zu dieser Zeit: ${parts.join(', dann ')}.`;
+  } catch {
+    return '';
+  }
+}
+
 /** Eine Fahrt mit genau einer Linie – auch wenn die Auskunft sie am Zwischenhalt in zwei Stücke teilt */
 function singleLeg(pt: efa.EfaLeg[]): efa.EfaLeg | null {
   if (pt.length === 1) return pt[0];
@@ -299,6 +315,7 @@ async function chainRoute(
 ): Promise<ChainResult | { route: null; error: string }> {
   const tables = legs.map((l) => new LegTimetable(net, l, q.banned ?? []));
   const samples: { total: number; ride: number; route: RouteLeg[] }[] = [];
+  let failedLeg = 0;
   for (const offset of SAMPLE_OFFSETS) {
     const t0 = slotTime + offset;
     const w0 = walkMin(net, fromId, legs[0].from);
@@ -313,6 +330,7 @@ async function chainRoute(
       const l = await tables[i].firstAfter(cur);
       if (!l) {
         failed = `Linie ${legs[i].line} fährt um diese Zeit nicht direkt von ${net.station(legs[i].from).name} nach ${net.station(legs[i].to).name}.`;
+        failedLeg = i;
         break;
       }
       if (i === 0) begin = l.dep - w0;
@@ -322,7 +340,7 @@ async function chainRoute(
     }
     if (failed) {
       if (samples.length) continue;
-      return { route: null, error: failed };
+      return { route: null, error: failed + (await suggestion(net, legs.find((_, k) => k === failedLeg)!, slotTime)) };
     }
     const last = legs[legs.length - 1].to;
     const wEnd = walkMin(net, last, toId);
