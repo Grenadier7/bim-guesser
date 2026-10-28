@@ -4122,3 +4122,7 @@ details.host-bar {
 [data-chip-line] {
   cursor: pointer;
 }
+
+.net-z-arrows .net-arrows {
+  display: none;
+}

@@ -126,6 +126,8 @@ export class NetMapLayer {
     const z = this.map.getZoom();
     this.map.getContainer().classList.toggle('net-z-low', z < 12.5);
     this.map.getContainer().classList.toggle('net-z-mid', z < 14);
+    // Einbahn-Pfeile erst ab Stadtteil-Zoom – weiter draußen wären es nur Krümel (Punkt 5a)
+    this.map.getContainer().classList.toggle('net-z-arrows', z < 13);
   };
 
   clear() {
@@ -209,8 +211,9 @@ export class NetMapLayer {
           poly(e.curve, { color: this.lineColor(id, v, dim), weight: dim && kind !== 'U' && kind !== 'S' ? s.w + 1.4 : s.w, dashArray: dash });
           if (dim) fit.push(e.curve[0], e.curve[e.curve.length - 1]);
           if (v.onLine) hits.push({ curve: e.curve, ids: [...e.lines].filter((l) => !dim || v.focus.has(l)) });
-          // Einbahn-Abschnitt (Schleife, getrennte Richtungen): Pfeil in Fahrtrichtung – nur bei wenigen Linien
-          const d = dim && v.focus.size <= 4 ? e.dirs.get(id) : 3;
+          // Einbahn-Abschnitt (Schleife, getrennte Richtungen): Pfeil in Fahrtrichtung – auch bei „Von hier“ mit vielen
+          // Buslinien (Punkt 5b); ausgeblendet, wenn weit herausgezoomt (CSS net-z-arrows)
+          const d = dim && v.focus.size <= 16 ? e.dirs.get(id) : 3;
           if (d === 1 || d === 2) arrows.push({ curve: e.curve, back: d === 2, color: this.lineColor(id, v, dim) });
         }
       }
@@ -248,7 +251,7 @@ export class NetMapLayer {
       const [p, q] = [a.curve[Math.max(0, i - 1)], a.curve[Math.min(a.curve.length - 1, i + 1)]];
       // Bildschirmwinkel: 0° = Osten, im Uhrzeigersinn
       const deg = (Math.atan2(-(q[0] - p[0]), (q[1] - p[1]) * Math.cos((p[0] * Math.PI) / 180)) * 180) / Math.PI + (a.back ? 180 : 0);
-      tag(a.curve[i], `<span class="net-arrow" style="--c:${a.color};transform:translate(-50%,-50%) rotate(${deg.toFixed(0)}deg)"></span>`, 'net-tags', 200);
+      tag(a.curve[i], `<span class="net-arrow" style="--c:${a.color};transform:translate(-50%,-50%) rotate(${deg.toFixed(0)}deg)"></span>`, 'net-tags net-arrows', 200);
     }
 
     // Klickflächen der hervorgehobenen Linien: unsichtbar und breit, unter den Haltestellen-Punkten
