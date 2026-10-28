@@ -4165,3 +4165,26 @@ details.host-bar {
   justify-content: center;
   gap: 4px 16px;
 }
+
+/* ---------------------------------------------------------------- Handy: Joker ausklappbar, Platz für den Chat-Knopf */
+
+.tips-drawer > summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 6px 0;
+}
+
+.tips-drawer > summary small {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.tips-drawer[open] > summary {
+  margin-bottom: 6px;
+}
+
+@media (max-width: 899px) {
+  #panel {
+    padding-bottom: 84px;
+  }
+}
