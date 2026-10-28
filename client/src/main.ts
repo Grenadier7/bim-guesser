@@ -15,6 +15,7 @@ import { roundScreen } from './screens/round.ts';
 import { loadingHtml, type Screen } from './screens/screen.ts';
 import { trainingScreen } from './screens/training.ts';
 import { ChatWidget } from './chat.ts';
+import { hideIdle, idleCheck } from './idle.ts';
 import { app, currentRound, inviteLink, isHost, me, openTimer, restoreSession, serverNow, setMapBig, setMobileMap } from './store.ts';
 import { esc, toast } from './ui.ts';
 
@@ -153,6 +154,11 @@ async function init() {
   const chat = new ChatWidget();
   app.onChat = (e) => (e.type === 'chat' ? chat.add(e.message) : chat.history(e.messages));
   app.onKicked = () => toast('Du wurdest vom Host aus der Lobby entfernt.');
+  app.onIdle = idleCheck;
+  app.onClosed = (reason) => {
+    hideIdle();
+    toast(reason, 'info');
+  };
   chatSync = () => chat.sync();
   panel.innerHTML = loadingHtml('Lade Netzdaten …');
   try {

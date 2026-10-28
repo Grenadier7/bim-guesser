@@ -46,6 +46,10 @@ export const app = {
   onChat: (_e: Extract<GameEvent, { type: 'chat' | 'chatHistory' }>) => {},
   /** vom Host entfernt (main.ts zeigt eine Meldung) */
   onKicked: () => {},
+  /** „Lobby behalten?“-Nachfrage (idle.ts) */
+  onIdle: (_ids: string[], _deadline: number) => {},
+  /** Lobby geschlossen (Inaktivität / Host) */
+  onClosed: (_reason: string) => {},
 };
 
 // gespeicherte Zeitlimits, die es nicht mehr gibt (z.B. altes 1:30), verwerfen
@@ -179,6 +183,11 @@ function connect() {
     if (e.type === 'kicked' && e.playerId === app.session?.playerId) {
       endSession();
       app.onKicked();
+    }
+    if (e.type === 'idleCheck') app.onIdle(e.playerIds, e.deadline);
+    if (e.type === 'closed') {
+      endSession();
+      app.onClosed(e.reason);
     }
     if (e.type === 'revealed') {
       app.reveals.set(e.reveal.index, e.reveal);

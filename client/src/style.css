@@ -3949,3 +3949,104 @@ details.fine > summary {
 .path-dots i.mastered {
   background: #eab308;
 }
+
+/* ---------------------------------------------------------------- Host-Leiste (ausklappbar), Spieler verwalten, Inaktivität */
+
+details.host-bar > summary {
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+}
+
+details.host-bar > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.host-bar > summary::after {
+  content: ' ▾';
+  color: var(--muted);
+}
+
+details.host-bar[open] > summary::after {
+  content: ' ▴';
+}
+
+.hb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.hb-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hb-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border-top: 1px solid var(--line);
+}
+
+.hb-list li span {
+  flex: 1;
+}
+
+.hb-list li.offline {
+  opacity: 0.6;
+}
+
+.crown {
+  min-width: 26px;
+  min-height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
+.crown.on,
+.crown:hover,
+.crown:focus-visible {
+  filter: none;
+  opacity: 1;
+}
+
+.idle-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(15, 18, 24, 0.55);
+}
+
+.idle-box {
+  max-width: 420px;
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--panel, #fff);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.idle-count {
+  font-size: 20px;
+}
+
+details.host-bar {
+  display: block;
+}
+
+.host-bar .crown,
+.host-bar .kick {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}

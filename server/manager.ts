@@ -1,7 +1,7 @@
 // Verwaltung aller Lobbys (Routenjagd und Quiz) über ihren Code
 import type { GameMode } from '../shared/types.ts';
 import { Game } from './game.ts';
-import { GameError, type Lobby } from './lobby.ts';
+import { GameError, IDLE_WARN_MS, type Lobby } from './lobby.ts';
 import type { Network } from './network.ts';
 import { QuizGame, quizNet } from './quiz.ts';
 import { SCALE } from './security.ts';
@@ -28,6 +28,10 @@ export class GameManager {
     this.net = net;
     this.qnet = quizNet(net);
     setInterval(() => this.cleanup(), 10 * 60 * 1000).unref();
+    // inaktive Lobbys nachfragen lassen
+    setInterval(() => {
+      for (const g of this.games.values()) g.tickIdle();
+    }, Math.min(10_000, IDLE_WARN_MS / 3)).unref();
   }
 
   create(mode: GameMode, settings: unknown, ip = ''): Lobby {
@@ -43,6 +47,11 @@ export class GameManager {
     while (this.games.has(code));
     const g = mode === 'quiz' ? new QuizGame(code, this.qnet, settings) : new Game(code, this.net, settings as never);
     g.creatorIp = ip;
+    // geschlossen (Inaktivität / vom Host) → weg damit
+    g.once('closed', () => {
+      g.removeAllListeners();
+      this.games.delete(code);
+    });
     this.games.set(code, g);
     return g;
   }
