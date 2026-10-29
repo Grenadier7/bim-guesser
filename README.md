@@ -122,18 +122,47 @@ also mitsichern), Passwörter mit Argon2id (`node:crypto`, braucht Node ≥ 24.7
 SHA-256 gespeichert. Ändernde Account-Anfragen nur als JSON (Schutz gegen fremde Seiten), eigene Rate-Limits für
 Anmelden/Registrieren/Passwort vergessen. Statistik-Fehler stören nie ein laufendes Spiel.
 
+## Eigener Referenzfahrplan (GTFS)
+
+Für „Regulär“ sucht der Server Verbindungen selbst (`server/timetable.ts`, RAPTOR) auf einem Auszug der offiziellen
+Fahrplandaten (`data/timetable.json`). Vorteile gegenüber der Wiener-Linien-Auskunft: auch **Regionalzüge** (R, REX,
+CJX – sie zählen auf S-Bahn-Abschnitten wie eine S-Bahn, z.B. S80/R81/REX8 zwischen Simmering und Stadlau, das halbiert
+dort die Wartezeit), keine Abfragen (Spielstart in Sekundenbruchteilen) und kein Referenztag, der aus der Auskunft
+verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der Server weiter die Auskunft.
+
+- Daten: data.mobilitaetsverbuende.at (Registrierung nötig) – „Timetable Data PTA Eastern Region (GTFS)“ nach
+  `data/raw/timetables/`, „Railway Timetable Data (GTFS) – Reference Data for Timetable Changeover“ nach
+  `data/raw/timetables-trains/` entpacken (beides nicht im Repo), dann `npm run build:timetable`. Das baut den Auszug
+  für die drei Referenztage aus `data/network.json` (nur Wien, nur Linien des Spiels + Nahverkehrszüge, Nachtfahrten
+  vom Vortag). Regionalzüge sind **keine eigenen Linien** im Routen-Baukasten: in Wien fahren sie nur auf
+  S-Bahn-Abschnitten mit (jeder Abschnitt hat auch eine S-Bahn) – wer dort die S-Bahn wählt, bekommt ihre Abfahrten
+  automatisch mitgezählt, die Top-Verbindungen zeigen sie als „S80/R81/REX8“. Ergänzungen zum normalen Netz:
+  S40 wieder ab Franz-Josefs-Bahnhof (Fahrzeiten 2024), 18 bis Stadion, 43 bis Neuwaldegg und 46 bis Parlament
+  (am Referenztag Baustellen, siehe `scripts/build-timetable.ts`).
+- Suche: Fußwege zwischen Halten bis 500 m, von/zu Adressen bis 1,5 km (Luftlinie × 1,3, 80 m/min), Umsteigen 2 min,
+  bis 4 Umstiege. Abgeglichen mit der Auskunft: bei gleicher Abfahrt gleiche Ankunft; die eigene Suche findet nie eine
+  langsamere Verbindung (sie geht manchmal lieber 400 m zu Fuß, wo die Auskunft auf einen Bus wartet).
+- Abschalten: `TIMETABLE=off` (dann alles über die Auskunft, wie früher).
+- **Lizenz** (Datenlizenz Mobilitätsverbünde Österreich): Namensnennung „Datenquelle: Mobilitätsverbünde Österreich
+  OG – data.mobilitaetsverbuende.at“ (steht in der Kartenzeile). Die Daten gelten bis zum Fahrplanwechsel
+  (`validUntil` in `data/timetable.json`); danach dürfen sie laut Abschnitt 6a/7d nicht mehr in öffentlich
+  zugänglichen Auskunftssystemen verwendet werden (Vertragsstrafe!). Ohne schriftliche Zustimmung also jedes Jahr nach
+  dem Fahrplanwechsel neue Daten laden und neu bauen – der Server warnt beim Start und unter `/api/health`, sobald der
+  Auszug abgelaufen ist.
+
 ## Routenjagd
 
 1. Auf der Startseite **🏁 Routenjagd** wählen (erstellt eine Lobby, auch alleine) oder **mit Code beitreten** – der Einladungslink `?code=XXXXX` füllt den Code automatisch aus.
 2. In der Lobby stellt der Host alles ein. Sichtbar sind nur Schwierigkeit, Runden, Zeitlimit und „Wo liegt das?“;
    Erklärungen stecken hinter einem **ⓘ** (Maus drüber / antippen). „⚙️ Erweitert“ hat drei Reiter –
-   **🎯 Schwierigkeit** (Haltestellen, Entfernung, Min. Umstiege), **📏 Regeln** (Realistische Wertung, Tipps,
-   🏆 Challenges, **⚡ X-treme**-Kachel), **🕒 Zeit & Netz** (Uhrzeit, Netz, Fokus-Gebiet). ↺ in der Überschrift setzt alles zurück. *Realistische Wertung* (empfohlen)
-   schaltet Wartezeit mitzählen + Ø-Wartezeiten + Beste Route gemeinsam; unter „Einzeln einstellen“ geht es getrennt.
+   **🎯 Schwierigkeit** (Haltestellen, Entfernung, Min. Umstiege), **📏 Regeln** („Was zählt?“, Tipps,
+   🏆 Challenges, **⚡ X-treme**-Kachel), **🕒 Zeit & Netz** (Uhrzeit, Netz, Fokus-Gebiet). ↺ in der Überschrift setzt alles zurück.
    Mit X-treme heißt der Knopf „⚡ X-TREME starten“.
    Im Einzelnen:
    - **Uhrzeit** (unter „Erweitert“): Mo–Fr 12 Uhr, Mo–Fr 17 Uhr, Sa 2 Uhr (Nacht), So 12 Uhr
-   - **Netz**: *Regulär* = Referenztag ohne Baustellen · *Aktuell* = nächster echter Tag inkl. Sperren.
+   - **Netz**: *Regulär* = Referenztag ohne Baustellen, aus dem **eigenen Referenzfahrplan** (siehe unten) – mit
+     Regionalzügen (R, REX, CJX), ganz ohne Abfrage bei der Auskunft · *Aktuell* = nächster echter Tag inkl. Sperren
+     (Wiener-Linien-Auskunft).
      Referenztage derzeit **Di 30.6., Sa 27.6., So 28.6.2026** (`PREFERRED_DAYS` in `scripts/build-network.ts`):
      nur Ende Juni fährt die S-Bahn-Stammstrecke (ab ca. 8.7. bis mindestens Dezember gesperrt) und Bim/Bus sind
      fast im Normalbetrieb. Ohne passende Wunschtage sucht das Build-Skript selbst (Tag ohne Ersatzverkehr, mit
@@ -152,21 +181,22 @@ Anmelden/Registrieren/Passwort vergessen. Statistik-Fehler stören nie ein laufe
    - **Runden**: 3 / 5 / 7 / 10
    - **Zeitlimit** 1–10 min oder „∞ Ohne“ in einer Leiste (Standard 4:00) – nach Ablauf wird abgegeben, was eingegeben ist
    - **Wo liegt das?** – Start und Ziel vorher auf der leeren Karte tippen
-   - **Wertung** (unter „Erweitert“, Standard: *Beste Route*): Reisezeit + Aufschlag je Umstieg – Punkte, Ranking
-     und die Liste der Top-Verbindungen richten sich danach. Aufschlag: 2 min mit Ø-Wartezeiten (Warten ist dort
-     schon eingerechnet), 4 min mit echtem Fahrplan.
-     *Schnellste Route*: nur die Reisezeit zählt.
+   - **⚖️ Was zählt?** (unter „Erweitert → Regeln“) – Punkte, Ranking und die Top-Verbindungen richten sich danach:
+     *🧭 Realistisch* (Standard) – Tür zu Tür mit Ø-Wartezeiten (siehe unten), dazu wahlweise **Umstiege vermeiden**
+     (+2 min je Umstieg, Standard aus) · *🕐 Wie die Auskunft* – Tür zu Tür ab der Abfragezeit mit echten Abfahrten
+     (6 Zeitpunkte, Median; ein knapper Anschluss ist Glück) · *🚇 Nur Fahrzeit* – ab dem Einsteigen, echte Abfahrten,
+     Warten am Start egal. Intern sind das drei Werte (`countWait`, `avgWait`, `goal`); andere Kombinationen aus
+     älteren Links zeigt die Lobby als „eigene Kombination“, bis man einen Modus wählt.
    - **⚡ X-treme** (unter „Erweitert“, doppelte Zeit, im Spiel mit Banner): *Ohne Vorschläge* – Ein- und Ausstieg
      selbst eintippen (Auto-Vervollständigung über alle Stationen), keine Route auf der Karte, nur Start und Ziel ·
      *Ohne Namen* – zusätzlich Start/Ziel nur als Punkte · *Ohne Karte* – zusätzlich nichts auf der Karte, nur die
      Namen. Bei „ohne Namen“/„ohne Karte“ ist „Wo liegt das?“ aus.
-   - **Wartezeit mitzählen** – Tür-zu-Tür ab Abfragezeit statt nur Fahrzeit
-   - **Ø-Wartezeiten statt Fahrplan-Glück** (Standard: an) – jede Linie zählt mit ihrer mittleren Fahrzeit, jeder
+   - **Ø-Wartezeiten** (bei *Realistisch*) – jede Linie zählt mit ihrer mittleren Fahrzeit, jeder
      Umstieg mit Umsteigeweg + der erwarteten Wartezeit auf die nächste Linie (für jede Ankunftsminute der folgenden
      Stunde die Zeit bis zur nächsten echten Abfahrt, gemittelt – stimmt auch bei unregelmäßigem Takt; gleichwertige
      Linien wie S1–S4 auf der Stammstrecke zählen zusammen). Ein zufällig perfekter Anschluss bringt so keinen
-     Vorteil; eine S7 alle 30 min kostet im Schnitt 15 min. Bei der allerersten Linie zählt nur die halbe Ø-Wartezeit
-     (ein Viertel des Takts) – zur ersten Abfahrt kann man sich die Zeit meist einteilen. Das gilt nur, wenn sie direkt
+     Vorteil; eine S7 alle 30 min kostet im Schnitt 15 min. Bei der allerersten Linie zählen nur 70 % der Ø-Wartezeit
+     (35 % des Takts) – zur ersten Abfahrt kann man sich die Zeit meist einteilen. Das gilt nur, wenn sie direkt
      an der Start-Station abfährt; muss man erst zu einer anderen Haltestelle gehen, zählt die volle Ø-Wartezeit. Die Routendetails zeigen die Wartezeit je Umstieg.
    - **🏆 Challenges** (früher Einschränkungs-Runden) – Nie / Manchmal (ca. 30 %, mindestens eine pro Spiel) / Immer: ohne U-Bahn,
      ohne Bus, max. 1 Umstieg oder **Linie gesperrt** (eine Linie der schnellsten Verbindung, z.B. „Ohne Linie U6“).
@@ -182,7 +212,9 @@ Anmelden/Registrieren/Passwort vergessen. Statistik-Fehler stören nie ein laufe
    - **📍 Start & Ziel** (Erweitert → Schwierigkeit): *Haltestellen* oder *Adressen* – zufällige echte Adressen
      (Stadt Wien, OGD), gleichmäßig über die bebaute Fläche verteilt (400-m-Raster, höchstens 3 je Zelle, nur bis
      1,5 km von einer Haltestelle; `node scripts/build-addresses.ts` → `data/addresses.json`). Die Auskunft rechnet
-     ab der Koordinate, also inkl. Fußweg zur ersten Haltestelle.
+     ab der Koordinate, also inkl. Fußweg zur ersten Haltestelle. Punkte ×1,5 (mehr als mit allen Haltestellen), die
+     Haltestellen-Auswahl ist dann ausgeblendet und die Schwierigkeit steht auf „Eigene“ – eine Schnellwahl (Leicht …
+     Profi) stellt wieder auf Haltestellen.
    - **⇅ Einstellungen teilen** (neben ↺): Link öffnet eine neue Lobby mit genau diesen Einstellungen; JSON zum
      Kopieren und Einfügen.
    - **Abwechslung**: Innerhalb eines Spiels liegen neue Start/Ziele mindestens 1,2 km von allen bisherigen entfernt,

@@ -12,6 +12,8 @@ export interface EfaMock {
 
 export async function installEfaMock(): Promise<EfaMock> {
   process.env.STATE_DIR ??= mkdtempSync(path.join(tmpdir(), 'bimguesser-mock-'));
+  // die Attrappe ersetzt die Auskunft – der eigene Referenzfahrplan würde sonst vorher antworten
+  process.env.TIMETABLE ??= 'off';
   const { Network } = await import('../../server/network.ts');
   const { naiveMinutes } = await import('../../server/efa.ts');
   const net = Network.load();

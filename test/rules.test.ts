@@ -93,9 +93,55 @@ test('Regression L-04/L-05: Zeitbonus nie über 10 %, kaputte Zeiten geben 0 sta
   assert.equal(scoreRoute(30, Number.POSITIVE_INFINITY), 0);
 });
 
-test('Adressen als Start/Ziel: Haltestellen-Auswahl zählt nicht, Faktor wie Bus-Knoten (×1,3)', () => {
+test('Adressen als Start/Ziel: Haltestellen-Auswahl zählt nicht, Faktor über allen Haltestellen (×1,5)', () => {
   const s = { stations: ['Ukey'] as never, distance: 'medium' as const, minTransfers: 0 as const };
-  assert.equal(difficultyMultiplier({ ...s, endpoints: 'addresses' }), 1.3);
-  assert.equal(difficultyMultiplier({ ...s, stations: ['U', 'S', 'T', 'all'] as never, endpoints: 'addresses' }), 1.3);
+  assert.equal(difficultyMultiplier({ ...s, endpoints: 'addresses' }), 1.5);
+  assert.equal(difficultyMultiplier({ ...s, stations: ['U', 'S', 'T', 'all'] as never, endpoints: 'addresses' }), 1.5);
+  assert.ok(difficultyMultiplier({ ...s, endpoints: 'addresses' }) > difficultyMultiplier({ ...s, stations: ['U', 'S', 'T', 'all'] as never }), 'mehr als alle Haltestellen');
   assert.equal(difficultyMultiplier({ ...s, endpoints: 'stations' }), 0.85);
+});
+
+test('Wertungs-Modi: drei Modi, „Umstiege vermeiden“ nur bei Realistisch, alte Kombinationen = eigene', async () => {
+  const { SCORING_MODES, scoringModeOf } = await import('../shared/rules.ts');
+  const { DEFAULT_SETTINGS } = await import('../shared/defaults.ts');
+  assert.deepEqual(SCORING_MODES.map((m) => m.id), ['realistic', 'info', 'ride']);
+  for (const m of SCORING_MODES) assert.equal(scoringModeOf(m.settings), m.id);
+  // Standard: Realistisch ohne Umstiegs-Aufschlag
+  assert.equal(scoringModeOf(DEFAULT_SETTINGS), 'realistic');
+  assert.equal(DEFAULT_SETTINGS.goal, 'fastest');
+  assert.equal(transferPenalty(DEFAULT_SETTINGS), 0);
+  // Umstiege vermeiden = Realistisch mit goal 'best' (+2 min je Umstieg)
+  assert.equal(scoringModeOf({ countWait: true, avgWait: true, goal: 'best' }), 'realistic');
+  assert.equal(transferPenalty({ goal: 'best', avgWait: true }), 2);
+  // ältere Kombinationen
+  assert.equal(scoringModeOf({ countWait: false, avgWait: true, goal: 'best' }), null);
+  assert.equal(scoringModeOf({ countWait: true, avgWait: false, goal: 'best' }), null);
+});
+
+test('Beschriftung gleichwertiger Linien: nur Linien des Netzes, Regionalzüge getrennt (REX, CJX, R)', async () => {
+  const { lineGroupLabel, regionalTrains } = await import('../shared/rules.ts');
+  assert.equal(lineGroupLabel(['R81', 'S80', 'REX8']), 'S80');
+  assert.deepEqual(regionalTrains(['R81', 'S80', 'REX8']), ['REX8', 'R81']);
+  assert.equal(lineGroupLabel(['S2', 'S1', 'REX1', 'S3', 'REX3', 'CJX9', 'S4']), 'S1/S2/S3/S4');
+  assert.deepEqual(regionalTrains(['S2', 'REX3', 'CJX9', 'REX1', 'R81']), ['REX1', 'REX3', 'CJX9', 'R81']);
+  assert.equal(lineGroupLabel(['31', '30']), '30/31');
+  assert.deepEqual(regionalTrains(['31', '30']), []);
+});
+
+test('Adressen ⇄ Schwierigkeit: Adressen → „Eigene“, eine Schnellwahl → wieder Haltestellen', async () => {
+  const { sanitizeSettings } = await import('../server/settings.ts');
+  const { DEFAULT_SETTINGS } = await import('../shared/defaults.ts');
+  const a = sanitizeSettings({ endpoints: 'addresses' }, DEFAULT_SETTINGS);
+  assert.equal(a.endpoints, 'addresses');
+  assert.equal(a.difficulty, 'custom');
+  // andere Regler ändern: bleibt bei Adressen und „Eigene“
+  const b = sanitizeSettings({ distance: 'long' }, a);
+  assert.equal(b.endpoints, 'addresses');
+  assert.equal(b.difficulty, 'custom');
+  // Schnellwahl antippen → Haltestellen
+  const c = sanitizeSettings({ difficulty: 'hard' }, b);
+  assert.equal(c.endpoints, 'stations');
+  assert.equal(c.difficulty, 'hard');
+  // geteilte Einstellungen mit beidem: Adressen gewinnen
+  assert.equal(sanitizeSettings({ difficulty: 'easy', endpoints: 'addresses' }, DEFAULT_SETTINGS).difficulty, 'custom');
 });

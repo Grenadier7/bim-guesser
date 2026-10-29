@@ -12,7 +12,7 @@
 //     Ein zufällig perfekter Anschluss (an um 16:32, S-Bahn um 16:34) bringt so keinen Vorteil mehr –
 //     eine S-Bahn alle 15 min kostet im Schnitt 7,5 min Warten, eine U-Bahn alle 4 min nur 2.
 import type { LatLon, Mode, NetMode, Restriction, RouteLeg, RouteOption, RouteStep, UserLeg } from '../shared/types.ts';
-import { lineColor, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
+import { lineColor, lineGroupLabel, regionalTrains, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
 import * as efa from './efa.ts';
 import { distM, type Network } from './network.ts';
 
@@ -73,6 +73,13 @@ function toRouteLeg(net: Network, l: efa.EfaLeg, lineLabel?: string): RouteLeg {
     arr: efa.fmtTime(l.arr),
     path,
   };
+}
+
+/** Linie im Netz, die denselben Abschnitt fährt (für Regionalzüge, die selbst keine Linie im Netz sind) */
+function equivalentLine(net: Network, mode: Mode, from: string, to: string): string | null {
+  if (mode === 'U' || mode === 'W') return null;
+  for (const l of net.lines.values()) if (modeGroup(l.mode) === modeGroup(mode) && net.servesInOrder(l.id, from, to, 'regular')) return l.id;
+  return null;
 }
 
 /** Verkehrsmittel-Gruppe: Busse und Nachtbusse gelten als gleich */
@@ -200,6 +207,11 @@ class LegTimetable {
     return modeGroup(l.mode) === modeGroup(this.mode);
   }
 
+  /** Linien, die in [from, to) auf diesem Abschnitt fahren (für die Beschriftung „S80/REX8/R81“) */
+  linesIn(from: number, to: number): string[] {
+    return [...new Set(this.legs.filter((l) => l.dep >= from && l.dep < to && l.line).map((l) => l.line!))];
+  }
+
   /** passende Fahrten ab `time` und bis wohin die Antwort lückenlos ist (letzte gelieferte Abfahrt) */
   private async query(from: string, to: string, time: number): Promise<{ out: efa.EfaLeg[]; until: number | null }> {
     const t5 = Math.floor(time / 5) * 5;
@@ -314,6 +326,8 @@ async function chainRoute(
   labels?: (string | null)[],
 ): Promise<ChainResult | { route: null; error: string }> {
   const tables = legs.map((l) => new LegTimetable(net, l, q.banned ?? []));
+  /** wann die Teilstrecken in den Stichproben tatsächlich gefahren werden (für die Beschriftung) */
+  const rideTimes: number[][] = legs.map(() => []);
   const samples: { total: number; ride: number; route: RouteLeg[] }[] = [];
   let failedLeg = 0;
   for (const offset of SAMPLE_OFFSETS) {
@@ -328,6 +342,7 @@ async function chainRoute(
       const w = i === 0 ? w0 : prev === legs[i].from ? 2 : Math.max(2, walkMin(net, prev, legs[i].from));
       if (i > 0) cur += w;
       const l = await tables[i].firstAfter(cur);
+      if (l) rideTimes[i].push(l.dep);
       if (!l) {
         failed = `Linie ${legs[i].line} fährt um diese Zeit nicht direkt von ${net.station(legs[i].from).name} nach ${net.station(legs[i].to).name}.`;
         failedLeg = i;
@@ -350,9 +365,25 @@ async function chainRoute(
   const durs = samples.map((s) => s.total);
   const med = median(durs);
   const rep = samples.reduce((b, s) => (Math.abs(s.total - med) < Math.abs(b.total - med) ? s : b));
+  // Beschriftung je Teilstrecke: bei der S-Bahn alle S-Bahnen, die dort fahren („S1/S2/S3/S4“), dazu getrennt die
+  // Regionalzüge, die im Takt mitzählen – um die Zeit, zu der man die Teilstrecke wirklich fährt (nach langem
+  // Fußweg ist das nicht die Abfragezeit); sonst wie bisher
+  const lineInfo = legs.map((l, i) => {
+    if (net.lines.get(l.line)?.mode !== 'S') return { label: labels?.[i] ?? l.line, with: [] as string[] };
+    const at = rideTimes[i].length ? rideTimes[i] : [slotTime];
+    const running = tables[i].linesIn(Math.min(...at) - 10, Math.max(...at) + 20);
+    // die eingegebene Linie nur, wenn sie um diese Zeit auch fährt (S4 um 17 Uhr nördlich von Floridsdorf: nur S3)
+    const label = lineGroupLabel(running) || l.line;
+    return { label, with: regionalTrains(running) };
+  });
+  let pi = 0;
   const route: RouteOption = {
     key,
-    legs: rep.route,
+    legs: rep.route.map((l) => {
+      if (l.mode === 'W') return l;
+      const info = lineInfo[pi++];
+      return info ? { ...l, line: info.label, ...(info.with.length ? { with: info.with } : {}) } : l;
+    }),
     medianMin: med,
     minMin: Math.min(...durs),
     maxMin: Math.max(...durs),
@@ -360,7 +391,7 @@ async function chainRoute(
     samples: samples.length,
   };
   if (q.avgWait) {
-    const avg = await averagedRoute(net, legs, tables, fromId, toId, slotTime, q.countWait, labels);
+    const avg = await averagedRoute(net, legs, tables, fromId, toId, slotTime, q.countWait, lineInfo.map((x) => x.label), lineInfo.map((x) => x.with));
     if (avg) Object.assign(route, avg);
   }
   return { route, error: null };
@@ -392,11 +423,11 @@ export function expectedWait(departures: number[], t: number, window = HEADWAY_W
   return a > t ? sum / (a - t) : null;
 }
 /**
- * Am Start wird nur die halbe Ø-Wartezeit gerechnet (also ein Viertel des Takts):
+ * Am Start werden nur 70 % der Ø-Wartezeit gerechnet (also 35 % des Takts):
  * zur ersten Abfahrt kann man sich die Zeit meist einteilen – beim Umsteigen nicht.
  * Gilt nur, wenn die erste Linie direkt an der Start-Station abfährt (kein Fußweg dorthin).
  */
-const FIRST_WAIT_FACTOR = 0.5;
+export const FIRST_WAIT_FACTOR = 0.7;
 
 /**
  * Ø-Wartezeiten: Fahrzeit je Linie (Median) + Umsteigeweg + halber Takt der nächsten Linie.
@@ -412,6 +443,8 @@ async function averagedRoute(
   slotTime: number,
   countWait: boolean,
   labels?: (string | null)[],
+  /** je Teilstrecke: Regionalzüge, die im Takt mitzählen */
+  extra?: string[][],
 ): Promise<Pick<RouteOption, 'medianMin' | 'rideMin' | 'steps'> | null> {
   let t = slotTime;
   let firstWait = 0;
@@ -448,7 +481,7 @@ async function averagedRoute(
     const wait = meanWait * (i === 0 && !w0 ? FIRST_WAIT_FACTOR : 1);
     if (i > 0 || countWait) {
       const before = t;
-      add('wait', wait, { to: net.station(legs[i].from).name, every: Math.round(every) });
+      add('wait', wait, { to: net.station(legs[i].from).name, every: Math.round(every), ...(extra?.[i]?.length ? { with: extra[i] } : {}) });
       if (i === 0) firstWait = t - before;
     }
     const line = net.lines.get(legs[i].line)!;
@@ -517,7 +550,8 @@ export async function topRoutes(net: Network, fromId: string, toId: string, slot
         const pt = t.legs.filter((x) => x.mode !== 'W');
         if (pt[k]?.line) names.add(pt[k].line!);
       }
-      return [...names].sort((a, b) => a.localeCompare(b, 'de', { numeric: true })).join('/');
+      // nur die Linien des Netzes („S1/S2/S3“) – Regionalzüge stehen beim Nachrechnen getrennt dabei
+      return lineGroupLabel([...names]);
     });
     const legs = rep.legs.map((l, i) => toRouteLeg(net, l, labels[i] ?? undefined));
     candidates.push({
@@ -542,7 +576,8 @@ export async function topRoutes(net: Network, fromId: string, toId: string, slot
       for (const l of pt) {
         const f = net.resolve(l.from);
         const t = net.resolve(l.to);
-        const line = l.line && net.lines.has(l.line) ? l.line : null;
+        // Regionalzug (REX, R …): gleichwertige S-Bahn desselben Abschnitts – zählt mit denselben Abfahrten
+        const line = !f || !t ? null : l.line && net.lines.has(l.line) ? l.line : equivalentLine(net, l.mode, f, t);
         if (!f || !t || !line) return c.option; // nicht nachrechenbar – Stichprobe behalten
         legs.push({ line, from: f, to: t });
       }

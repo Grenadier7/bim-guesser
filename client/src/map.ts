@@ -44,7 +44,7 @@ export class GameMap {
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
       // ab Zoomstufe 15 enthalten die Kacheln Straßen- und Parknamen – darüber nur vergrößern
       maxNativeZoom: 14,
-      attribution: 'Karte: Esri, HERE, Garmin, &copy; OpenStreetMap · Daten: Wiener Linien (CC BY 4.0)',
+      attribution: 'Karte: Esri, HERE, Garmin, &copy; OpenStreetMap · Daten: Wiener Linien (CC BY 4.0) · Fahrplan: Mobilitätsverbünde Österreich OG – data.mobilitaetsverbuende.at (verarbeitet)',
     }).addTo(this.map);
     this.map.fitBounds(VIENNA);
     for (const g of [this.areas, this.learnArea, this.learnMarks, this.guesses, this.endpoints, this.hints, this.draft, this.routes]) g.addTo(this.map);

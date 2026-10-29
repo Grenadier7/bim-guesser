@@ -11,7 +11,8 @@ import {
   STATION_KINDS,
   NET_MODES,
   RESTRICTION_FREQUENCIES,
-  ROUTE_GOALS,
+  SCORING_MODES,
+  scoringModeOf,
   TIP_LEVELS,
   tipShare,
   XTREME_LEVELS,
@@ -71,11 +72,8 @@ function stationsText(kinds: StationKind[]): string {
   return `${STATION_KINDS.filter((k) => kinds.includes(k.id)).map((k) => k.label).join(', ')} · ${n} Haltestellen`;
 }
 
-/** Erklärung zu "Beste / Schnellste Route" */
-function goalInfo(st: GameSettings): string {
-  const p = transferPenalty({ ...st, goal: 'best' });
-  return `<b>🏅 Beste Route:</b> Reisezeit + ${p} min je Umstieg${st.avgWait ? ' (die Wartezeit ist über die Ø-Wartezeiten schon drin)' : ''}. Beispiel: 30 min mit 2 Umstiegen zählen als ${30 + 2 * p} min – eine direkte Verbindung mit ${30 + 2 * p - 1} min gewinnt.<br><b>⚡ Schnellste Route:</b> nur die Reisezeit zählt.`;
-}
+/** Erklärung zu „Was zählt?“ */
+const scoringInfo = () => SCORING_MODES.map((m) => `<b>${m.icon} ${m.label}:</b> ${esc(m.hint)}`).join('<br>');
 
 type AdvTab = 'diff' | 'rules' | 'world';
 const ADV_TABS: { id: AdvTab; label: string }[] = [
@@ -112,7 +110,6 @@ export function lobbyScreen(panel: HTMLElement): Screen {
   let tapEnabled: boolean | null = null;
   let advancedOpen = false;
   let advTab: AdvTab = 'diff';
-  let fineOpen = false;
 
   const send = patchQueue(async (patch: Partial<GameSettings>) => {
     try {
@@ -198,26 +195,28 @@ export function lobbyScreen(panel: HTMLElement): Screen {
               : ''
           }`;
       if (advTab === 'rules') {
-        const realistic = st.countWait && st.avgWait && st.goal === 'best';
-        const mixed = !realistic && (st.countWait || st.avgWait || st.goal === 'best');
+        const mode = scoringModeOf(st);
+        const penalty = transferPenalty({ ...st, goal: 'best' });
         return `
-          <div class="toggles">
-            ${toggleInfo(
-              'realistic',
-              'Realistische Wertung <small class="rec">empfohlen</small>',
-              `Drei Dinge zusammen:<br><b>Wartezeit mitzählen</b> – gezählt wird ab der Abfragezeit, seltene Linien kosten Wartezeit.<br><b>Ø-Wartezeiten</b> – jeder Umstieg kostet Umsteigeweg + halben Takt der nächsten Linie (S-Bahn alle 15 min → Ø 7,5 min), ein zufällig perfekter Anschluss bringt nichts. Am Start zählt nur die halbe Ø-Wartezeit (wenn man nicht erst zu einer anderen Haltestelle gehen muss).<br><b>Beste Route</b> – zusätzlich ${transferPenalty({ ...st, goal: 'best' })} min je Umstieg.<br>Aus = nur die reine Fahrzeit der schnellsten Verbindung.`,
-              realistic,
-              ro,
-              mixed ? 'angepasst – siehe „Einzeln einstellen“' : '',
-            )}
-          </div>
-          <details class="fine" ${fineOpen ? 'open' : ''}><summary>Einzeln einstellen</summary>
-            <div class="setting"><span>Wertung ${infoTip(goalInfo(st))}</span>${seg('goal', ROUTE_GOALS.map((g) => ({ value: g.id, label: g.label })), st.goal, ro)}</div>
-            <div class="toggles">
-              ${toggleInfo('countWait', 'Wartezeit mitzählen', 'Gezählt wird ab der Abfragezeit – seltene Linien kosten Wartezeit. Aus = ab der ersten Abfahrt.', st.countWait, ro)}
-              ${toggleInfo('avgWait', 'Ø-Wartezeiten statt Fahrplan-Glück', 'Jeder Umstieg kostet Umsteigeweg + halben Takt der nächsten Linie (S-Bahn alle 15 min → Ø 7,5 min, U-Bahn alle 4 min → Ø 2 min). Am Start zählt nur die Hälfte davon (ohne Fußweg zur ersten Haltestelle). Aus = echte Abfahrten zu 6 Zeitpunkten.', st.avgWait, ro)}
-            </div>
-          </details>
+          <div class="setting"><span>⚖️ Was zählt? ${infoTip(scoringInfo())}</span>${seg(
+            'scoring',
+            SCORING_MODES.map((m) => ({ value: m.id, label: `${m.icon} ${m.label}`, title: m.hint })),
+            mode ?? '',
+            ro,
+          )}
+            ${mode ? `<small class="hint">${esc(SCORING_MODES.find((m) => m.id === mode)!.hint)}</small>` : '<small class="hint">Eigene Kombination (z.B. aus einem älteren geteilten Link) – einen Modus antippen, um sie zu ersetzen.</small>'}</div>
+          ${
+            mode === 'realistic'
+              ? `<div class="toggles">${toggleInfo(
+                  'avoidTransfers',
+                  'Umstiege vermeiden',
+                  `Jeder Umstieg zählt zusätzlich ${penalty} min – für alle, die lieber direkt fahren, auch wenn es etwas länger dauert. Beispiel: 30 min mit 2 Umstiegen zählen als ${30 + 2 * penalty} min – eine direkte Verbindung mit ${30 + 2 * penalty - 1} min gewinnt.<br>Aus = nur die Zeit zählt (Umsteigeweg und Wartezeit sind sowieso schon drin).`,
+                  st.goal === 'best',
+                  ro,
+                  st.goal === 'best' ? `+${penalty} min je Umstieg` : '',
+                )}</div>`
+              : ''
+          }
           <div class="setting"><span>💡 Tipps ${infoTip(
             `Ein Tipp kostet einen Anteil der Routenpunkte:<br>${(Object.keys(TIPS) as TipKind[])
               .map((k) => `${esc(TIPS[k].label)}: günstig −${Math.round(tipShare(k, 'cheap') * 100)} % · teuer −${Math.round(tipShare(k, 'expensive') * 100)} %`)
@@ -236,7 +235,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
       const addr = st.endpoints === 'addresses';
       return `
           <div class="setting"><span>📍 Start & Ziel ${infoTip(
-            `<b>Haltestellen:</b> Start und Ziel sind Stationen.<br><b>Adressen:</b> ${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} echte Adressen (Stadt Wien), gleichmäßig über die Stadt verteilt – erst zu Fuß zur passenden Haltestelle. Punkte ×${ADDRESS_FACTOR.toLocaleString('de-AT')} wie Bus-Knoten.`,
+            `<b>Haltestellen:</b> Start und Ziel sind Stationen.<br><b>Adressen:</b> ${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} echte Adressen (Stadt Wien), gleichmäßig über die Stadt verteilt – erst zu Fuß zur passenden Haltestelle. Punkte ×${ADDRESS_FACTOR.toLocaleString('de-AT')} – mehr als mit allen Haltestellen.<br>Mit Adressen steht die Schwierigkeit auf „Eigene“; eine Schnellwahl (Leicht … Profi) stellt wieder auf Haltestellen.`,
           )}</span>${seg('endpoints', [
             { value: 'stations', label: '🚏 Haltestellen' },
             ...(app.net.data.addressCount ? [{ value: 'addresses', label: '🏠 Adressen' }] : []),
@@ -329,9 +328,6 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     panel.querySelector<HTMLDetailsElement>('details.advanced')!.addEventListener('toggle', (e) => {
       advancedOpen = (e.target as HTMLDetailsElement).open;
     });
-    panel.querySelector<HTMLDetailsElement>('details.fine')?.addEventListener('toggle', (e) => {
-      fineOpen = (e.target as HTMLDetailsElement).open;
-    });
     panel.querySelectorAll<HTMLButtonElement>('[data-adv]').forEach((b) =>
       b.addEventListener('click', () => {
         advTab = b.dataset.adv as AdvTab;
@@ -359,6 +355,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         const k = b.dataset.k!;
         const v = b.dataset.v!;
         if (k === 'rounds') send({ rounds: Number(v) });
+        else if (k === 'scoring') send({ ...SCORING_MODES.find((m) => m.id === v)!.settings });
         else if (k === 'grp' || k === 'lvl') {
           const cur = routeState().settings.stations;
           const [gid, lid] = k === 'grp' ? [v, null] : v.split(':');
@@ -378,8 +375,8 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     panel.querySelectorAll<HTMLInputElement>('input[type=checkbox][data-k]').forEach((c) =>
       c.addEventListener('change', () => {
         if (c.dataset.k === 'focusOn') return c.checked ? sendFocus({}) : send({ focus: null });
-        // ein Schalter für drei Einstellungen
-        if (c.dataset.k === 'realistic') return send({ countWait: c.checked, avgWait: c.checked, goal: c.checked ? 'best' : 'fastest' });
+        // „Umstiege vermeiden“ (nur bei Realistisch) = Wertung „beste Route“
+        if (c.dataset.k === 'avoidTransfers') return send({ goal: c.checked ? 'best' : 'fastest' });
         send({ [c.dataset.k!]: c.checked } as Partial<GameSettings>);
       }),
     );

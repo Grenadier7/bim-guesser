@@ -173,13 +173,13 @@ export function atlasView(panel: HTMLElement, onBack: () => void, opts: { query?
     if (sel?.kind === 'line') {
       const prof = lineProfile(line(sel.id));
       const stops = [...new Set(patternsOf(prof.line).flat())].map((id) => net.station(id));
-      const pts = layer.render(netView({ ...common, focus: new Set([sel.id]), marks: prof.waypoints.map((id) => net.station(id)), stops }));
+      const pts = layer.render(netView({ ...common, focus: new Set([sel.id]), marks: prof.waypoints.map((id) => net.station(id)), stops, bothEnds: true }));
       if (fit && pts.length) app.map.fitPoints(pts, 14);
     } else if (sel?.kind === 'compare') {
       const { ids } = sel;
       const stops = [...new Set(ids.flatMap((id) => patternsOf(line(id)).flat()))].map((id) => net.station(id));
       const colors = compareColors(ids.map(line));
-      const pts = layer.render(netView({ ...common, focus: new Set(ids), colors, marks: meetings(ids).slice(0, 6).map((m) => m.station), stops }));
+      const pts = layer.render(netView({ ...common, focus: new Set(ids), colors, marks: meetings(ids).slice(0, 6).map((m) => m.station), stops, bothEnds: true }));
       if (fit && pts.length) app.map.fitPoints(pts, 14);
     } else if (sel?.kind === 'station') {
       const st = net.station(sel.id);

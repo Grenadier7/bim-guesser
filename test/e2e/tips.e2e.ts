@@ -50,11 +50,23 @@ test('Punkt 7: in der Auflösung eine Linie antippen → ganzer Verlauf, nochmal
   await p.locator('.hb-cancel').click({ timeout: 180_000 });
   p.once('dialog', (d) => void d.accept());
   await p.locator('.hb-cancel').click().catch(() => {});
-  const chip = p.locator('.route-list [data-chip-line]').first();
-  await chip.waitFor({ timeout: 60_000 });
+  const summary = p.locator('.route-list > li').first();
+  await summary.waitFor({ timeout: 60_000 });
+  // zugeklappt: Klick auf die Linie klappt nur auf (Punkt 2, Runde 2)
+  await summary.locator('.chainline [data-chip-line]').first().click();
+  await p.locator('.route-list > li.open').first().waitFor();
+  assert.equal(await p.locator('.toast', { hasText: 'ganzer Verlauf' }).count(), 0);
+  // in der Detailansicht: ganzer Verlauf, Name an beiden Endstationen
+  const chip = summary.locator('.leg-detail [data-chip-line]').first();
   const line = await chip.getAttribute('data-chip-line');
   await chip.click();
   await p.locator('.toast', { hasText: 'ganzer Verlauf' }).waitFor();
+  const ids = line!.split('/');
+  if (ids.length === 1) {
+    await p.waitForTimeout(300);
+    const tags = await p.locator('.leaflet-netLabels-pane .net-tag').allInnerTexts();
+    assert.ok(tags.filter((x) => x === ids[0]).length >= 2, `${ids[0]} an beiden Enden: ${tags.join(',')}`);
+  }
   await t.shot('reveal-line-full');
   // Netzkarte zeigt die Linie kräftig (Pfade im Netz-Pane)
   assert.ok((await p.locator('.leaflet-net-pane path').count()) > 0, `${line} nicht gezeichnet`);

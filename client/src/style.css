@@ -4629,3 +4629,11 @@ details.host-bar {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Regionalzüge, die im S-Bahn-Takt mitzählen („· mit REX4, REX41“) – dezent, Erklärung beim Drüberfahren */
+.with-trains {
+  color: var(--muted);
+  border-bottom: 1px dotted currentColor;
+  cursor: help;
+  white-space: nowrap;
+}
