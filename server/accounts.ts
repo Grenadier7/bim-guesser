@@ -673,6 +673,16 @@ export class Accounts {
     return out;
   }
 
+  /**
+   * Nur für Tests (TEST_HOOKS=1): Zeit „vorspulen“ – zuletzt online vor `seenMinAgo` Minuten, Einladungen des
+   * Accounts um `invitesMinOlder` Minuten älter. Sonst müsste ein Test 2 Minuten bzw. 2 Stunden warten.
+   */
+  testAge(name: string, opts: { seenMinAgo?: number; invitesMinOlder?: number }) {
+    const u = this.byName(name);
+    if (opts.seenMinAgo != null) this.db.prepare('UPDATE users SET last_seen = ? WHERE id = ?').run(Date.now() - opts.seenMinAgo * 60_000, u.id);
+    if (opts.invitesMinOlder != null) this.db.prepare('UPDATE invites SET created = created - ? WHERE to_id = ? OR from_id = ?').run(opts.invitesMinOlder * 60_000, u.id, u.id);
+  }
+
   dropInvite(me: number, id: number) {
     this.db.prepare('DELETE FROM invites WHERE id = ? AND to_id = ?').run(id, me);
   }

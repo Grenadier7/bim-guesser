@@ -15,6 +15,8 @@ import { COURSES } from '../client/src/learn/courses/list.ts';
 import type { GameManager } from '../server/manager.ts';
 import { installEfaMock } from './support/efa-mock.ts';
 
+// Test-Schnittstelle (Zeit vorspulen) – nur mit TEST_HOOKS=1, nie im Betrieb
+process.env.TEST_HOOKS = '1';
 const net = Network.load();
 const mails: { to: string; text: string }[] = [];
 let base = '';
@@ -556,5 +558,105 @@ describe('Zwei Geräte gleichzeitig', () => {
     assert.deepEqual(d['oeffi-courses-v1'], { ubahn: { done: true, best: 5, total: 6 }, sbahn: { done: true, best: 2, total: 4 } });
     assert.deepEqual(d['oeffi-progress-v1'], { tutorialDone: true, played: 3 });
     assert.deepEqual(d['oeffi-my-lines-v1'], ['U1'], 'abgewählte Linie bleibt abgewählt');
+  });
+});
+
+// ================================================================ mehrere Accounts zusammen
+
+describe('Mehrere Accounts', () => {
+  test('Routenjagd zu zweit: beide Runden und Spiel gezählt, „Sieger“ nur für den Besseren', async () => {
+    const a = await newUser('Gewinn');
+    const b = await newUser('Verlier');
+    const lobby = (await a.b.call('POST', '/api/games', { mode: 'route', playerName: 'A', settings: {} })).body;
+    const code = lobby.state.id;
+    const jb = (await b.b.call('POST', `/api/games/${code}/join`, { playerName: 'B' })).body;
+    assert.deepEqual(jb.state.players.map((p: { account?: string }) => p.account).sort(), [a.name, b.name].sort(), 'beide mit Account in der Lobby');
+    // „Wo liegt das?“ an: A tippt genau richtig, B gar nicht → A gewinnt sicher
+    await a.b.call('PUT', `/api/games/${code}/settings`, { token: lobby.token, settings: { rounds: 2, locate: true, restrictions: 'never', minTransfers: 0, roundTimeLimitSec: null, stations: ['U'] } });
+    let st = (await a.b.call('POST', `/api/games/${code}/start`, { token: lobby.token })).body;
+    for (let r = 0; r < 2; r++) {
+      const round = st.rounds[r];
+      const exact = { from: [round.from.lat, round.from.lon], to: [round.to.lat, round.to.lon] };
+      await b.b.call('POST', `/api/games/${code}/rounds/${r}/submit`, { token: jb.token, legs: [], guesses: null });
+      const sub = await a.b.call('POST', `/api/games/${code}/rounds/${r}/submit`, { token: lobby.token, legs: [], guesses: exact });
+      assert.equal(sub.status, 200, JSON.stringify(sub.body));
+      st = (await a.b.call('POST', `/api/games/${code}/next`, { token: lobby.token })).body;
+    }
+    assert.equal(st.phase, 'finished');
+    const sa = accounts.stats(a.id);
+    const sb = accounts.stats(b.id);
+    assert.equal(sa.games, 1);
+    assert.equal(sb.games, 1);
+    assert.equal(sa.rounds, 2);
+    assert.equal(sb.rounds, 2);
+    assert.equal(sa.wins, 1, 'A hat gewonnen');
+    assert.equal(sb.wins, 0);
+    assert.ok(accounts.medals(a.id).find((m) => m.id === 'winner')!.at);
+    assert.equal(accounts.medals(b.id).find((m) => m.id === 'winner')!.at, null);
+    assert.equal(sb.recent[0].rank, 2);
+    assert.equal(sb.recent[0].players, 2);
+  });
+
+  test('gleichzeitige Freundschaftsanfragen in beide Richtungen → befreundet, kein Fehler', async () => {
+    const a = await newUser('Zeit');
+    const b = await newUser('Gleich');
+    const rs = await Promise.all([a.b.call('POST', `/api/friends/${b.name}`, {}), b.b.call('POST', `/api/friends/${a.name}`, {})]);
+    assert.deepEqual(rs.map((r) => r.status), [200, 200]);
+    assert.ok(rs.some((r) => r.body.relation === 'friend'));
+    assert.equal((await a.b.call('GET', '/api/friends')).body.friends[0]?.name, b.name);
+    assert.equal((await b.b.call('GET', '/api/friends')).body.friends[0]?.name, a.name);
+  });
+
+  test('Einladung an ausgewählte Freunde: nur die bekommen sie; „alle“ erreicht danach auch den Rest', async () => {
+    const host = await newUser('Gast');
+    const fr = await Promise.all(['Eins', 'Zwei', 'Drei'].map((p) => newUser(p)));
+    for (const f of fr) {
+      await host.b.call('POST', `/api/friends/${f.name}`, {});
+      await f.b.call('POST', `/api/friends/${host.name}`, {});
+    }
+    const lobby = (await host.b.call('POST', '/api/games', { mode: 'quiz', playerName: 'H', settings: {} })).body;
+    const code = lobby.state.id;
+    assert.equal((await host.b.call('POST', `/api/games/${code}/invite`, { token: lobby.token, to: [fr[0].name, fr[2].name] })).body.invited, 2);
+    const count = async (u: { b: ReturnType<typeof browser> }) => (await u.b.call('GET', '/api/me')).body.user.invites.length;
+    assert.deepEqual(await Promise.all(fr.map(count)), [1, 0, 1]);
+    assert.equal((await host.b.call('POST', `/api/games/${code}/invite`, { token: lobby.token, to: 'all' })).body.invited, 3);
+    assert.deepEqual(await Promise.all(fr.map(count)), [1, 1, 1], 'je eine (erneute Einladung ersetzt die alte)');
+    // Groß-/Kleinschreibung egal, Unbekannte werden ignoriert
+    assert.equal((await host.b.call('POST', `/api/games/${code}/invite`, { token: lobby.token, to: [fr[1].name.toUpperCase(), 'gibtsnicht'] })).body.invited, 1);
+    // der Eingeladene tritt bei → Account am Spieler, Einladung kann weg
+    const inv = (await fr[1].b.call('GET', '/api/me')).body.user.invites[0];
+    const join = await fr[1].b.call('POST', `/api/games/${inv.code}/join`, { playerName: 'Zwei' });
+    assert.equal(join.body.state.players.find((p: { name: string }) => p.name === 'Zwei').account, fr[1].name);
+  });
+
+  test('Freundschaft beenden: Statistik wieder privat, Einladen nicht mehr möglich', async () => {
+    const a = await newUser('Ex');
+    const b = await newUser('Ehemals');
+    await a.b.call('POST', `/api/friends/${b.name}`, {});
+    await b.b.call('POST', `/api/friends/${a.name}`, {});
+    assert.ok((await b.b.call('GET', `/api/users/${a.name}`)).body.stats, 'als Freund sichtbar');
+    await a.b.call('DELETE', `/api/friends/${b.name}`, {});
+    assert.equal((await b.b.call('GET', `/api/users/${a.name}`)).body.stats, null, 'danach privat');
+    assert.equal((await b.b.call('GET', `/api/users/${a.name}`)).body.relation, null);
+    const lobby = (await a.b.call('POST', '/api/games', { mode: 'quiz', playerName: 'A', settings: {} })).body;
+    assert.equal((await a.b.call('POST', `/api/games/${lobby.state.id}/invite`, { token: lobby.token, to: [b.name] })).status, 400);
+  });
+
+  test('online/offline unter Freunden und Ablauf von Einladungen nach 2 Stunden (Test-Schnittstelle)', async () => {
+    const a = await newUser('Online');
+    const b = await newUser('Offline');
+    await a.b.call('POST', `/api/friends/${b.name}`, {});
+    await b.b.call('POST', `/api/friends/${a.name}`, {});
+    assert.deepEqual((await a.b.call('GET', '/api/me')).body.user.friendsOnline, [b.name]);
+    // B war vor 5 Minuten zuletzt da → offline
+    assert.equal((await realFetch(`${base}/api/__test/age/${b.name}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seenMinAgo: 5 }) })).status, 200);
+    assert.deepEqual((await a.b.call('GET', '/api/me')).body.user.friendsOnline, []);
+    assert.equal((await a.b.call('GET', '/api/friends')).body.friends[0].online, false);
+    // Einladung: gilt, solange die Lobby besteht – höchstens 2 Stunden
+    const lobby = (await a.b.call('POST', '/api/games', { mode: 'quiz', playerName: 'A', settings: {} })).body;
+    await a.b.call('POST', `/api/games/${lobby.state.id}/invite`, { token: lobby.token, to: 'all' });
+    assert.equal((await b.b.call('GET', '/api/me')).body.user.invites.length, 1);
+    await realFetch(`${base}/api/__test/age/${b.name}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invitesMinOlder: 121 }) });
+    assert.equal((await b.b.call('GET', '/api/me')).body.user.invites.length, 0, 'nach 2 h weg');
   });
 });

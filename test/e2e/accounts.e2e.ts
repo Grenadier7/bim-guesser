@@ -295,3 +295,66 @@ test('Routenjagd angemeldet: Runde und Spiel zählen, Medaille wird gemeldet, St
   assert.deepEqual(t.errors, []);
   await t.context.close();
 });
+
+test('drei Accounts: Anfrage und Einladung kommen ohne Neuladen, Wechsel aus der eigenen Lobby, Profile in der Lobby', async () => {
+  const [na, nb, nc] = [uniq('Ana'), uniq('Bob'), uniq('Cid')];
+  const a = await app.page();
+  const b = await app.page();
+  const c = await app.page();
+  // B und C: Uhr im Browser steuerbar (die Seite fragt alle 20 s nach Neuigkeiten)
+  await b.page.clock.install();
+  await c.page.clock.install();
+  for (const [t, n] of [[a, na], [b, nb], [c, nc]] as const) {
+    await t.page.goto(app.base);
+    await register(t.page, n);
+    await t.page.locator('#acct-close').click();
+  }
+  // A schickt B eine Anfrage → B sieht den Hinweis ohne Neuladen
+  await a.page.evaluate(async (n) => void (await fetch(`/api/friends/${n}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })), nb);
+  await b.page.clock.runFor(21_000);
+  await b.page.locator('#acct-btn .badge', { hasText: '1' }).waitFor();
+  await b.page.locator('#acct-btn').click();
+  await b.page.locator('.acct-tabs [data-tab=friends]').click();
+  await b.page.locator(`[data-befriend="${na}"]`).click();
+  await b.page.locator(`[data-unfriend="${na}"]`, { hasText: 'Freunde' }).waitFor();
+  await b.page.locator('#acct-close').click();
+
+  // B ist schon in einer eigenen Lobby
+  await b.page.locator('.mode-quiz').click();
+  await b.page.locator('#start').waitFor();
+  const bOld = await b.page.evaluate(() => JSON.parse(sessionStorage.getItem('oeffi-guesser-session')!).code);
+
+  // A macht eine Lobby, C tritt per Code bei, A lädt B ein
+  await a.page.locator('.mode-route').click();
+  await a.page.locator('#start').waitFor();
+  const code = await a.page.evaluate(() => JSON.parse(sessionStorage.getItem('oeffi-guesser-session')!).code);
+  await c.page.locator('#code').fill(code);
+  await c.page.locator('#join').click();
+  await c.page.locator('.lobby').waitFor();
+  await a.page.locator('[data-invite-friends]').click();
+  await a.page.locator('.acct-sheet [data-send]').click();
+  await a.page.locator('.toast', { hasText: '1 Freund eingeladen' }).waitFor();
+
+  // B: Banner ohne Neuladen, Beitreten verlässt die eigene Lobby (mit Nachfrage)
+  await b.page.clock.runFor(21_000);
+  await b.page.locator('.invite-banner', { hasText: na }).waitFor();
+  b.page.once('dialog', (d) => void d.accept());
+  await b.page.locator('[data-join-invite]').click();
+  await b.page.waitForFunction((cd) => JSON.parse(sessionStorage.getItem('oeffi-guesser-session') ?? '{}').code === cd, code);
+  await b.page.locator('.lobby .players li', { hasText: na }).waitFor();
+  const old = await (await fetch(`${app.base}/api/games/${bOld}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"playerName":"x"}' })).json();
+  assert.ok(!old.state || !old.state.players.some((p: { name: string }) => p.name === nb), 'B ist aus der alten Lobby raus');
+
+  // alle drei mit 👤; Freund B sieht A's Statistik, Fremder C nicht
+  await a.page.locator('.lobby .players .acct-tag').nth(2).waitFor();
+  assert.equal(await a.page.locator('.lobby .players .acct-tag').count(), 3);
+  await b.page.locator(`.lobby .acct-tag[data-profile="${na}"]`).click();
+  await b.page.locator('.acct-body h4', { hasText: 'Statistik' }).waitFor();
+  await c.page.locator(`.lobby .acct-tag[data-profile="${na}"]`).click();
+  await c.page.locator('.acct-body', { hasText: 'sehen nur Freunde' }).waitFor();
+  await c.shot('account-three-lobby');
+  for (const t of [a, b, c]) {
+    assert.deepEqual(t.errors, []);
+    await t.context.close();
+  }
+});

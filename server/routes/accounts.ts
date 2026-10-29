@@ -127,5 +127,9 @@ export function accountRoutes(app: Express, accounts: Accounts, alive: (code: st
   app.post('/api/friends/:name', limitSocial, h((req) => ({ relation: accounts.befriend(user(req).id, param(req, 'name')) })));
   app.delete('/api/friends/:name', h((req) => (accounts.unfriend(user(req).id, param(req, 'name')), { ok: true })));
 
+  // nur für automatische Tests (nie im Betrieb): Zeit vorspulen, damit Tests nicht Minuten/Stunden warten müssen
+  if (process.env.TEST_HOOKS === '1')
+    app.post('/api/__test/age/:name', h((req) => (accounts.testAge(param(req, 'name'), { seenMinAgo: req.body?.seenMinAgo, invitesMinOlder: req.body?.invitesMinOlder }), { ok: true })));
+
   return { user, optionalUser: (req: Request) => accounts.userFor(sessionToken(req)) };
 }
