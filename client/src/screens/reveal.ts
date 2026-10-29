@@ -160,8 +160,9 @@ export function revealScreen(panel: HTMLElement): Screen {
           <div class="rrow"><span class="rank">${i + 1}</span>
           <div class="rmain"><div class="chainline">${chain(r.legs)}</div><small>${viaText(r)}</small></div>
           <div class="rtime"><b>${r.medianMin} min</b><small>${
-            isBest && transfersOf(r) ? `${transfersOf(r)} Umstieg${transfersOf(r) > 1 ? 'e' : ''} → <b>${routeCostOf(r, s.settings)}</b> · ` : ''
-          }${s.settings.countWait && r.medianMin !== r.rideMin ? `Fahrt ${r.rideMin}` : ''}${s.settings.avgWait ? '' : ` · ${r.samples}×`}</small></div>
+            // „Umstiege vermeiden“: was die Verbindung in der Wertung zählt
+            isBest && transfersOf(r) ? `${transfersOf(r)} Umstieg${transfersOf(r) > 1 ? 'e' : ''} · gewertet <b>${routeCostOf(r, s.settings)}</b>` : ''
+          }</small></div>
           <span class="chev">▾</span></div>
           <div class="rdetail">${routeDetails(r, starMini)}</div>
         </li>`,
