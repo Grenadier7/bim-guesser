@@ -163,10 +163,10 @@ export function distanceRange(d: DistanceRange): [number, number] {
 }
 
 /**
- * Start/Ziel als Adressen: die Haltestellen-Auswahl gilt nicht – Faktor wie Bus-Knoten (man muss die Linien der
- * Gegend kennen und den Weg zur passenden Haltestelle finden)
+ * Start/Ziel als Adressen: die Haltestellen-Auswahl gilt nicht – Faktor über dem schwersten Haltestellen-Pool
+ * („alle Bus-Haltestellen“ ×1,4): man muss die Linien der Gegend kennen und erst die passende Haltestelle finden
  */
-export const ADDRESS_FACTOR = 1.3;
+export const ADDRESS_FACTOR = 1.5;
 
 export function difficultyMultiplier(s: Pick<GameSettings, 'stations' | 'distance' | 'minTransfers'> & { endpoints?: GameSettings['endpoints'] }): number {
   // schwierigste gewählte Stufe zählt; ohne Auswahl 0,9 (früher war 0,9 auch die Untergrenze → „wichtige U“ ×0,85 wirkte nie, Befund L-01)
@@ -250,7 +250,7 @@ export const SCORING_MODES: { id: ScoringMode; icon: string; label: string; hint
     id: 'realistic',
     icon: '🧭',
     label: 'Realistisch',
-    hint: 'Tür zu Tür, wie im echten Leben: Fahrzeit + Umsteigeweg + durchschnittliche Wartezeit auf jede Linie (S-Bahn alle 15 min → Ø 7,5 min). Ein zufällig perfekter Anschluss bringt nichts. Am Start zählt nur die halbe Ø-Wartezeit – zur ersten Abfahrt kann man sich die Zeit einteilen.',
+    hint: 'Tür zu Tür, wie im echten Leben: Fahrzeit + Umsteigeweg + durchschnittliche Wartezeit auf jede Linie (S-Bahn alle 15 min → Ø 7,5 min). Ein zufällig perfekter Anschluss bringt nichts. Am Start zählen nur 70 % der Ø-Wartezeit – zur ersten Abfahrt kann man sich die Zeit etwas einteilen.',
     settings: { countWait: true, avgWait: true, goal: 'fastest' },
   },
   {

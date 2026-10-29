@@ -234,7 +234,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
       const addr = st.endpoints === 'addresses';
       return `
           <div class="setting"><span>📍 Start & Ziel ${infoTip(
-            `<b>Haltestellen:</b> Start und Ziel sind Stationen.<br><b>Adressen:</b> ${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} echte Adressen (Stadt Wien), gleichmäßig über die Stadt verteilt – erst zu Fuß zur passenden Haltestelle. Punkte ×${ADDRESS_FACTOR.toLocaleString('de-AT')} wie Bus-Knoten.`,
+            `<b>Haltestellen:</b> Start und Ziel sind Stationen.<br><b>Adressen:</b> ${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} echte Adressen (Stadt Wien), gleichmäßig über die Stadt verteilt – erst zu Fuß zur passenden Haltestelle. Punkte ×${ADDRESS_FACTOR.toLocaleString('de-AT')} – mehr als mit allen Haltestellen.<br>Mit Adressen steht die Schwierigkeit auf „Eigene“; eine Schnellwahl (Leicht … Profi) stellt wieder auf Haltestellen.`,
           )}</span>${seg('endpoints', [
             { value: 'stations', label: '🚏 Haltestellen' },
             ...(app.net.data.addressCount ? [{ value: 'addresses', label: '🏠 Adressen' }] : []),

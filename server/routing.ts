@@ -423,11 +423,11 @@ export function expectedWait(departures: number[], t: number, window = HEADWAY_W
   return a > t ? sum / (a - t) : null;
 }
 /**
- * Am Start wird nur die halbe Ø-Wartezeit gerechnet (also ein Viertel des Takts):
+ * Am Start werden nur 70 % der Ø-Wartezeit gerechnet (also 35 % des Takts):
  * zur ersten Abfahrt kann man sich die Zeit meist einteilen – beim Umsteigen nicht.
  * Gilt nur, wenn die erste Linie direkt an der Start-Station abfährt (kein Fußweg dorthin).
  */
-const FIRST_WAIT_FACTOR = 0.5;
+export const FIRST_WAIT_FACTOR = 0.7;
 
 /**
  * Ø-Wartezeiten: Fahrzeit je Linie (Median) + Umsteigeweg + halber Takt der nächsten Linie.

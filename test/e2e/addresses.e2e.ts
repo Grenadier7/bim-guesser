@@ -65,7 +65,8 @@ test('Routenjagd mit Adressen: Start/Ziel sind Adressen, Route über die nächst
   await next.waitFor({ timeout: 180_000 });
   await t.shot('addresses-reveal');
   // Linie in der Auflösung antippen geht (ganzer Verlauf) …
-  await p.locator('#panel [data-chip-line]').first().click();
+  await p.locator('.route-list > li').first().click();
+  await p.locator('.route-list > li.open .leg-detail [data-chip-line]').first().click();
   await p.locator('.toast', { hasText: 'ganzer Verlauf' }).waitFor();
 
   // … aber in der nächsten Runde reagiert nichts mehr davon (Nachtrag 3: alte Routen tauchten wieder auf)
@@ -153,6 +154,26 @@ test('Wertung: drei Modi, „Umstiege vermeiden“ nur bei Realistisch', async (
   // ältere Kombination aus einem Link → „eigene Kombination“
   await fetch(`${app.base}/api/games/${s.code}/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: s.token, settings: { countWait: false, avgWait: true } }) });
   await p.locator('.setting .hint', { hasText: 'Eigene Kombination' }).waitFor();
+  assert.deepEqual(t.errors, []);
+  await t.context.close();
+});
+
+test('Adressen wählen → Schwierigkeit „Eigene“; Schnellwahl antippen → wieder Haltestellen', async () => {
+  const t = await app.page();
+  const p = t.page;
+  await p.goto(app.base);
+  await setName(p, 'Schwierig');
+  await p.locator('.mode-route').click();
+  await p.locator('#start').waitFor();
+  await p.locator('details.advanced summary').click();
+  await p.locator('[data-k="endpoints"][data-v="addresses"]').click();
+  await p.locator('[data-k="difficulty"][data-v="custom"].on').waitFor();
+  assert.equal(await p.locator('.station-cols').count(), 0);
+  await t.shot('addresses-custom');
+  await p.locator('[data-k="difficulty"][data-v="hard"]').click();
+  await p.locator('[data-k="endpoints"][data-v="stations"].on').waitFor();
+  await p.locator('[data-k="difficulty"][data-v="hard"].on').waitFor();
+  await p.locator('.station-cols').waitFor();
   assert.deepEqual(t.errors, []);
   await t.context.close();
 });
