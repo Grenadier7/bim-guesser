@@ -19,7 +19,7 @@ export const accountTag = (p: { account?: string }) =>
 
 export function lineChip(mode: Mode, line: string | null, color: string): string {
   const label = line ? esc(line) : '';
-  return `<span class="chip chip-${mode}" style="--c:${color}" ${line && mode !== 'W' ? `data-chip-line="${label}"` : ''} title="${MODE_LABEL[mode]}${line ? ' ' + label : ''}">${MODE_ICON[mode]}${label ? `<b>${label}</b>` : ''}</span>`;
+  return `<span class="chip chip-${mode}" style="--c:${color}" ${line && mode !== 'W' ? `data-chip-line="${label}"` : ''} title="${MODE_LABEL[mode]}${line ? ' ' + label : ''}">${!label || mode === 'W' ? MODE_ICON[mode] : ''}${label ? `<b>${label}</b>` : ''}</span>`;
 }
 
 export function modeChip(mode: Mode): string {

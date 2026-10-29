@@ -4676,3 +4676,85 @@ details.host-bar {
     justify-content: center;
   }
 }
+
+/* ---------------------------------------------------------------- Design: Linien-Icons statt Emojis */
+.icon {
+  vertical-align: -0.18em;
+  flex: 0 0 auto;
+}
+.setting > span .icon,
+.adv-tabs .icon,
+details.advanced > summary .icon {
+  color: var(--muted);
+  margin-right: 2px;
+}
+.host-crown {
+  color: #b7791f;
+}
+.host-crown .icon {
+  vertical-align: -0.12em;
+}
+.hub-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  color: var(--accent);
+  font-size: 0;
+}
+.host-bar button .icon,
+.tip-btn .icon,
+.tips-drawer > summary .icon {
+  margin-right: 2px;
+}
+/* gesperrte Hauptknöpfe grau statt blassrot – klar „geht gerade nicht“ */
+.btn.btn-primary:disabled {
+  background: #c9ccd1;
+  color: #5b6170;
+  box-shadow: none;
+}
+/* Linien-Chips ohne Fahrzeug-Emoji: etwas kompakter */
+.chip b {
+  margin-left: 0;
+}
+
+/* Quiz allein: Ergebnis-Karte */
+.solo-result {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 18px;
+  padding: 18px;
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.sr-score {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.sr-score b {
+  font-size: 44px;
+  line-height: 1;
+}
+.sr-score span {
+  color: var(--muted);
+}
+.sr-bar {
+  height: 12px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.sr-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #ff6b4a);
+}
+.sr-verdict {
+  margin: 0;
+  font-weight: 600;
+}

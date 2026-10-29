@@ -176,7 +176,7 @@ async function render() {
         ['register', 'Registrieren'],
       ];
   sheet.innerHTML = `<div class="acct-box">
-      <div class="acct-top"><b>${me ? '👤 Account' : '👤 Account – Fortschritt auf allen Geräten'}</b><button class="icon-btn" id="acct-close" aria-label="Schließen">✕</button></div>
+      <div class="acct-top"><b>${icon('user')} ${me ? 'Account' : 'Account – Fortschritt auf allen Geräten'}</b><button class="icon-btn" id="acct-close" aria-label="Schließen">${icon('x')}</button></div>
       ${tab === 'reset' || tab === 'forgot' ? '' : `<div class="acct-tabs">${tabs.map(([t, l]) => `<button data-tab="${t}" class="${t === tab && !viewing ? 'on' : ''}">${l}</button>`).join('')}</div>`}
       <div class="acct-body" tabindex="0"><div class="loading"><div class="spinner"></div></div></div></div>`;
   sheet.querySelector('#acct-close')!.addEventListener('click', close);
@@ -303,7 +303,7 @@ async function refreshMe() {
 
 export function accountButton(): string {
   const me = account.me;
-  if (!me) return `<button class="acct-btn" id="acct-btn" title="Anmelden oder Account erstellen">👤 <span>Anmelden</span></button>`;
+  if (!me) return `<button class="acct-btn" id="acct-btn" title="Anmelden oder Account erstellen">${icon('user', 16)} <span>Anmelden</span></button>`;
   const n = me.friendRequests;
   return `<button class="acct-btn on" id="acct-btn" title="Dein Account"><span class="lvl-badge small">Lv ${me.level.level}</span> <span>${esc(me.name)}</span>${n ? `<span class="badge">${n}</span>` : ''}</button>`;
 }

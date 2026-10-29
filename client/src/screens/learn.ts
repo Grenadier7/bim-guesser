@@ -1,6 +1,7 @@
 // Lernmodus: drei Einstiege statt Einstellungen – Lernpfad (Kurse der Reihe nach), Netzkarte (suchen, antippen,
 // Steckbrief, „Von hier“, ⭐ merken) und Üben (meine Linien)
 import { atlasView, type AtlasSel } from '../learn/atlas.ts';
+import { icon } from '../icons.ts';
 import { COURSES, courseProgress, courseView } from '../learn/courses/index.ts';
 import { isSpecialLine, myLines, patternsOf, scopeOfLines, servedStations, shuffle } from '../learn/model.ts';
 import { areaView } from '../learn/area.ts';
@@ -53,7 +54,7 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
       <button class="link" id="back">← Zurück</button>
       <h2>📚 Lernen</h2>
       <section class="hub-card">
-        <div class="hub-head"><span class="hub-icon">🎓</span><div><b>Lernpfad</b>
+        <div class="hub-head"><span class="hub-icon">${icon('cap', 22)}</span><div><b>Lernpfad</b>
           <small>Das Netz Schritt für Schritt verstehen – ${done} von ${COURSES.length} Kursen geschafft${mastered ? ` · ⭐ ${mastered} gemeistert` : ''}</small></div></div>
         <div class="path-dots">${COURSES.map((c) => `<i class="${progress[c.id]?.done ? 'on' : ''}${progress[c.id]?.mastered ? ' mastered' : ''}${c === next ? ' next' : ''}" title="${esc(c.title)}"></i>`).join('')}</div>
         ${
@@ -76,13 +77,13 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
           }).join('')}</div></details>
       </section>
       <section class="hub-card">
-        <div class="hub-head"><span class="hub-icon">🗺</span><div><b>Netzkarte</b>
+        <div class="hub-head"><span class="hub-icon">${icon('map', 22)}</span><div><b>Netzkarte</b>
           <small>Linie oder Station antippen: Steckbrief und „Von hier fährst du mit …“</small></div></div>
         <input class="line-input" id="hub-search" placeholder="Linie oder Station, z.B. 13A oder Praterstern" autocomplete="off" spellcheck="false">
         <button class="btn btn-ghost" id="open-atlas">Netzkarte öffnen</button>
       </section>
       <section class="hub-card">
-        <div class="hub-head"><span class="hub-icon">🏋</span><div><b>Üben</b>
+        <div class="hub-head"><span class="hub-icon">${icon('dumbbell', 22)}</span><div><b>Üben</b>
           <small>Deine gemerkten Linien: ansehen, aus dem Gedächtnis nachzeichnen, vergleichen</small></div></div>
         ${
           mine.length

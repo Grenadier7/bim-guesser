@@ -1,6 +1,7 @@
 // Host-Steuerung (Routenjagd und Quiz): Pause, Runde/Frage abbrechen, Spiel beenden, Spieler verwalten
 // (zum Host machen, entfernen) – im Spiel als ausklappbare Leiste (am Handy zugeklappt), in der Lobby an der Spielerliste.
 import { api } from '../api.ts';
+import { icon } from '../icons.ts';
 import { app, isHost, openTimer } from '../store.ts';
 import { accountTag, esc, h, toast } from '../ui.ts';
 
@@ -30,7 +31,7 @@ export const hostActions = {
 export function playerActions(p: { id: string; name: string; isHost: boolean }): string {
   if (!isHost() || p.id === app.session?.playerId) return '';
   return `<button class="crown ${p.isHost ? 'on' : ''}" data-host="${esc(p.id)}" data-on="${p.isHost ? '0' : '1'}" data-name="${esc(p.name)}"
-      title="${p.isHost ? `${esc(p.name)} die Host-Rechte nehmen` : `${esc(p.name)} zum Host machen`}" aria-label="${p.isHost ? 'Host-Rechte nehmen' : 'Zum Host machen'}: ${esc(p.name)}">👑</button><button class="kick" data-kick="${esc(p.id)}" data-name="${esc(p.name)}" title="${esc(p.name)} aus der Lobby entfernen" aria-label="${esc(p.name)} entfernen">✕</button>`;
+      title="${p.isHost ? `${esc(p.name)} die Host-Rechte nehmen` : `${esc(p.name)} zum Host machen`}" aria-label="${p.isHost ? 'Host-Rechte nehmen' : 'Zum Host machen'}: ${esc(p.name)}">${icon('crown', 14)}</button><button class="kick" data-kick="${esc(p.id)}" data-name="${esc(p.name)}" title="${esc(p.name)} aus der Lobby entfernen" aria-label="${esc(p.name)} entfernen">${icon('x', 14)}</button>`;
 }
 /** alter Name – Spielerlisten in den Lobbys */
 export const kickButton = playerActions;
@@ -70,17 +71,17 @@ export function hostBar(): HTMLElement {
 function fill(el: HTMLElement) {
   const t = openTimer();
   const others = (app.state?.players ?? []).filter((p) => p.id !== app.session?.playerId);
-  el.innerHTML = `<summary class="host-label">👑 Host${t?.pausedAt ? ' <small>(pausiert)</small>' : ''}</summary>
+  el.innerHTML = `<summary class="host-label">${icon('crown', 15)} Host${t?.pausedAt ? ' <small>(pausiert)</small>' : ''}</summary>
     <div class="hb-actions">
-      ${t ? (t.pausedAt ? '<button class="hb-resume" data-a="resume">▶ Fortsetzen</button>' : '<button class="hb-pause" data-a="pause">⏸ Pause</button>') : ''}
+      ${t ? (t.pausedAt ? `<button class="hb-resume" data-a="resume">${icon('play', 14)} Fortsetzen</button>` : `<button class="hb-pause" data-a="pause">${icon('pause', 14)} Pause</button>`) : ''}
       ${t ? `<button class="hb-cancel" data-a="cancel">✖ ${isQuiz() ? 'Frage überspringen' : 'Runde abbrechen'}</button>` : ''}
-      <button class="hb-end" data-a="end">⏹ Spiel beenden</button>
+      <button class="hb-end" data-a="end">${icon('stop', 14)} Spiel beenden</button>
       ${others.length ? `<button class="hb-players" data-a="players" aria-expanded="${playersOpen}">👥 Spieler (${others.length})</button>` : ''}
     </div>
     ${
       playersOpen && others.length
         ? `<ul class="hb-list">${others
-            .map((p) => `<li class="${p.connected ? '' : 'offline'}"><span>${esc(p.name)}${accountTag(p)}${p.isHost ? ' 👑' : ''}</span>${playerActions(p)}</li>`)
+            .map((p) => `<li class="${p.connected ? '' : 'offline'}"><span>${esc(p.name)}${accountTag(p)}${p.isHost ? ` <span class="host-crown" title="Host">${icon('crown', 14)}</span>` : ''}</span>${playerActions(p)}</li>`)
             .join('')}</ul>`
         : ''
     }`;

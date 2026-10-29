@@ -78,9 +78,9 @@ const scoringInfo = () => SCORING_MODES.map((m) => `<b>${m.icon} ${m.label}:</b>
 
 type AdvTab = 'diff' | 'rules' | 'world';
 const ADV_TABS: { id: AdvTab; label: string }[] = [
-  { id: 'diff', label: '🎯 Schwierigkeit' },
-  { id: 'rules', label: '📏 Regeln' },
-  { id: 'world', label: '🕒 Zeit & Netz' },
+  { id: 'diff', label: `${icon('target', 16)} Schwierigkeit` },
+  { id: 'rules', label: `${icon('ruler', 16)} Regeln` },
+  { id: 'world', label: `${icon('clock', 16)} Zeit & Netz` },
 ];
 
 function regularHint(s: GameSettings): string {
@@ -140,7 +140,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     const scroll = panel.scrollTop;
     const players = s.players
       .map(
-        (p) => `<li class="${p.connected ? '' : 'offline'}"><span class="dot"></span>${esc(p.name)}${accountTag(p)}${p.id === app.session?.playerId ? ' <small>(du)</small>' : ''}${p.isHost ? ' <span title="Host">👑</span>' : ''}${kickButton(p)}</li>`,
+        (p) => `<li class="${p.connected ? '' : 'offline'}"><span class="dot"></span>${esc(p.name)}${accountTag(p)}${p.id === app.session?.playerId ? ' <small>(du)</small>' : ''}${p.isHost ? ` <span class="host-crown" title="Host">${icon('crown', 14)}</span>` : ''}${kickButton(p)}</li>`,
       )
       .join('');
     const mult = difficultyMultiplier(st);
@@ -199,7 +199,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         const mode = scoringModeOf(st);
         const penalty = transferPenalty({ ...st, goal: 'best' });
         return `
-          <div class="setting"><span>⚖️ Was zählt? ${infoTip(scoringInfo())}</span>${seg(
+          <div class="setting"><span>${icon('scale', 15)} Was zählt? ${infoTip(scoringInfo())}</span>${seg(
             'scoring',
             SCORING_MODES.map((m) => ({ value: m.id, label: `${m.icon} ${m.label}`, title: m.hint })),
             mode ?? '',
@@ -218,7 +218,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
                 )}</div>`
               : ''
           }
-          <div class="setting"><span>💡 Tipps ${infoTip(
+          <div class="setting"><span>${icon('bulb', 15)} Tipps ${infoTip(
             `Ein Tipp kostet einen Anteil der Routenpunkte:<br>${(Object.keys(TIPS) as TipKind[])
               .map((k) => `${esc(TIPS[k].label)}: günstig −${Math.round(tipShare(k, 'cheap') * 100)} % · teuer −${Math.round(tipShare(k, 'expensive') * 100)} %`)
               .join('<br>')}<br>Mehrere Tipps werden miteinander verrechnet – mindestens 10 % der Punkte bleiben.<br>Bei X-treme sind Tipps immer teuer.`,
@@ -228,14 +228,14 @@ export function lobbyScreen(panel: HTMLElement): Screen {
                 `<button data-k="tips" data-v="${t.id}" class="${st.tips === t.id ? 'on' : ''}" ${ro || (t.id === 'cheap' && st.xtreme !== 'off') ? 'disabled' : ''}>${t.label}</button>`,
             ).join('')}</div>
             ${st.xtreme !== 'off' && st.tips !== 'off' ? '<small class="hint xtreme-hint">⚡ X-treme: Tipps sind teuer.</small>' : ''}</div>
-          <div class="setting"><span>🏆 Challenges ${infoTip(
+          <div class="setting"><span>${icon('trophy', 15)} Challenges ${infoTip(
             `Runden mit Zusatz-Aufgabe: ohne U-Bahn, ohne Bus, max. 1 Umstieg oder eine gesperrte Linie der schnellsten Verbindung.<br><b>Manchmal:</b> etwa jede 3. Runde, mindestens eine pro Spiel.<br>Challenge-Runden haben doppelte Zeit (max. +${fmtDuration(RESTRICTION_EXTRA_MAX_SEC)}), ohne U-Bahn +${fmtDuration(HARD_RESTRICTION_EXTRA_SEC)}.`,
           )}</span>${seg('restrictions', RESTRICTION_FREQUENCIES.map((r) => ({ value: r.id, label: r.label })), st.restrictions, ro)}</div>
           ${xtremeTile()}`;
       }
       const addr = st.endpoints === 'addresses';
       return `
-          <div class="setting"><span>📍 Start & Ziel ${infoTip(
+          <div class="setting"><span>${icon('pin', 15)} Start & Ziel ${infoTip(
             `<b>Haltestellen:</b> Start und Ziel sind Stationen.<br><b>Adressen:</b> ${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} echte Adressen (Stadt Wien), gleichmäßig über die Stadt verteilt – erst zu Fuß zur passenden Haltestelle. Punkte ×${ADDRESS_FACTOR.toLocaleString('de-AT')} – mehr als mit allen Haltestellen.<br>Mit Adressen steht die Schwierigkeit auf „Eigene“; eine Schnellwahl (Leicht … Profi) stellt wieder auf Haltestellen.`,
           )}</span>${seg('endpoints', [
             { value: 'stations', label: '🚏 Haltestellen' },
@@ -276,7 +276,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
           <small class="hint">${st.endpoints === 'addresses' ? `${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} Adressen` : `${poolCount(st.stations)} Haltestellen`}${st.distance !== 'medium' ? ` · ${DISTANCES.find((d) => d.id === st.distance)!.label}` : ''}${st.minTransfers ? ` · mind. ${st.minTransfers} Umstieg${st.minTransfers > 1 ? 'e' : ''}` : ''} · <b>Punkte ×${mult.toLocaleString('de-AT')}</b> ${st.endpoints === 'addresses' ? '' : infoTip(esc(stationsText(st.stations)))}</small></div>
         <div class="setting"><span>Runden</span>${seg('rounds', [3, 5, 7, 10].map((n) => ({ value: String(n), label: String(n) })), String(st.rounds), ro)}</div>
 
-        <div class="setting"><span>⏱ Zeitlimit ${infoTip(
+        <div class="setting"><span>${icon('clock', 15)} Zeitlimit ${infoTip(
           `Pro Runde, inkl. „Wo liegt das?“. Nach Ablauf wird abgegeben, was eingegeben ist. Wer schnell ist, bekommt bis zu +10 % Zeitbonus.<br><b>Ohne:</b> kein Zeitdruck – der Zeitbonus wird an ${fmtDuration(TIME_BONUS_REF_SEC)} gemessen.`,
         )}</span>
           ${seg(
@@ -303,7 +303,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         </div>
 
         <details class="advanced" ${advancedOpen ? 'open' : ''}>
-          <summary>⚙️ Erweiterte Einstellungen</summary>
+          <summary>${icon('sliders')} Erweiterte Einstellungen</summary>
           <div class="tabs adv-tabs">${ADV_TABS.map((t) => `<button data-adv="${t.id}" class="${advTab === t.id ? 'on' : ''}">${t.label}</button>`).join('')}${
             `<button type="button" class="icon-reset" id="shareSettings" title="Einstellungen teilen: Link oder JSON (Import für Hosts)" aria-label="Einstellungen teilen">⇅</button>${
               host ? '<button type="button" class="icon-reset" id="resetAll" title="Alle Einstellungen zurücksetzen" aria-label="Alle Einstellungen zurücksetzen">↺</button>' : ''
