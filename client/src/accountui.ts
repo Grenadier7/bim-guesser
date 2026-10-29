@@ -6,6 +6,7 @@ import { account, accountApi, newMedals, signedIn, signOut } from './account.ts'
 import { api } from './api.ts';
 import { app, endSession, savePrefs, startSession } from './store.ts';
 import { esc, h, lineChip, toast } from './ui.ts';
+import { icon } from './icons.ts';
 
 type Tab = 'login' | 'register' | 'forgot' | 'reset' | 'profile' | 'people' | 'friends' | 'settings';
 
@@ -67,7 +68,7 @@ function statsHtml(s: AccountStats): string {
       ${tile(s.bestRound, 'beste Runde')}${tile(s.perfectRounds, 'Volltreffer')}${tile(s.beatApi, 'besser als Auskunft')}${tile(s.quizGames, 'Quiz-Spiele')}
       ${tile(s.trainings, 'Trainingsstrecken')}${tile(`${Math.round(s.minutes / 60)} h`, 'in Öffis unterwegs')}${tile(`${s.coursesDone}/9`, 'Kurse')}${tile(s.coursesMastered, 'gemeistert')}
     </div>
-    <h4>❤️ Lieblinge <small class="muted">zählt mehr, wenn es Alternativen gab</small></h4>
+    <h4>❤️ Lieblinge</h4>
     <div class="favs">${favChip(s.favorites.U, 'U-Bahn')}${favChip(s.favorites.S, 'S-Bahn')}${favChip(s.favorites.T, 'Bim')}${favChip(s.favorites.B, 'Bus')}
       <div class="fav"><small>Station</small>${s.favoriteStation ? `<b>${esc(s.favoriteStation.name)}</b><small class="muted">${s.favoriteStation.count}× umgestiegen</small>` : '<small class="muted">–</small>'}</div></div>
     ${
@@ -348,7 +349,7 @@ export function renderInvites(host: HTMLElement) {
 }
 
 /** „📨 Freunde einladen“ in der Lobby (nur angemeldet) */
-export const inviteButton = () => (account.me ? `<button class="btn btn-ghost" data-invite-friends>📨 Freunde einladen</button>` : '');
+export const inviteButton = () => (account.me ? `<button class="btn btn-ghost btn-icon" data-invite-friends>${icon('userPlus')}<span>Freunde einladen</span></button>` : '');
 
 async function inviteDialog() {
   const s = app.session;

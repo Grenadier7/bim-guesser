@@ -1,5 +1,6 @@
 // Quiz – Lobby: Spieler, Einstellungen, Start
 import type { Mode, QuizState } from '../../../../shared/types.ts';
+import { icon } from '../../icons.ts';
 import { MODE_ICON, MODE_LABEL } from '../../../../shared/rules.ts';
 import { DEFAULT_QUIZ_SETTINGS, FREQUENCY_LABELS, QUIZ_QUESTION_COUNTS, QUIZ_TIMES, QUIZ_TYPES, QUIZ_TYPE_ORDER, type QuizSettings } from '../../../../shared/quiz.ts';
 import { api } from '../../api.ts';
@@ -55,7 +56,7 @@ export function quizLobbyScreen(panel: HTMLElement): Screen {
       <div class="lobby">
         <div class="lobby-code">
           <div><small>🧠 Quiz · Lobby-Code</small><div class="code">${st.id}</div></div>
-          <button class="btn btn-ghost" id="copy">🔗 Link kopieren</button>${inviteButton()}
+          <div class="code-actions"><button class="btn btn-ghost btn-icon" id="copy">${icon('link')}<span>Link kopieren</span></button>${inviteButton()}</div>
         </div>
         <h3>Spieler <small>(${st.players.length})</small></h3>
         <ul class="players">${playersHtml(st)}</ul>

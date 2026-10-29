@@ -1,4 +1,5 @@
 import type { FocusArea, GameSettings, GameState, Station, StationKind, TipKind } from '../../../shared/types.ts';
+import { icon } from '../icons.ts';
 import { inStationKinds } from '../../../shared/pools.ts';
 import { NOT_REMEMBERED } from '../../../shared/defaults.ts';
 import {
@@ -264,7 +265,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
       <div class="lobby">
         <div class="lobby-code">
           <div><small>Lobby-Code</small><div class="code">${code}</div></div>
-          <button class="btn btn-ghost" id="copy">🔗 Link kopieren</button>${inviteButton()}
+          <div class="code-actions"><button class="btn btn-ghost btn-icon" id="copy">${icon('link')}<span>Link kopieren</span></button>${inviteButton()}</div>
         </div>
         <h3>Spieler <small>(${s.players.length})</small></h3>
         <ul class="players">${players}</ul>
