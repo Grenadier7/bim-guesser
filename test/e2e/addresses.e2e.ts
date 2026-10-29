@@ -43,7 +43,8 @@ test('Routenjagd mit Adressen: Start/Ziel sind Adressen, Route über die nächst
   assert.match(from.name, /\d/, `Adresse mit Hausnummer: ${from.name}`);
   // Linie der nächsten Haltestelle wählen: neutraler Fußweg-Hinweis, kein „fährt/hält nicht hier“ (Nachtrag 3)
   const pickNear = async (pt: { lat: number; lon: number }) => {
-    const near = net.stations.filter((x) => distM(x, pt) < 800).sort((a, b) => distM(a, pt) - distM(b, pt));
+    // unter 700 m (WALK_LOUD_M): weiter weg warnt die App zu Recht, wenn es eine viel nähere Haltestelle gibt
+    const near = net.stations.filter((x) => distM(x, pt) < 650).sort((a, b) => distM(a, pt) - distM(b, pt));
     for (const id of [...new Set(near.flatMap((x) => x.lines))].filter((l) => !/^N/.test(l))) {
       await p.locator('.line-input').fill(id);
       await p.locator('.line-input').press('Enter');
