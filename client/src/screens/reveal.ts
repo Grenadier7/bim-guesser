@@ -80,7 +80,7 @@ export function revealScreen(panel: HTMLElement): Screen {
     lineShown = label;
     app.map.showReveal([], []);
     const stops = [...new Set(ids.flatMap((id) => app.net.patterns(app.net.lines.get(id)!).flat()))].map((id) => app.net.station(id));
-    const pts = netLayer().render(netView({ focus: new Set(ids), stops, allLabels: true }));
+    const pts = netLayer().render(netView({ focus: new Set(ids), stops, allLabels: true, bothEnds: true }));
     if (pts.length) app.map.fitPoints(pts, 14);
     toast(`${ids.join(', ')}: ganzer Verlauf – nochmal antippen für die Routen`, 'info', { label: '← Routen', run: () => alive && drawRoutes() });
   }
@@ -89,7 +89,8 @@ export function revealScreen(panel: HTMLElement): Screen {
     'click',
     (e) => {
       const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-chip-line]');
-      if (!chip || (e.target as HTMLElement).closest('[data-star-line],[data-star-group]')) return;
+      // nur in der Detailansicht (Zeitplan/Fahrten) – in der zugeklappten Übersicht klappt ein Klick nur auf
+      if (!chip || !chip.closest('.leg-detail') || (e.target as HTMLElement).closest('[data-star-line],[data-star-group]')) return;
       e.stopPropagation();
       showLine(chip.dataset.chipLine!);
     },

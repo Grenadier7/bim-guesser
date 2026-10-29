@@ -163,8 +163,8 @@ verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der S
      Umstieg mit Umsteigeweg + der erwarteten Wartezeit auf die nächste Linie (für jede Ankunftsminute der folgenden
      Stunde die Zeit bis zur nächsten echten Abfahrt, gemittelt – stimmt auch bei unregelmäßigem Takt; gleichwertige
      Linien wie S1–S4 auf der Stammstrecke zählen zusammen). Ein zufällig perfekter Anschluss bringt so keinen
-     Vorteil; eine S7 alle 30 min kostet im Schnitt 15 min. Bei der allerersten Linie zählt nur die halbe Ø-Wartezeit
-     (ein Viertel des Takts) – zur ersten Abfahrt kann man sich die Zeit meist einteilen. Das gilt nur, wenn sie direkt
+     Vorteil; eine S7 alle 30 min kostet im Schnitt 15 min. Bei der allerersten Linie zählen nur 70 % der Ø-Wartezeit
+     (35 % des Takts) – zur ersten Abfahrt kann man sich die Zeit meist einteilen. Das gilt nur, wenn sie direkt
      an der Start-Station abfährt; muss man erst zu einer anderen Haltestelle gehen, zählt die volle Ø-Wartezeit. Die Routendetails zeigen die Wartezeit je Umstieg.
    - **🏆 Challenges** (früher Einschränkungs-Runden) – Nie / Manchmal (ca. 30 %, mindestens eine pro Spiel) / Immer: ohne U-Bahn,
      ohne Bus, max. 1 Umstieg oder **Linie gesperrt** (eine Linie der schnellsten Verbindung, z.B. „Ohne Linie U6“).
@@ -180,7 +180,9 @@ verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der S
    - **📍 Start & Ziel** (Erweitert → Schwierigkeit): *Haltestellen* oder *Adressen* – zufällige echte Adressen
      (Stadt Wien, OGD), gleichmäßig über die bebaute Fläche verteilt (400-m-Raster, höchstens 3 je Zelle, nur bis
      1,5 km von einer Haltestelle; `node scripts/build-addresses.ts` → `data/addresses.json`). Die Auskunft rechnet
-     ab der Koordinate, also inkl. Fußweg zur ersten Haltestelle.
+     ab der Koordinate, also inkl. Fußweg zur ersten Haltestelle. Punkte ×1,5 (mehr als mit allen Haltestellen), die
+     Haltestellen-Auswahl ist dann ausgeblendet und die Schwierigkeit steht auf „Eigene“ – eine Schnellwahl (Leicht …
+     Profi) stellt wieder auf Haltestellen.
    - **⇅ Einstellungen teilen** (neben ↺): Link öffnet eine neue Lobby mit genau diesen Einstellungen; JSON zum
      Kopieren und Einfügen.
    - **Abwechslung**: Innerhalb eines Spiels liegen neue Start/Ziele mindestens 1,2 km von allen bisherigen entfernt,
