@@ -1,6 +1,8 @@
 import './style.css';
 import { fmtDuration } from '../../shared/rules.ts';
 import { api } from './api.ts';
+import { account, startPolling } from './account.ts';
+import { accountButton, announceMedals, openAccount, renderInvites, takeResetLink } from './accountui.ts';
 import { isMine, setMine } from './learn/model.ts';
 import { GameMap } from './map.ts';
 import { NetIndex } from './net.ts';
@@ -22,6 +24,20 @@ import { esc, toast } from './ui.ts';
 
 const panel = document.getElementById('panel')!;
 const topinfo = document.getElementById('topinfo')!;
+// Account-Knopf rechts in der Kopfzeile, Einladungen von Freunden als Banner darunter
+const acctSlot = document.createElement('div');
+acctSlot.className = 'acct-slot';
+document.querySelector('.topbar')!.append(acctSlot);
+const inviteHost = document.createElement('div');
+inviteHost.className = 'invite-host';
+document.body.append(inviteHost);
+
+function renderAccount() {
+  acctSlot.innerHTML = accountButton();
+  acctSlot.querySelector('#acct-btn')!.addEventListener('click', () => openAccount());
+  renderInvites(inviteHost);
+  announceMedals();
+}
 const pauseOverlay = document.createElement('div');
 pauseOverlay.className = 'pause-overlay';
 pauseOverlay.hidden = true;
@@ -89,6 +105,7 @@ let chatSync = () => {};
 
 function render() {
   chatSync();
+  renderInvites(inviteHost);
   const key = keyFor();
   if (key !== screenKey) {
     screen?.destroy?.();
@@ -162,6 +179,10 @@ async function init() {
     toast(reason, 'info');
   };
   chatSync = () => chat.sync();
+  account.listeners.add(renderAccount);
+  renderAccount();
+  startPolling();
+  takeResetLink();
   panel.innerHTML = loadingHtml('Lade Netzdaten …');
   try {
     app.net = new NetIndex(await api.network());

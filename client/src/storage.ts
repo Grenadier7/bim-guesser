@@ -22,6 +22,12 @@ export function loadMerged<T extends object>(key: string, def: T, storage: Store
   }
 }
 
+/** wird nach jedem Speichern in localStorage aufgerufen (Account-Sync) */
+let onSave: ((key: string, v: unknown) => void) | null = null;
+export function onSaveJson(fn: (key: string, v: unknown) => void) {
+  onSave = fn;
+}
+
 /** Speichern; null/undefined löscht den Eintrag */
 export function saveJson(key: string, v: unknown, storage: Store = local) {
   try {
@@ -30,4 +36,5 @@ export function saveJson(key: string, v: unknown, storage: Store = local) {
   } catch {
     /* privater Modus o.ä. */
   }
+  if (storage === local) onSave?.(key, v ?? null);
 }

@@ -90,6 +90,42 @@ zeigen den nächsten Schritt und heben das passende Feld hervor; danach die Punk
   Sonderlinien (71E, 26E) und keine Halte aus Sonderführungen.
 - Host: Pause, Frage überspringen, Jetzt auflösen, Spiel beenden.
 
+## Accounts
+
+Oben rechts **👤 Anmelden** – ohne Account geht alles wie bisher. Mit Account:
+
+- **Registrieren/Anmelden** mit Benutzername (oder E-Mail) und Passwort; man bleibt 180 Tage angemeldet (Cookie,
+  verlängert sich bei Benutzung). Der Name wird beim Erstellen/Beitreten automatisch eingetragen, in Lobbys steht
+  👤 neben Spielern mit Account (antippen = Profil).
+- **Spielstand auf allen Geräten**: Lernpfad, gemerkte Linien, Lernstand, Tutorial, Trainings-Wiederholungen und
+  Einstellungen. Beim Anmelden auf einem Gerät wird der Browser-Stand mit dem Account zusammengeführt (Fortschritt
+  geht nie verloren), danach gilt der Account (`client/src/account.ts`, `client/src/boot.ts`).
+- **Level & XP**: Runde 5 + Punkte/20, Routenjagd 20 (+30 Sieg), Quiz 10 + Punkte/50 (+20 Sieg), Trainingsstrecke
+  10–20, Kurs 40 (+60 gemeistert), Tutorial 50. Level 2 bei 100 XP, jedes weitere Level 50 XP mehr.
+- **Medaillen** (14): z.B. Volltreffer (1000 Routenpunkte), Schlauer als die Auskunft, Volle 1300, Sieger, Quiz-Ass,
+  Netzkenner/Netzmeister (Lernpfad), Gesellig (3 Freunde) – neue werden gemeldet.
+- **Statistik & Lieblinge**: Spiele, Siege, Ø Routenpunkte, Zeit in Öffis, Kurse; Lieblingslinie je U-Bahn/S-Bahn/
+  Bim/Bus und Lieblingsstation. Gezählt wird die *bewusste Wahl*: Gab es an der Einstiegsstation keine andere Linie
+  (92B ab Frachtenbahnhof Lobau), zählt die Fahrt nur 0,15 – mit Alternativen (95A statt 93A am Großen Biberhaufen)
+  voll. Für die Lieblingsstation zählen nur Umstiege (Start und Ziel sind vorgegeben).
+- **👥 Leute** (alle Accounts, Suche) mit **Freundschaftsanfragen**; Profile zeigen Level und Medaillen, Statistik,
+  Lieblinge und Online-Status nur Freunden.
+- **📨 Freunde einladen** in der Lobby (einzelne oder alle): Die Eingeladenen sehen oben ein Banner mit „Beitreten“,
+  sobald sie die Seite offen haben bzw. öffnen (Abfrage alle 20 s).
+- **Passwort vergessen** per E-Mail (Link 1 Stunde gültig, meldet alle Geräte ab). Braucht `SMTP_URL` (+ `MAIL_FROM`)
+  und die öffentliche Adresse `PUBLIC_URL` (oder `NGROK_URL`/`NGROK_DOMAIN`); Links werden nie aus dem Host-Header
+  gebaut. Lokal mit `docker compose up` fängt **Mailpit** alle Mails ab: http://localhost:8025. Ohne Mailserver zum
+  Testen: `MAIL_FILE=data/mails.jsonl`.
+- **Datenschutz** (Link auf der Startseite und im Account-Fenster): was gespeichert wird, wer was sieht, Cookie,
+  Löschen. Kontaktadresse dort: `CONTACT_EMAIL`, sonst die Adresse aus `MAIL_FROM`.
+- **Account löschen** (⚙️, mit Passwort bestätigt): löscht sofort alles – Spielstand, Statistik, Medaillen,
+  Freundschaften, Einladungen, Sitzungen; der Name ist danach wieder frei.
+
+Technik: `server/accounts.ts` (SQLite über `node:sqlite` in `STATE_DIR/accounts.db` – im Container im State-Volume,
+also mitsichern), Passwörter mit Argon2id (`node:crypto`, braucht Node ≥ 24.7), Sitzungs- und Reset-Tokens nur als
+SHA-256 gespeichert. Ändernde Account-Anfragen nur als JSON (Schutz gegen fremde Seiten), eigene Rate-Limits für
+Anmelden/Registrieren/Passwort vergessen. Statistik-Fehler stören nie ein laufendes Spiel.
+
 ## Eigener Referenzfahrplan (GTFS)
 
 Für „Regulär“ sucht der Server Verbindungen selbst (`server/timetable.ts`, RAPTOR) auf einem Auszug der offiziellen

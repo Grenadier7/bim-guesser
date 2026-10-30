@@ -41,7 +41,7 @@ export function tutorialScreen(panel: HTMLElement, onBack: () => void): Screen {
   async function load() {
     setMapBig(false);
     app.map.clear();
-    panel.innerHTML = loadingHtml(`Runde ${idx + 1} wird vorbereitet …`, 'Die Wiener-Linien-Auskunft wird gefragt.');
+    panel.innerHTML = loadingHtml(`Runde ${idx + 1} wird vorbereitet …`, 'Der Fahrplan wird durchgerechnet.');
     try {
       round = await api.trainingRound({ ...DEFAULT_SETTINGS, slot: 'wd12', network: 'regular' }, { from: rounds[idx].from.id, to: rounds[idx].to.id });
     } catch (e) {

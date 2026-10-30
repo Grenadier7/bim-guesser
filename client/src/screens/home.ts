@@ -6,6 +6,8 @@ import { esc, h, toast } from '../ui.ts';
 import { setPanel, type Screen } from './screen.ts';
 import { importProblems, takeSettingsLink } from '../settingsShare.ts';
 import { offerTutorial } from '../progress.ts';
+import { account } from '../account.ts';
+import { openAccount } from '../accountui.ts';
 
 const MODES = [
   {
@@ -57,7 +59,7 @@ export function homeScreen(panel: HTMLElement): Screen {
      ${
        urlCode
          ? `<div class="invite-card"><div>📨 Du wurdest in die Lobby <b>${esc(urlCode)}</b> eingeladen.</div>
-              <label class="field"><span>Dein Name</span><input id="inviteName" maxlength="40" placeholder="z.B. Alex" value="${esc(app.prefs.name)}"></label>
+              <label class="field"><span>Dein Name</span><input id="inviteName" maxlength="40" placeholder="z.B. Alex" value="${esc(account.me?.name ?? app.prefs.name)}"></label>
               <button class="btn btn-primary btn-big" id="joinInvite">Jetzt beitreten</button></div>`
          : ''
      }
@@ -67,7 +69,7 @@ export function homeScreen(panel: HTMLElement): Screen {
        .map((m) => tile(m, 'mode-small'))
        .join('')}</div>
      <div class="home-bottom">
-       <label class="field"><span>Dein Name</span><input id="name" maxlength="40" placeholder="z.B. Alex" value="${esc(app.prefs.name)}"></label>
+       <label class="field"><span>Dein Name</span><input id="name" maxlength="40" placeholder="z.B. Alex" value="${esc(account.me?.name ?? app.prefs.name)}"></label>
        <div class="field join"><span>Mit Code beitreten</span>
          <div class="join-row"><input id="code" class="code-input" maxlength="5" placeholder="CODE" value="${esc(urlCode)}" autocomplete="off" spellcheck="false">
          <button class="btn btn-dark" id="join">Beitreten</button></div></div>
@@ -78,7 +80,8 @@ export function homeScreen(panel: HTMLElement): Screen {
               <small>Zwei geführte Runden (Praterstern → Stephansplatz, Reumannplatz → Rathaus) und wie es Punkte gibt.</small></span>
               <span class="btn btn-primary">Los</span></button>`
          : ''
-     }`,
+     }
+     <p class="home-foot"><button class="link" id="privacy">Datenschutz</button></p>`,
   );
   const nameIn = el.querySelector<HTMLInputElement>('#name')!;
   const codeIn = el.querySelector<HTMLInputElement>('#code')!;
@@ -133,6 +136,7 @@ export function homeScreen(panel: HTMLElement): Screen {
     }
   };
   el.querySelector('#join')!.addEventListener('click', join);
+  el.querySelector('#privacy')!.addEventListener('click', () => openAccount('privacy'));
   // Einladung: Name oben eintragen, ein Klick zum Beitreten
   const inviteName = el.querySelector<HTMLInputElement>('#inviteName');
   inviteName?.addEventListener('input', () => (nameIn.value = inviteName.value));
@@ -148,5 +152,10 @@ export function homeScreen(panel: HTMLElement): Screen {
     toast('Neue Lobby mit den geteilten Einstellungen …', 'info');
     void createLobby(shared.mode, shared.settings);
   }
-  return {};
+  // angemeldet: Name = Account-Name (automatisch ausgefüllt)
+  const syncName = () => {
+    if (account.me && document.activeElement !== nameIn) nameIn.value = app.prefs.name = account.me.name;
+  };
+  account.listeners.add(syncName);
+  return { destroy: () => account.listeners.delete(syncName) };
 }

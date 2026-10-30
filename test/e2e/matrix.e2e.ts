@@ -190,10 +190,7 @@ for (const r of TRAIN_ROWS)
       await p.locator('.mode-training').click();
       await p.locator(`[data-slot="${r.slot}"]`).click();
       await p.locator(`[data-preset="${r.preset}"]`).click();
-      if (r.area) {
-        await p.locator('[data-area="focus"]').click();
-        await p.locator('#area').selectOption(String(r.area));
-      }
+      if (r.area) await p.locator(`[data-area="${r.area}"]`).click();
       if ((await p.locator('#coach').isChecked()) !== r.coach) await p.locator('label.toggle:has(#coach)').click();
       await p.locator('#start').click();
       await p.locator('.round-head .od').waitFor({ timeout: 180_000 });

@@ -68,9 +68,10 @@ export async function startServer(env: Record<string, string> = {}): Promise<Tes
       return { status: res.status, body: parsed, headers: res.headers };
     },
     async stop() {
+      const exited = new Promise((r) => (proc.exitCode != null ? r(null) : proc.once('exit', r)));
       proc.kill();
-      await new Promise((r) => setTimeout(r, 100));
-      rmSync(stateDir, { recursive: true, force: true });
+      await exited;
+      rmSync(stateDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
 }

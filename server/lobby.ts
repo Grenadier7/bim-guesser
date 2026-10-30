@@ -37,6 +37,15 @@ export interface Player {
   score: number;
   connections: number;
   lastSeen: number;
+  /** angemeldeter Account (für Statistik, Medaillen, Einladungen) */
+  userId?: number;
+  account?: string;
+}
+
+/** Account eines Spielers beim Erstellen/Beitreten */
+export interface PlayerAccount {
+  id: number;
+  name: string;
 }
 
 export abstract class Lobby extends EventEmitter {
@@ -201,7 +210,7 @@ export abstract class Lobby extends EventEmitter {
     this.emit('closed');
   }
 
-  addPlayer(name: unknown): { id: string; token: string } {
+  addPlayer(name: unknown, account?: PlayerAccount | null): { id: string; token: string } {
     if (this.players.size >= MAX_PLAYERS) throw new GameError('Lobby ist voll.', 409);
     let id: string;
     do id = randomBytes(6).toString('base64url');
@@ -210,7 +219,7 @@ export abstract class Lobby extends EventEmitter {
     let clean = cleanName(name) || `Spieler ${this.players.size + 1}`;
     const taken = new Set([...this.players.values()].map((p) => p.name));
     for (let i = 2; taken.has(clean); i++) clean = `${clean.replace(/ \d+$/, '').slice(0, 17)} ${i}`;
-    const player: Player = { id, token, name: clean, score: 0, connections: 0, lastSeen: Date.now() };
+    const player: Player = { id, token, name: clean, score: 0, connections: 0, lastSeen: Date.now(), userId: account?.id, account: account?.name };
     this.players.set(id, player);
     this.byToken.set(token, player);
     if (!this.hosts.size) this.hosts.add(id);
@@ -260,7 +269,24 @@ export abstract class Lobby extends EventEmitter {
       score: p.score,
       isHost: this.hosts.has(p.id),
       connected: this.isConnected(p),
+      ...(p.account ? { account: p.account } : {}),
     }));
+  }
+
+  /** Spieler mit Account: Spieler-ID → Account-ID (für die Statistik) */
+  accounts(): { playerId: string; userId: number; score: number }[] {
+    return [...this.players.values()].filter((p) => p.userId != null).map((p) => ({ playerId: p.id, userId: p.userId!, score: p.score }));
+  }
+
+  /** Endstand: alle Spieler nach Punkten (für Rang und „Sieg“) */
+  ranking(): { playerId: string; score: number }[] {
+    return [...this.players.values()].map((p) => ({ playerId: p.id, score: p.score })).sort((a, b) => b.score - a.score);
+  }
+
+  /** Spiel ist aus – Accounts zählen es (Event 'finished') */
+  protected finishGame() {
+    this.phase = 'finished';
+    this.emit('finished');
   }
 
   // -------------------------------------------------------------- Verbindungen

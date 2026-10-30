@@ -1,11 +1,12 @@
 // Quiz – gemeinsame Helfer der Bildschirme (Liniennummern, Karte, Spielerliste)
 import type { LatLon, Line, QuizState } from '../../../../shared/types.ts';
+import { icon } from '../../icons.ts';
 import { regularPatterns } from '../../../../shared/rules.ts';
 import { type QuizQuestionPublic, type QuizSettings } from '../../../../shared/quiz.ts';
 import { netLayer, netView } from '../../netmap.ts';
 import { app } from '../../store.ts';
 import { kickButton } from '../host.ts';
-import { esc, lineChip } from '../../ui.ts';
+import { accountTag, esc, lineChip } from '../../ui.ts';
 
 export const NEUTRAL = '#3a3f47';
 
@@ -72,7 +73,7 @@ export function areaOf(s: QuizSettings) {
 export function playersHtml(st: QuizState): string {
   return st.players
     .map(
-      (p) => `<li class="${p.connected ? '' : 'offline'}"><span class="dot"></span>${esc(p.name)}${p.id === app.session?.playerId ? ' <small>(du)</small>' : ''}${p.isHost ? ' <span title="Host">👑</span>' : ''}${kickButton(p)}</li>`,
+      (p) => `<li class="${p.connected ? '' : 'offline'}"><span class="dot"></span>${esc(p.name)}${accountTag(p)}${p.id === app.session?.playerId ? ' <small>(du)</small>' : ''}${p.isHost ? ` <span class="host-crown" title="Host">${icon('crown', 14)}</span>` : ''}${kickButton(p)}</li>`,
     )
     .join('');
 }

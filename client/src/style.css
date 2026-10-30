@@ -4288,6 +4288,325 @@ details.host-bar {
   font-size: 1.05em;
 }
 
+/* ---------------------------------------------------------------- Accounts */
+.acct-slot {
+  margin-left: 4px;
+}
+.topinfo:empty + .acct-slot {
+  margin-left: auto;
+}
+.acct-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.acct-btn:hover {
+  border-color: var(--muted);
+}
+.badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+.lvl-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--good) 14%, var(--panel));
+  color: color-mix(in srgb, var(--good) 65%, #000);
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.lvl-badge.small {
+  padding: 1px 6px;
+  font-size: 11px;
+}
+.lvl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  align-items: center;
+  margin: 10px 0 4px;
+}
+.lvl small {
+  grid-column: 2;
+  color: var(--muted);
+}
+.lvl-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.lvl-bar i {
+  display: block;
+  height: 100%;
+  background: var(--good);
+  border-radius: inherit;
+}
+
+.acct-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 2500;
+  display: flex;
+  justify-content: flex-end;
+  background: rgb(0 0 0 / 0.35);
+}
+.acct-sheet[hidden] {
+  display: none;
+}
+.acct-box {
+  display: flex;
+  flex-direction: column;
+  width: min(480px, 100%);
+  height: 100%;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+.acct-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.acct-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.acct-tabs button {
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.acct-tabs button.on {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  font-weight: 700;
+}
+.acct-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px 40px;
+}
+.acct-body h4 {
+  margin: 18px 0 8px;
+}
+.acct-form {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.acct-form input {
+  width: 100%;
+}
+.profile-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.profile-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 0;
+}
+.medals {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+}
+.medal {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 10px 8px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  text-align: center;
+}
+/* noch nicht erreicht: grau und gestrichelt – Text bleibt gut lesbar (Kontrast), nur das Symbol wird blass */
+.medal.locked {
+  background: var(--bg);
+  border: 1px dashed #b9bec6;
+  color: var(--muted);
+}
+.medal.locked span {
+  filter: grayscale(1);
+  opacity: 0.4;
+}
+.medal.on {
+  box-shadow: var(--shadow);
+}
+.medal span {
+  font-size: 26px;
+}
+.medal small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.stat {
+  display: grid;
+  gap: 2px;
+  padding: 10px 8px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  text-align: center;
+}
+.stat b {
+  font-size: 18px;
+}
+.stat small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.favs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+}
+.fav {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.recent,
+.users {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.recent li,
+.users li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.recent li span:last-child {
+  margin-left: auto;
+}
+.users .user-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--ink);
+  text-decoration: none;
+}
+.users label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  cursor: pointer;
+}
+.row-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+.btn.btn-sm {
+  padding: 4px 10px;
+  font-size: 13px;
+  min-height: 0;
+}
+.online-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.online-dot.on {
+  background: var(--good);
+}
+.acct-tag {
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: 0.85em;
+}
+.invite-host {
+  position: fixed;
+  top: 56px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2400;
+  display: grid;
+  gap: 6px;
+  width: min(560px, calc(100% - 24px));
+}
+.invite-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border-left: 5px solid var(--good);
+  box-shadow: 0 6px 22px rgb(0 0 0 / 0.18);
+}
+.invite-banner > span {
+  flex: 1;
+}
+@media (max-width: 700px) {
+  .acct-btn span:not(.lvl-badge):not(.badge) {
+    max-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stats {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .acct-box {
+    width: 100%;
+  }
+}
+
 /* Einstellungs-Import: was nicht übernommen wurde */
 .import-problems {
   margin: 8px 0;
@@ -4301,10 +4620,274 @@ details.host-bar {
   padding-left: 18px;
 }
 
+/* unsichtbar, aber für Passwort-Manager vorhanden (Benutzername im Formular „Passwort ändern“) */
+.vh {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 /* Regionalzüge, die im S-Bahn-Takt mitzählen („· mit REX4, REX41“) – dezent, Erklärung beim Drüberfahren */
 .with-trains {
   color: var(--muted);
   border-bottom: 1px dotted currentColor;
   cursor: help;
   white-space: nowrap;
+}
+
+/* Lobby-Code mit Knöpfen: Code links, Knöpfe rechts untereinander (Handy: unter dem Code nebeneinander) */
+.code-actions {
+  display: grid;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.btn.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px 14px;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.btn.btn-icon .icon {
+  flex: 0 0 auto;
+  opacity: 0.8;
+}
+.code-actions .btn-icon {
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+.code-actions .btn-icon:hover {
+  border-color: var(--muted);
+}
+@media (max-width: 520px) {
+  .lobby-code {
+    flex-wrap: wrap;
+  }
+  .code-actions {
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+  .btn.btn-icon {
+    justify-content: center;
+  }
+}
+
+/* ---------------------------------------------------------------- Design: Linien-Icons statt Emojis */
+.icon {
+  vertical-align: -0.18em;
+  flex: 0 0 auto;
+}
+.setting > span .icon,
+.adv-tabs .icon,
+details.advanced > summary .icon {
+  color: var(--muted);
+  margin-right: 2px;
+}
+.host-crown {
+  color: #b7791f;
+}
+.host-crown .icon {
+  vertical-align: -0.12em;
+}
+.hub-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--panel));
+  color: var(--accent);
+  font-size: 0;
+}
+.host-bar button .icon,
+.tip-btn .icon,
+.tips-drawer > summary .icon {
+  margin-right: 2px;
+}
+/* gesperrte Hauptknöpfe grau statt blassrot – klar „geht gerade nicht“ */
+.btn.btn-primary:disabled {
+  background: #c9ccd1;
+  color: #5b6170;
+  box-shadow: none;
+}
+/* Linien-Chips ohne Fahrzeug-Emoji: etwas kompakter */
+.chip b {
+  margin-left: 0;
+}
+
+/* Quiz allein: Ergebnis-Karte */
+.solo-result {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 18px;
+  padding: 18px;
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.sr-score {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.sr-score b {
+  font-size: 44px;
+  line-height: 1;
+}
+.sr-score span {
+  color: var(--muted);
+}
+.sr-bar {
+  height: 12px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.sr-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #ff6b4a);
+}
+.sr-verdict {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* ---------------------------------------------------------------- Gebietswahl (Quiz, Training): Nummernraster statt Liste */
+.area-pick {
+  display: grid;
+  gap: 6px;
+}
+.ap-grid {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 4px;
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 4px;
+}
+.ap-grid button {
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  padding: 6px 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  cursor: pointer;
+}
+.ap-grid button.ap-all {
+  grid-column: span 4;
+  padding: 6px 8px;
+}
+.ap-grid button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+}
+.ap-grid button.on {
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  font-weight: 700;
+  color: var(--accent);
+}
+.ap-grid button:disabled {
+  cursor: default;
+}
+.ap-name {
+  color: var(--muted);
+  font-size: 13px;
+}
+.ap-name b {
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- Training: kompakte Einstellungen */
+.train-lead {
+  margin: 2px 0 0;
+  color: var(--muted);
+}
+details.train-how {
+  margin: 2px 0 6px;
+  font-size: 13px;
+}
+details.train-how > summary {
+  cursor: pointer;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  width: fit-content;
+}
+details.train-how .facts {
+  margin: 6px 0 4px;
+  gap: 4px;
+  list-style: disc;
+  padding-left: 18px;
+}
+details.train-how .facts li {
+  background: none;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.train-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.train-stats b {
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- Datenschutz, Account löschen */
+.home-foot {
+  text-align: center;
+  font-size: 13px;
+  margin: 18px 0 4px;
+}
+.privacy {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.privacy h4 {
+  margin: 14px 0 4px;
+}
+.privacy p,
+.privacy ul {
+  margin: 0;
+}
+.privacy ul {
+  padding-left: 18px;
+  display: grid;
+  gap: 3px;
+}
+details.danger-zone {
+  margin-top: 18px;
+  border: 1px solid color-mix(in srgb, var(--err) 35%, var(--line));
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+details.danger-zone > summary {
+  cursor: pointer;
+  color: var(--err);
+  font-weight: 600;
+  font-size: 14px;
+}
+details.danger-zone p {
+  font-size: 14px;
+}
+.btn.btn-danger {
+  background: var(--err);
+  color: #fff;
+}
+.btn.btn-danger:disabled {
+  opacity: 0.6;
 }

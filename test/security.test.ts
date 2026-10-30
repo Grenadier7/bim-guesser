@@ -60,7 +60,7 @@ async function runMockServer() {
     return new Response(JSON.stringify({ trips }));
   }) as typeof fetch;
 
-  const { app } = createApp({ net, version: 'mock' });
+  const { app } = createApp({ net, version: 'mock', accountsDb: ':memory:' });
   const server = http.createServer((req, res) => {
     if (req.url === '/__mock/fail') return void ((fail = true), res.end('fail'));
     if (req.url === '/__mock/calls') return void res.end(String(calls));
@@ -169,7 +169,7 @@ async function spawnServer(opts: { env?: Record<string, string>; mock?: boolean 
         proc.kill();
         await new Promise((r) => proc.once('exit', r));
       }
-      rmSync(stateDir, { recursive: true, force: true });
+      rmSync(stateDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
 }

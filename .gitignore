@@ -8,3 +8,4 @@ data/usage.json
 test/e2e/artifacts/
 test/e2e/.state/
 data/accounts.db*
+data/mails.jsonl

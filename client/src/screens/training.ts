@@ -11,6 +11,8 @@ import { app, setMapBig, setMobileMap } from '../store.ts';
 import { HINTS, compass, explain, hintText, legFeedback, lineDirections, routeSentence, type CoachMsg, type HintId } from '../training/coach.ts';
 import { chain, esc, h, lineChip, makeExpandable, routeDetails, toast } from '../ui.ts';
 import { loadingHtml, type Screen } from './screen.ts';
+import { icon } from '../icons.ts';
+import { areaPicker, infoTip } from '../widgets.ts';
 import { loadMerged, saveJson } from '../storage.ts';
 import { markPlayed } from '../progress.ts';
 
@@ -63,8 +65,6 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
   let lastDraft = '';
   let prefetch: Promise<TrainingRound> | null = null;
   let sessionRounds = 0;
-  /** "Schwerpunkt" gewählt (Bezirk evtl. noch offen) */
-  let areaOn = cfg.area > 0;
 
   app.map.clear();
   net.mode = 'regular';
@@ -98,30 +98,26 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
       <div class="learn training">
         <button class="link" id="back">← Zurück</button>
         <h2>🏋️ Training</h2>
-        <p>Echte Strecken – ohne Zeitdruck und ohne Punkte. So lernst du dabei:</p>
-        <ul class="facts">
-          <li><b>Coach:</b> nach jeder Teilstrecke sofort Rückmeldung – richtig, Umweg oder falsche Richtung?</li>
-          <li><b>„Was fährt hier ab?“</b> zeigt dir an jeder Station die Linien mit ihren Richtungen.</li>
-          <li><b>Hilfen in Stufen:</b> erst Richtung, dann Verkehrsmittel, erste Linie, Umstiege – Lösung zuletzt.</li>
-          <li><b>Am Ende:</b> Vergleich mit der schnellsten Verbindung und <i>warum</i> sie schneller ist.</li>
-          <li><b>Wiederholung:</b> was nicht geklappt hat, kommt ${RETRY_AFTER} Strecken später nochmal.</li>
-        </ul>
-        <div class="setting"><span>Uhrzeit</span><div class="seg seg-wide">${TIME_SLOTS.map((t) => `<button data-slot="${t.id}" class="${t.id === cfg.slot ? 'on' : ''}">${t.short}</button>`).join('')}</div></div>
-        <div class="setting"><span>Schwierigkeit</span><div class="seg seg-wide">${DIFFICULTY_PRESETS.map((d) => `<button data-preset="${d.id}" class="${d.id === cfg.preset ? 'on' : ''}">${d.label}</button>`).join('')}</div></div>
-        <div class="setting"><span>Gebiet</span>
-          <div class="seg seg-wide"><button data-area="all" class="${areaOn ? '' : 'on'}">🗺️ Ganz Wien</button><button data-area="focus" class="${areaOn ? 'on' : ''}">🎯 Schwerpunkt</button></div>
-          ${
-            areaOn
-              ? `<select id="area"><option value="0" ${cfg.area ? '' : 'selected'}>Bezirk wählen …</option>${net.data.districts.map((d) => `<option value="${d.id}" ${d.id === cfg.area ? 'selected' : ''}>${d.id}. ${esc(d.name)}</option>`).join('')}</select>
-                 <small class="hint">${cfg.area ? 'Die meisten Starts und Ziele liegen im Umkreis von 2,5 km um den Bezirk – der Rest aus ganz Wien.' : 'Wähle einen Bezirk – er wird auf der Karte markiert.'}</small>`
-              : '<small class="hint">Starts und Ziele aus ganz Wien.</small>'
-          }</div>
+        <p class="train-lead">Echte Strecken – ohne Zeitdruck und ohne Punkte.</p>
+        <details class="train-how"><summary>So lernst du dabei</summary>
+          <ul class="facts">
+            <li><b>Coach:</b> nach jeder Teilstrecke Rückmeldung – richtig, Umweg oder falsche Richtung?</li>
+            <li><b>„Was fährt hier ab?“</b> zeigt an jeder Station die Linien mit ihren Richtungen.</li>
+            <li><b>Hilfen in Stufen:</b> Richtung, Verkehrsmittel, erste Linie, Umstiege – die Lösung zuletzt.</li>
+            <li><b>Am Ende:</b> Vergleich mit der schnellsten Verbindung und <i>warum</i> sie schneller ist.</li>
+            <li><b>Wiederholung:</b> was nicht geklappt hat, kommt ${RETRY_AFTER} Strecken später nochmal.</li>
+          </ul></details>
+        <div class="setting"><span>${icon('clock', 15)} Uhrzeit</span><div class="seg seg-wide">${TIME_SLOTS.map((t) => `<button data-slot="${t.id}" class="${t.id === cfg.slot ? 'on' : ''}">${t.short}</button>`).join('')}</div></div>
+        <div class="setting"><span>${icon('target', 15)} Schwierigkeit</span><div class="seg seg-wide">${DIFFICULTY_PRESETS.map((d) => `<button data-preset="${d.id}" class="${d.id === cfg.preset ? 'on' : ''}">${d.label}</button>`).join('')}</div></div>
+        <div class="setting"><span>${icon('pin', 15)} Gebiet</span>${areaPicker(net.data.districts, cfg.area, false, cfg.area ? 'die meisten Strecken starten oder enden hier' : 'Starts und Ziele überall')}</div>
         <label class="toggle"><input type="checkbox" id="coach" ${cfg.coach ? 'checked' : ''}><span class="switch"></span>
-          <span class="tl"><b>Coach-Rückmeldungen</b><small>Nach jeder Teilstrecke Feedback. Aus = selbst knobeln, Erklärung erst am Ende.</small></span></label>
-        <div class="learn-card scope-card"><b>Dein Training</b>
-          <small>${mem.rounds} Strecken · ${solvedPct} % gut gelöst · ${mem.retry.length} zum Wiederholen · ${mem.notes.length} gemerkt</small>
-          ${mem.notes.length ? '<button class="link" id="notes">📌 Merkliste ansehen</button>' : ''}</div>
+          <span class="tl"><b>Coach-Rückmeldungen ${infoTip('Nach jeder Teilstrecke Feedback. Aus = selbst knobeln, Erklärung erst am Ende.')}</b></span></label>
         <button class="btn btn-primary btn-big" id="start">Training starten</button>
+        ${
+          mem.rounds || mem.notes.length
+            ? `<div class="train-stats"><span><b>${mem.rounds}</b> Strecken</span><span><b>${solvedPct} %</b> gut gelöst</span><span><b>${mem.retry.length}</b> zum Wiederholen</span>${mem.notes.length ? `<button class="link" id="notes">📌 Merkliste (${mem.notes.length})</button>` : ''}</div>`
+            : ''
+        }
         <button class="link reset-settings" id="resetCfg">↺ Einstellungen zurücksetzen</button>
       </div>`;
     panel.querySelector('#back')!.addEventListener('click', onBack);
@@ -141,17 +137,11 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
     );
     panel.querySelectorAll<HTMLButtonElement>('[data-area]').forEach((b) =>
       b.addEventListener('click', () => {
-        areaOn = b.dataset.area === 'focus';
-        if (!areaOn) cfg.area = 0;
+        cfg.area = Number(b.dataset.area);
         persist();
         renderSetup();
       }),
     );
-    panel.querySelector<HTMLSelectElement>('#area')?.addEventListener('change', (e) => {
-      cfg.area = Number((e.target as HTMLSelectElement).value);
-      persist();
-      renderSetup();
-    });
     panel.querySelector<HTMLInputElement>('#coach')!.addEventListener('change', (e) => {
       cfg.coach = (e.target as HTMLInputElement).checked;
       persist();
@@ -159,7 +149,6 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
     panel.querySelector('#notes')?.addEventListener('click', renderNotes);
     panel.querySelector('#resetCfg')!.addEventListener('click', () => {
       Object.assign(cfg, DEFAULT_TRAINING);
-      areaOn = cfg.area > 0;
       persist();
       renderSetup();
     });
@@ -178,7 +167,7 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
     setMapBig(false);
     for (const r of mem.retry) r.due--;
     const due = mem.retry.find((r) => r.due <= 0);
-    panel.innerHTML = loadingHtml(due ? 'Wiederholung wird geladen …' : 'Strecke wird gesucht …', 'Die Wiener-Linien-Auskunft wird für mehrere Abfahrtszeiten abgefragt.');
+    panel.innerHTML = loadingHtml(due ? 'Wiederholung wird geladen …' : 'Strecke wird gesucht …', 'Der Fahrplan wird für mehrere Abfahrtszeiten durchgerechnet.');
     try {
       round = due ? await api.trainingRound(settings(), { from: due.from, to: due.to }) : await (prefetch ?? api.trainingRound(settings()));
       isRetry = !!due;

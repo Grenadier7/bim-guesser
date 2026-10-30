@@ -11,8 +11,21 @@ services:
       - '${PORT:-3000}:3000'
     environment:
       - APP_VERSION=local
+      # Accounts: Passwort-Reset-Mails gehen an Mailpit (ansehen: http://localhost:8025)
+      - SMTP_URL=smtp://mailpit:1025
+      - MAIL_FROM=BimGuesser <noreply@bimguesser.local>
+      - PUBLIC_URL=http://localhost:${PORT:-3000}
     volumes:
-      - state:/app/state # Auskunfts-Cache + Statistik
+      - state:/app/state # Auskunfts-Cache, Statistik, Accounts (accounts.db)
+    depends_on:
+      - mailpit
+
+  # fängt alle Mails ab (nur lokal – kein echter Versand)
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - '8025:8025'
 
 volumes:
   state:

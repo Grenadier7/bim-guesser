@@ -81,6 +81,11 @@ export class TrainingService {
     return { id, from: this.net.ref(from.id), to: this.net.ref(to.id), when: describeSlotDate(time), settings, routes };
   }
 
+  /** beste Reisezeit der Strecke (für die Statistik) */
+  bestMin(id: string): number | null {
+    return this.rounds.get(String(id))?.routes[0]?.medianMin ?? null;
+  }
+
   async evaluate(id: string, legs: unknown): Promise<TrainingResult> {
     const r = this.rounds.get(String(id));
     if (!r) throw new GameError('Trainingsrunde abgelaufen – bitte neue Strecke starten.', 404);

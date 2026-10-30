@@ -1,4 +1,5 @@
 import type { Guesses, LatLon, RoundPublic, Station, TipKind, TipResult } from '../../../shared/types.ts';
+import { icon } from '../icons.ts';
 import { RESTRICTIONS, TIPS, XTREME_LEVELS, baseLimitSec, restrictionAllowsLine, fmtDuration, fmtTimeLeft, locatePoints, restrictionLabel, tipShare } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import { RouteBuilder } from '../builder.ts';
@@ -197,7 +198,7 @@ export function roundScreen(panel: HTMLElement): Screen {
     const btns = (Object.keys(TIPS) as TipKind[])
       .map(
         (k) =>
-          `<button class="tip-btn" data-tip="${k}" ${used.has(k) ? 'disabled' : ''}>💡 ${esc(TIPS[k].label)} <small>−${Math.round(tipShare(k, s.settings.tips) * 100)} %</small></button>`,
+          `<button class="tip-btn" data-tip="${k}" ${used.has(k) ? 'disabled' : ''}>${icon('bulb', 15)} ${esc(TIPS[k].label)} <small>−${Math.round(tipShare(k, s.settings.tips) * 100)} %</small></button>`,
       )
       .join('');
     const results = tips
@@ -226,7 +227,7 @@ export function roundScreen(panel: HTMLElement): Screen {
     // Joker ausklappbar: am Handy zu (eine Zeile statt vier großer Knöpfe), am Computer offen; Ergebnisse immer sichtbar
     const free = (Object.keys(TIPS) as TipKind[]).filter((k) => !used.has(k)).length;
     tipsOpen ??= matchMedia('(min-width: 900px)').matches;
-    box.innerHTML = `${free ? `<details class="tips-drawer" ${tipsOpen ? 'open' : ''}><summary>💡 Joker <small>(${free} übrig – kosten Punkte)</small></summary><div class="tip-btns">${btns}</div></details>` : ''}${results}`;
+    box.innerHTML = `${free ? `<details class="tips-drawer" ${tipsOpen ? 'open' : ''}><summary>${icon('bulb', 16)} Joker <small>(${free} übrig – kosten Punkte)</small></summary><div class="tip-btns">${btns}</div></details>` : ''}${results}`;
     box.querySelector('details')?.addEventListener('toggle', (e) => (tipsOpen = (e.target as HTMLDetailsElement).open));
     box.querySelectorAll<HTMLButtonElement>('[data-tip-line]').forEach((btn) =>
       btn.addEventListener('click', () => {
