@@ -702,3 +702,46 @@ describe('Account löschen', () => {
     assert.ok('contact' in p.body && 'mail' in p.body);
   });
 });
+
+describe('Passwort vergessen verrät nichts', () => {
+  const serve = async (mail: (to: string, s: string, t: string) => Promise<void>) => {
+    const { app } = createApp({ net, version: 'test', accountsDb: ':memory:', mail });
+    const srv = http.createServer(app);
+    await new Promise<void>((r) => srv.listen(0, r));
+    const base = `http://localhost:${(srv.address() as AddressInfo).port}`;
+    const post = async (url: string, body: unknown) => {
+      const r = await realFetch(base + url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      return { status: r.status, body: await r.json(), cookie: r.headers.get('set-cookie') };
+    };
+    return { srv, post };
+  };
+
+  test('Versandfehler: gleiche Antwort wie bei unbekannter Adresse, und sie kommt sofort', async () => {
+    let tried = 0;
+    // Mailserver hängt 3 s und scheitert dann – die Antwort darf darauf nicht warten
+    const { srv, post } = await serve(() => (tried++, new Promise((_, no) => setTimeout(() => no(new Error('535 Login fehlgeschlagen')), 3000))));
+    try {
+      await post('/api/auth/register', { name: uniq('Leck'), password: 'passwort1', email: 'echt@example.org' });
+      const t0 = Date.now();
+      const real = await post('/api/auth/forgot', { email: 'echt@example.org' });
+      const ms = Date.now() - t0;
+      const none = await post('/api/auth/forgot', { email: 'gibtsnicht@example.org' });
+      assert.equal(tried, 1, 'für den echten Account wurde verschickt');
+      assert.deepEqual([real.status, real.body], [none.status, none.body], 'gleiche Antwort');
+      assert.ok(ms < 1000, `Antwort wartet nicht auf den Mailserver (${ms} ms)`);
+    } finally {
+      srv.close();
+    }
+  });
+
+  test('kaputte SMTP_URL bringt den Server nicht zum Absturz; nicht beschreibbarer State-Ordner → klare Meldung', async () => {
+    const { smtpMailer } = await import('../server/mail.ts');
+    assert.equal(smtpMailer('das ist keine url'), undefined);
+    // „Ordner“, der in Wahrheit eine Datei ist – lässt sich auf jedem System nicht anlegen
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const blocker = `${mkdtempSync(`${tmpdir()}/bg-`)}/datei`;
+    writeFileSync(blocker, '');
+    assert.throws(() => new Accounts(net, { file: `${blocker}/state/accounts.db` }), /chown -R 1000:1000/);
+  });
+});

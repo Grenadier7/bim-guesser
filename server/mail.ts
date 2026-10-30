@@ -12,10 +12,31 @@ export function smtpMailer(url = process.env.SMTP_URL, from = process.env.MAIL_F
   if (!url && file) return async (to, subject, text) => appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), to, subject, text })}
 `);
   if (!url) return undefined;
-  const transport = nodemailer.createTransport(url);
+  let transport: ReturnType<typeof nodemailer.createTransport>;
+  let host = '?';
+  try {
+    host = new URL(url).hostname;
+    transport = nodemailer.createTransport(url);
+  } catch (e) {
+    // eine kaputte SMTP_URL darf den Server nie zum Absturz bringen – dann ist nur „Passwort vergessen“ aus
+    console.error(`✖ SMTP_URL ist ungültig (${(e as Error).message}) – „Passwort vergessen“ ist aus.`);
+    return undefined;
+  }
+  // gleich beim Start anmelden: im Log steht sofort, ob der Mailversand geht (Passwort steht nie im Log)
+  if (process.env.NODE_ENV === 'production')
+    transport.verify().then(
+      () => console.log(`✔ Mailversand bereit (${host})`),
+      (e: Error) => console.warn(`✖ Mailversand über ${host} geht nicht: ${e.message}`),
+    );
   return async (to, subject, text) => {
     await transport.sendMail({ from, to, subject, text });
   };
+}
+
+/** Adresse fürs Log gekürzt: competitive.trust@gmail.com → co***@gmail.com */
+export function maskEmail(mail: string): string {
+  const [user, domain] = mail.split('@');
+  return `${user.slice(0, 2)}***@${domain ?? ''}`;
 }
 
 /** öffentliche Adresse für Links in Mails – nie aus dem Host-Header (sonst könnte ein Angreifer den Link umlenken) */

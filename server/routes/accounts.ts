@@ -38,9 +38,9 @@ function jsonOnly(req: Request, _res: Response, next: NextFunction) {
 }
 
 export function accountRoutes(app: Express, accounts: Accounts, alive: (code: string) => boolean) {
-  const limitAuth = rateLimit('auth', 20, 10 * MIN, 'Zu viele Anmeldeversuche – bitte in ein paar Minuten nochmal.');
-  const limitRegister = rateLimit('register', 6, 30 * MIN, 'Zu viele neue Accounts – bitte später nochmal.');
-  const limitForgot = rateLimit('forgot', 5, 30 * MIN, 'Zu viele Anfragen – bitte später nochmal.');
+  const limitAuth = rateLimit('auth', 20, 10 * MIN, 'Zu viele Anmeldeversuche – bitte {wait} nochmal.');
+  const limitRegister = rateLimit('register', 6, 30 * MIN, 'Zu viele neue Accounts von hier – bitte {wait} nochmal.');
+  const limitForgot = rateLimit('forgot', 5, 30 * MIN, 'Zu oft „Passwort vergessen“ – bitte {wait} nochmal. Schau inzwischen auch im Spam-Ordner nach.');
   const limitSocial = rateLimit('social', 120, 10 * MIN);
 
   const user = (req: Request): AccountUser => {
@@ -88,12 +88,7 @@ export function accountRoutes(app: Express, accounts: Accounts, alive: (code: st
       const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(req.get('host') ?? '');
       const base = publicUrl() ?? (local ? `${req.protocol}://${req.get('host')}` : null);
       if (!base) throw new GameError('Passwort-Reset ist auf diesem Server nicht eingerichtet (PUBLIC_URL fehlt).', 503);
-      try {
-        await accounts.forgot(req.body?.email, base);
-      } catch (e) {
-        console.warn('Mailversand fehlgeschlagen:', (e as Error).message);
-        throw new GameError('Die E-Mail konnte gerade nicht verschickt werden – bitte später nochmal.', 503);
-      }
+      await accounts.forgot(req.body?.email, base);
       return { ok: true };
     }),
   );

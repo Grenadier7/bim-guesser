@@ -111,7 +111,7 @@ test('Passwort vergessen: Mail mit Link → neues Passwort → angemeldet', asyn
   await t.page.locator('[data-tab=forgot]').click();
   await t.page.locator('form[data-form=forgot] input[name=email]').fill(`${name.toLowerCase()}@example.org`);
   await t.page.locator('form[data-form=forgot] button').click();
-  await t.page.locator('.acct-body .good', { hasText: 'E-Mail unterwegs' }).waitFor();
+  await t.page.locator('.acct-body .good', { hasText: 'E-Mail mit Link unterwegs' }).waitFor();
   const mail = readFileSync(MAIL_FILE, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).findLast((m) => m.to === `${name.toLowerCase()}@example.org`);
   const link = /http\S+\?reset=\S+/.exec(mail.text)![0];
   await t.page.goto(link);
