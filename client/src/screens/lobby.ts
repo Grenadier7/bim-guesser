@@ -313,7 +313,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
 
         </details>
 
-        <p class="maxpts">Max. <b>${maxRoundPoints(st).toLocaleString('de-AT')}</b> Punkte pro Runde <small>(bis ${maxRoundPointsWithBonus(st).toLocaleString('de-AT')} mit einer besseren Route als die Auskunft)</small></p>
+        <p class="maxpts">Max. <b>${maxRoundPoints(st).toLocaleString('de-AT')}</b> Punkte pro Runde <small>(bis ${maxRoundPointsWithBonus(st).toLocaleString('de-AT')} mit einer Route, die schneller ist als die beste Verbindung)</small></p>
         ${
           host
             ? st.xtreme !== 'off'

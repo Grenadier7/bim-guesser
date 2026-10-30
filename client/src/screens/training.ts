@@ -167,7 +167,7 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
     setMapBig(false);
     for (const r of mem.retry) r.due--;
     const due = mem.retry.find((r) => r.due <= 0);
-    panel.innerHTML = loadingHtml(due ? 'Wiederholung wird geladen …' : 'Strecke wird gesucht …', 'Der Fahrplan wird für mehrere Abfahrtszeiten durchgerechnet.');
+    panel.innerHTML = loadingHtml(due ? 'Wiederholung wird geladen …' : 'Strecke wird gesucht …');
     try {
       round = due ? await api.trainingRound(settings(), { from: due.from, to: due.to }) : await (prefetch ?? api.trainingRound(settings()));
       isRetry = !!due;

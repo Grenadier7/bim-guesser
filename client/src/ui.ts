@@ -73,7 +73,7 @@ function withText(trains: string[] | undefined, prefix: string): string {
 function waitNote(route: RouteOption): string {
   const wait = route.medianMin - route.rideMin;
   if (wait < 2) return '';
-  return `<p class="wait-note">⏳ Gewertet: <b>${route.medianMin} min</b> = Ø ${wait} min Warten auf die erste Abfahrt + ${route.rideMin} min unterwegs. Oben eine Beispielfahrt.</p>`;
+  return `<p class="wait-note">⏳ Gewertet: <b>${route.medianMin} min</b> – inkl. Ø ${wait} min Warten auf die erste Abfahrt.</p>`;
 }
 
 /** Berechneter Zeitplan (Ø-Wartezeiten): genau die Minuten, die gewertet werden */
@@ -89,8 +89,7 @@ function stepsDetails(route: RouteOption, star?: StarFn): string {
   });
   const end = route.steps!.length ? route.steps![route.steps!.length - 1] : null;
   const endAt = end ? addMin(end.at, end.min) : '';
-  return `<ol class="leg-detail">${rows.join('')}<li class="ld-end"><span class="ld-time">${esc(endAt)}</span><span>🏁 Ankunft – <b>${route.medianMin} min</b></span></li></ol>
-    <p class="wait-note">Berechnet mit Ø-Wartezeiten (halber Takt) und Umsteigezeit.</p>`;
+  return `<ol class="leg-detail">${rows.join('')}<li class="ld-end"><span class="ld-time">${esc(endAt)}</span><span>🏁 Ankunft – <b>${route.medianMin} min</b></span></li></ol>`;
 }
 
 function addMin(hhmm: string, min: number): string {

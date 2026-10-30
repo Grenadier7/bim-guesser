@@ -293,7 +293,7 @@ async function suggestion(net: Network, leg: UserLeg, slotTime: number): Promise
     const pt = trips[0]?.legs.filter((l) => l.mode !== 'W') ?? [];
     if (!pt.length) return '';
     const parts = pt.map((l) => `${l.line ?? '?'} bis ${efa.cleanName(l.to.name)}`);
-    return ` So geht es laut Auskunft zu dieser Zeit: ${parts.join(', dann ')}.`;
+    return ` So fährt man zu dieser Zeit: ${parts.join(', dann ')}.`;
   } catch {
     return '';
   }

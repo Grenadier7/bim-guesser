@@ -241,7 +241,7 @@ export class Game extends Lobby {
         const minTransfers = attempt < 12 ? wanted : 0;
         routes = sortRoutes(await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), minTransfers }), this.settings);
       } catch (e) {
-        if (e instanceof EfaUnavailableError) throw new GameError('Die Wiener-Linien-Auskunft antwortet gerade nicht – bitte in einer Minute nochmal starten.', 503);
+        if (e instanceof EfaUnavailableError) throw new GameError('Die Runde konnte gerade nicht vorbereitet werden – bitte in einer Minute nochmal starten.', 503);
         throw e;
       }
       if (!routes.length || routes[0].key === 'walk') continue;
@@ -256,7 +256,7 @@ export class Game extends Lobby {
       round.routes = routes;
       return routes;
     }
-    throw new GameError('Keine passende Strecke gefunden – bitte nochmal versuchen (evtl. andere Einstellungen).', 502);
+    throw new GameError('Keine passende Strecke gefunden – bitte nochmal starten oder die Einstellungen ändern.', 502);
   }
 
   private async openRound(i: number, gen: number) {
@@ -457,7 +457,7 @@ export class Game extends Lobby {
         durationMin: null,
         matchedRank: null,
         source: 'none' as const,
-        error: 'Deine Route konnte gerade nicht nachgerechnet werden – die Wiener-Linien-Auskunft hat nicht geantwortet.',
+        error: 'Deine Route konnte gerade nicht ausgewertet werden.',
       };
     }
   }

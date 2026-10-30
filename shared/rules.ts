@@ -30,7 +30,7 @@ export const TIME_SLOTS: TimeSlot[] = [
 ];
 
 export const NET_MODES: { id: NetMode; label: string; hint: string }[] = [
-  { id: 'regular', label: 'Regulär', hint: 'Fahrplan eines Referenztags ohne Baustellen' },
+  { id: 'regular', label: 'Regulär', hint: 'Normaler Fahrplan ohne Baustellen' },
   { id: 'current', label: 'Aktuell', hint: 'Nächster echter Tag – inkl. Sperren & Ersatzverkehr' },
 ];
 
@@ -250,21 +250,21 @@ export const SCORING_MODES: { id: ScoringMode; icon: string; label: string; hint
     id: 'realistic',
     icon: '🧭',
     label: 'Realistisch',
-    hint: 'Tür zu Tür, wie im echten Leben: Fahrzeit + Umsteigeweg + durchschnittliche Wartezeit auf jede Linie (S-Bahn alle 15 min → Ø 7,5 min). Ein zufällig perfekter Anschluss bringt nichts. Am Start zählen nur 70 % der Ø-Wartezeit – zur ersten Abfahrt kann man sich die Zeit etwas einteilen.',
+    hint: 'Tür zu Tür wie im echten Leben: Fahrzeit, Umsteigewege und die durchschnittliche Wartezeit auf jede Linie (S-Bahn alle 15 min → Ø 7,5 min, an der ersten Haltestelle 70 % davon). Ein zufällig perfekter Anschluss bringt keinen Vorteil.',
     settings: { countWait: true, avgWait: true, goal: 'fastest' },
   },
   {
     id: 'info',
     icon: '🕐',
     label: 'Wie die Auskunft',
-    hint: 'Wie WienMobil oder AnachB „ab jetzt“: echte Abfahrten ab der Abfragezeit (zu 6 Zeitpunkten, Median) – wer einen knappen Anschluss erwischt, hat Glück.',
+    hint: 'Wie WienMobil oder AnachB „ab jetzt“: echte Abfahrten ab der Startzeit – wer einen knappen Anschluss erwischt, hat Glück.',
     settings: { countWait: true, avgWait: false, goal: 'fastest' },
   },
   {
     id: 'ride',
     icon: '🚇',
     label: 'Nur Fahrzeit',
-    hint: 'Nur die Zeit ab dem Einsteigen zählt (echte Abfahrten) – wie lange man am Start wartet, ist egal. Für reines Linienwissen.',
+    hint: 'Nur die Zeit ab dem Einsteigen zählt – wie lange man am Start wartet, ist egal. Für reines Linienwissen.',
     settings: { countWait: false, avgWait: false, goal: 'fastest' },
   },
 ];
@@ -327,7 +327,7 @@ export const XTREME_LEVELS: { id: XtremeLevel; label: string; hint: string }[] =
   {
     id: 'noHints',
     label: 'Ohne Vorschläge',
-    hint: 'Ein- und Ausstieg selbst eintippen (Auto-Vervollständigung aller Stationen), auf der Karte nur Start und Ziel – keine Route.',
+    hint: 'Ein- und Ausstieg selbst eintippen, ohne Vorschläge – auf der Karte nur Start und Ziel.',
   },
   { id: 'noNames', label: 'Ohne Namen', hint: 'Wie „Ohne Vorschläge“ – und Start und Ziel sind nur Punkte auf der Karte, ohne Namen.' },
   { id: 'noMap', label: 'Ohne Karte', hint: 'Wie „Ohne Vorschläge“ – und auf der Karte ist gar nichts eingezeichnet, nur die Namen von Start und Ziel.' },

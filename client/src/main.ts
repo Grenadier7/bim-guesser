@@ -97,7 +97,7 @@ function mount(key: string): Screen {
   app.map.clear();
   const s = app.state;
   const n = (s?.mode === 'route' ? s.currentRound : 0) + 1;
-  panel.innerHTML = loadingHtml(`Runde ${n} wird vorbereitet …`, 'Der Fahrplan wird für mehrere Abfahrtszeiten durchgerechnet.');
+  panel.innerHTML = loadingHtml(`Runde ${n} wird vorbereitet …`);
   panel.prepend(hostBar());
   return {};
 }
@@ -185,7 +185,7 @@ async function init() {
   renderAccount();
   startPolling();
   takeResetLink();
-  panel.innerHTML = loadingHtml('Lade Netzdaten …');
+  panel.innerHTML = loadingHtml('Wird geladen …');
   try {
     app.net = new NetIndex(await api.network());
   } catch (e) {

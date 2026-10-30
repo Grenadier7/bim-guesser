@@ -65,7 +65,7 @@ function statsHtml(s: AccountStats): string {
   return `<h4>📊 Statistik</h4>
     <div class="stats">
       ${tile(s.games, 'Routenjagden')}${tile(s.wins, 'Siege')}${tile(s.rounds, 'Runden')}${tile(s.avgRoute, 'Ø Routenpunkte')}
-      ${tile(s.bestRound, 'beste Runde')}${tile(s.perfectRounds, 'Volltreffer')}${tile(s.beatApi, 'besser als Auskunft')}${tile(s.quizGames, 'Quiz-Spiele')}
+      ${tile(s.bestRound, 'beste Runde')}${tile(s.perfectRounds, 'Volltreffer')}${tile(s.beatApi, 'Bestzeit geschlagen')}${tile(s.quizGames, 'Quiz-Spiele')}
       ${tile(s.trainings, 'Trainingsstrecken')}${tile(`${Math.round(s.minutes / 60)} h`, 'in Öffis unterwegs')}${tile(`${s.coursesDone}/9`, 'Kurse')}${tile(s.coursesMastered, 'gemeistert')}
     </div>
     <h4>❤️ Lieblinge</h4>
@@ -117,7 +117,7 @@ async function privacyHtml(): Promise<string> {
       Kein Tracking, keine Werbung, keine Analyse-Dienste.</p>
     <h4>Mit Account wird gespeichert</h4>
     <ul>
-      <li><b>Benutzername</b> und <b>Passwort</b> – das Passwort nur verschlüsselt (Argon2), niemand kann es lesen.</li>
+      <li><b>Benutzername</b> und <b>Passwort</b> – das Passwort nur verschlüsselt, niemand kann es lesen.</li>
       <li><b>E-Mail</b> (freiwillig) – nur für „Passwort vergessen“, nie sichtbar für andere.</li>
       <li>Dein <b>Spielstand</b>: Lernfortschritt, Einstellungen, Tutorial – damit er auf allen Geräten gleich ist.</li>
       <li><b>Statistik</b>: Spiele, Punkte, Medaillen, Lieblingslinien, Freundschaften und Einladungen, wann du zuletzt online warst.</li>
@@ -320,8 +320,8 @@ function bind() {
             break;
           case 'forgot':
             await accountApi.forgot(v('email'));
-            f.innerHTML = `<p class="good">📬 Wenn <b>${esc(v('email'))}</b> bei einem Account eingetragen ist, ist jetzt eine E-Mail mit Link unterwegs (gilt 1 Stunde).</p>
-              <p class="muted">Nichts da? Schau im Spam-Ordner nach. Mails gehen nur an Adressen, die im Account unter ⚙️ eingetragen sind.</p>`;
+            f.innerHTML = `<p class="good">📬 Falls zu <b>${esc(v('email'))}</b> ein Account gehört, ist jetzt eine E-Mail mit Link unterwegs (1 Stunde gültig).</p>
+              <p class="muted">Nichts angekommen? Schau auch im Spam-Ordner nach.</p>`;
             break;
           case 'email':
             account.me = await accountApi.setEmail(v('email'));

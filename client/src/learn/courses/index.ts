@@ -185,7 +185,7 @@ export function courseView(panel: HTMLElement, course: Course, onBack: () => voi
     const task = run.current;
     if (!task) return renderExamDone(run);
     const { done, left } = run.position;
-    const f = frame(`${course.title} – Prüfung`, run.isRetry ? 'Wiederholung – zählt nicht mehr, aber du sollst es können' : `Aufgabe ${done + 1} von ${run.total}`, done / (done + left));
+    const f = frame(`${course.title} – Prüfung`, run.isRetry ? 'Wiederholung – zählt nicht mehr für die Wertung' : `Aufgabe ${done + 1} von ${run.total}`, done / (done + left));
     f.prev.textContent = 'Prüfung abbrechen';
     f.prev.addEventListener('click', () => (leave(), onBack()));
     unmount = mountTask(f.box, task, (r) => {

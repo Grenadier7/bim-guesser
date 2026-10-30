@@ -39,7 +39,7 @@ export class TrainingService {
     try {
       return await this.createInner(rawSettings, pair);
     } catch (e) {
-      if (e instanceof EfaUnavailableError) throw new GameError('Die Wiener-Linien-Auskunft antwortet gerade nicht – bitte gleich nochmal.', 503);
+      if (e instanceof EfaUnavailableError) throw new GameError('Die Strecke konnte gerade nicht geladen werden – bitte gleich nochmal.', 503);
       if (e instanceof NoPairError) throw new GameError(e.message, 422);
       throw e;
     }
@@ -93,7 +93,7 @@ export class TrainingService {
     try {
       res = await evaluateUserRoute(this.net, cleanLegs(legs), r.from.id, r.to.id, r.time, r.settings.network, this.query(r.settings), r.routes);
     } catch {
-      throw new GameError('Die Wiener-Linien-Auskunft antwortet gerade nicht – bitte gleich nochmal auswerten.', 503);
+      throw new GameError('Die Route konnte gerade nicht ausgewertet werden – bitte gleich nochmal.', 503);
     }
     return { route: res.route, durationMin: res.durationMin, matchedRank: res.matchedRank, error: res.error };
   }

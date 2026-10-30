@@ -102,7 +102,7 @@ Oben rechts **👤 Anmelden** – ohne Account geht alles wie bisher. Mit Accoun
   geht nie verloren), danach gilt der Account (`client/src/account.ts`, `client/src/boot.ts`).
 - **Level & XP**: Runde 5 + Punkte/20, Routenjagd 20 (+30 Sieg), Quiz 10 + Punkte/50 (+20 Sieg), Trainingsstrecke
   10–20, Kurs 40 (+60 gemeistert), Tutorial 50. Level 2 bei 100 XP, jedes weitere Level 50 XP mehr.
-- **Medaillen** (14): z.B. Volltreffer (1000 Routenpunkte), Schlauer als die Auskunft, Volle 1300, Sieger, Quiz-Ass,
+- **Medaillen** (14): z.B. Volltreffer (1000 Routenpunkte), Schneller als die Bestzeit, Volle 1300, Sieger, Quiz-Ass,
   Netzkenner/Netzmeister (Lernpfad), Gesellig (3 Freunde) – neue werden gemeldet.
 - **Statistik & Lieblinge**: Spiele, Siege, Ø Routenpunkte, Zeit in Öffis, Kurse; Lieblingslinie je U-Bahn/S-Bahn/
   Bim/Bus und Lieblingsstation. Gezählt wird die *bewusste Wahl*: Gab es an der Einstiegsstation keine andere Linie

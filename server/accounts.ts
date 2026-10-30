@@ -68,7 +68,7 @@ const MEDALS: { id: string; icon: string; title: string; text: string }[] = [
   { id: 'games-10', icon: '🎫', title: 'Stammgast', text: '10 Routenjagden gespielt' },
   { id: 'games-50', icon: '🏟', title: 'Dauerkarte', text: '50 Routenjagden gespielt' },
   { id: 'perfect', icon: '🎯', title: 'Volltreffer', text: 'Eine Runde so schnell wie die beste Verbindung (1000 Routenpunkte)' },
-  { id: 'beat-api', icon: '🧠', title: 'Schlauer als die Auskunft', text: 'Eine schnellere Route als die beste der Auskunft gefunden' },
+  { id: 'beat-api', icon: '🧠', title: 'Schneller als die Bestzeit', text: 'Eine Route gefunden, die schneller ist als die beste Verbindung' },
   { id: 'max-route', icon: '💎', title: 'Volle 1300', text: 'Alle 1300 Routenpunkte in einer Runde' },
   { id: 'winner', icon: '🏆', title: 'Sieger', text: 'Eine Routenjagd gegen andere gewonnen' },
   { id: 'quiz-ace', icon: '🥇', title: 'Quiz-Ass', text: 'Ein Quiz ohne einen Fehler' },

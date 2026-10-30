@@ -33,7 +33,7 @@ test('Regression H-02: Auskunft fällt vor Runde 2 aus → Spiel endet mit Runde
 test('Auskunft fällt vor Runde 1 aus → zurück in die Lobby mit verständlicher Meldung', async () => {
   mock.fail = true;
   const { g, host } = newGame();
-  await assert.rejects(g.start(host.token), /Auskunft/);
+  await assert.rejects(g.start(host.token), /nicht vorbereitet/);
   assert.equal(g.state().phase, 'lobby');
   mock.fail = false;
 });
