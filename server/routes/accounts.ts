@@ -79,15 +79,24 @@ export function accountRoutes(app: Express, accounts: Accounts, alive: (code: st
       return { ok: true };
     }),
   );
+  /** Adresse für den Link in der Reset-Mail – nie aus dem Host-Header (nur lokal in der Entwicklung unbedenklich) */
+  const resetBase = (req: Request): string | null => {
+    const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(req.get('host') ?? '');
+    return publicUrl() ?? (local ? `${req.protocol}://${req.get('host')}` : null);
+  };
+  /** kann dieser Server Reset-Mails schicken? (sonst blendet die Seite „Passwort vergessen“ aus) */
+  const canReset = (req: Request) => !!accounts.mail && !!resetBase(req);
+
   app.post(
     '/api/auth/forgot',
     limitForgot,
     h(async (req) => {
-      if (!accounts.mail) throw new GameError('Passwort-Reset per E-Mail ist auf diesem Server nicht eingerichtet.', 503);
-      // Link nie aus dem Host-Header bauen – nur lokal (Entwicklung) ist das unbedenklich
-      const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(req.get('host') ?? '');
-      const base = publicUrl() ?? (local ? `${req.protocol}://${req.get('host')}` : null);
-      if (!base) throw new GameError('Passwort-Reset ist auf diesem Server nicht eingerichtet (PUBLIC_URL fehlt).', 503);
+      const base = resetBase(req);
+      if (!accounts.mail || !base) {
+        // technische Ursache nur ins Log – Spieler bekommen eine verständliche Meldung
+        console.warn(`„Passwort vergessen“ angefragt, aber ${accounts.mail ? 'PUBLIC_URL' : 'SMTP_URL'} fehlt – Reset ist aus.`);
+        throw new GameError(`Passwort zurücksetzen geht hier gerade nicht.${contactEmail() ? ` Schreib an ${contactEmail()}.` : ''}`, 503);
+      }
       await accounts.forgot(req.body?.email, base);
       return { ok: true };
     }),
@@ -131,7 +140,7 @@ export function accountRoutes(app: Express, accounts: Accounts, alive: (code: st
     }),
   );
   // für den Datenschutz-Hinweis: Kontaktadresse (CONTACT_EMAIL, sonst Absender der Mails) und ob Mails verschickt werden
-  app.get('/api/privacy', h(() => ({ contact: contactEmail(), mail: !!accounts.mail })));
+  app.get('/api/privacy', h((req) => ({ contact: contactEmail(), mail: canReset(req) })));
   app.delete('/api/me/invites/:id', h((req) => (accounts.dropInvite(user(req).id, Number(param(req, 'id'))), { ok: true })));
 
   // Leute, Profile, Freunde

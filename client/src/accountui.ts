@@ -102,8 +102,15 @@ const userRow = (u: UserListItem) =>
 // ---------------------------------------------------------------- Inhalt
 
 /** Datenschutz-Hinweis – kurz und in normaler Sprache */
+/** Kontakt und ob Reset-Mails gehen – ändert sich nur mit einem Neustart des Servers, also einmal holen */
+let serverInfoP: Promise<{ contact: string | null; mail: boolean }> | null = null;
+function serverInfo() {
+  serverInfoP ??= accountApi.privacy().catch(() => ((serverInfoP = null), { contact: null, mail: false }));
+  return serverInfoP;
+}
+
 async function privacyHtml(): Promise<string> {
-  const p = await accountApi.privacy().catch(() => ({ contact: null, mail: false }));
+  const p = await serverInfo();
   return `<div class="privacy">
     <h4>Ohne Account</h4>
     <p>Einstellungen, Lernstand und Tutorial bleiben nur in deinem Browser. Am Server gibt es dazu nichts. Dein Spielname ist nur in der Lobby sichtbar, solange sie besteht.
@@ -158,11 +165,17 @@ async function body(): Promise<string> {
         <p>Neues Passwort festlegen:</p>
         <label class="field"><span>Neues Passwort <small class="muted">(mind. 8 Zeichen)</small></span><input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
         <button class="btn btn-primary">Speichern und anmelden</button></form>`;
+    const srv = await serverInfo();
+    const forgot = srv.mail
+      ? '<button type="button" class="link" data-tab="forgot">Passwort vergessen?</button>'
+      : srv.contact
+        ? `Passwort vergessen? Schreib an <a href="mailto:${esc(srv.contact)}">${esc(srv.contact)}</a>.`
+        : '';
     return `<form class="acct-form" data-form="login">
       <label class="field"><span>Benutzername oder E-Mail</span><input name="name" required autocomplete="username"></label>
       <label class="field"><span>Passwort</span><input name="password" type="password" required autocomplete="current-password"></label>
       <button class="btn btn-primary btn-big">Anmelden</button>
-      <p class="muted">Du bleibst auf diesem Gerät angemeldet. <button type="button" class="link" data-tab="forgot">Passwort vergessen?</button></p></form>`;
+      <p class="muted">Du bleibst auf diesem Gerät angemeldet. ${forgot}</p></form>`;
   }
   if (tab === 'people') {
     const list = await accountApi.users(peopleQuery);
