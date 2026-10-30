@@ -317,8 +317,8 @@ automatisch:
 1. **GitHub Actions** (`.github/workflows/release.yml`): Typecheck + Tests + Build → Image `ghcr.io/grenadier7/bim-guesser:v…` und `:latest`.
 2. **Ditto** (`deploy/update.sh`, per cron alle 2 min): neues `:latest` gefunden → wartet, bis kein Spiel läuft
    (Lobbys leben nur im Arbeitsspeicher, max. 15 min) → startet den Container neu → prüft `/api/health` →
-   bei Fehler zurück auf die vorige Version. Log: `~/docker/services/oeffi-guesser/update.log`.
-   Sofort aktualisieren (ohne auf Spielpause zu warten): `~/docker/services/oeffi-guesser/update.sh --now`.
+   bei Fehler zurück auf die vorige Version. Log: `~/docker/services/bimguesser/update.log`.
+   Sofort aktualisieren (ohne auf Spielpause zu warten): `~/docker/services/bimguesser/update.sh --now`.
 
 Normale Commits und Pushes deployen nichts – nur Tags `v*`.
 
@@ -327,8 +327,8 @@ Normale Commits und Pushes deployen nichts – nur Tags `v*`.
 - `deploy/compose.snippet.yml` in `~/docker/compose.yml` unter `services:` einfügen, in `~/docker/.env`
   `NGROK_AUTHTOKEN` und `NGROK_DOMAIN` setzen.
 - `deploy/Caddyfile.snippet` ins Caddyfile übernehmen, Caddy neu laden.
-- `deploy/update.sh` nach `~/docker/services/oeffi-guesser/` kopieren, ausführbar machen, cron-Eintrag:
-  `*/2 * * * * ~/docker/services/oeffi-guesser/update.sh >> ~/docker/services/oeffi-guesser/update.log 2>&1`
+- `deploy/update.sh` nach `~/docker/services/bimguesser/` kopieren, ausführbar machen, cron-Eintrag:
+  `*/2 * * * * ~/docker/services/bimguesser/update.sh >> ~/docker/services/bimguesser/update.log 2>&1`
 - Das Paket `bim-guesser` auf GitHub (Packages) auf **public** stellen – sonst braucht Ditto ein `docker login ghcr.io`.
 
 **Container-Details:** `Dockerfile` (Node 24, läuft als Benutzer `node`), Laufzeitdaten (Auskunfts-Cache,

@@ -41,8 +41,15 @@ setInterval(() => {
 /** Alle Limits mit diesem Faktor (Standard 1) – Tests setzen RATE_LIMIT_SCALE hoch, damit sie nicht ausgebremst werden */
 export const SCALE = Math.max(1, Number(process.env.RATE_LIMIT_SCALE) || 1);
 
-/** Höchstens `max` Anfragen pro `windowMs` und IP für diesen Bereich */
-export function rateLimit(name: string, max: number, windowMs: number, message = 'Zu viele Anfragen – bitte kurz warten.') {
+/** „in 40 Sekunden“, „in 1 Minute“, „in 23 Minuten“ */
+export function waitText(sec: number): string {
+  if (sec < 60) return `in ${sec} Sekunde${sec === 1 ? '' : 'n'}`;
+  const min = Math.ceil(sec / 60);
+  return `in ${min} Minute${min === 1 ? '' : 'n'}`;
+}
+
+/** Höchstens `max` Anfragen pro `windowMs` und IP für diesen Bereich; `{wait}` in der Meldung wird zur Wartezeit („in 23 Minuten“) */
+export function rateLimit(name: string, max: number, windowMs: number, message = 'Zu viele Anfragen – bitte {wait} nochmal.') {
   max *= SCALE;
   return (req: Request, res: Response, next: NextFunction) => {
     const key = `${name}:${req.ip}`;
@@ -50,8 +57,9 @@ export function rateLimit(name: string, max: number, windowMs: number, message =
     const b = buckets.get(key) ?? { hits: [] };
     b.hits = b.hits.filter((t) => now - t < windowMs);
     if (b.hits.length >= max) {
-      res.set('Retry-After', String(Math.ceil((windowMs - (now - b.hits[0])) / 1000)));
-      res.status(429).json({ error: message });
+      const sec = Math.max(1, Math.ceil((windowMs - (now - b.hits[0])) / 1000));
+      res.set('Retry-After', String(sec));
+      res.status(429).json({ error: message.replace('{wait}', waitText(sec)), retryAfter: sec });
       return;
     }
     b.hits.push(now);

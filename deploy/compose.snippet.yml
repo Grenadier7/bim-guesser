@@ -1,5 +1,7 @@
-# In ~/docker/compose.yml unter "services:" einfügen.
-# Dazu in ~/docker/.env:
+# In ~/docker/services/compose.yml unter "services:" einfügen – alles für BimGuesser liegt in ~/docker/services/bimguesser
+# (State-Ordner vorher als normaler Benutzer anlegen: mkdir -p ~/docker/services/bimguesser/state – legt ihn Docker an,
+# gehört er root und der Server (Benutzer 1000) kann accounts.db nicht schreiben).
+# Dazu in ~/docker/services/.env:
 #   NGROK_AUTHTOKEN=…            (ngrok-Dashboard → Your Authtoken)
 #   NGROK_DOMAIN=…ngrok-free.dev (ngrok-Dashboard → Domains, ohne https://)
 #   SMTP_URL=smtps://benutzer:passwort@mail.example.org:465   (für „Passwort vergessen“, optional)
@@ -19,7 +21,7 @@
       - MAIL_FROM=${MAIL_FROM:-BimGuesser <noreply@example.org>}
       - CONTACT_EMAIL=${CONTACT_EMAIL:-}
     volumes:
-      - ./services/oeffi-guesser/state:/app/state # Auskunfts-Cache, Statistik, Accounts (accounts.db – mitsichern!)
+      - ./bimguesser/state:/app/state # Auskunfts-Cache, Statistik, Accounts (accounts.db – mitsichern!)
     networks:
       - proxy_network
 

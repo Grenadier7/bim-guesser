@@ -30,6 +30,7 @@ import { MONOTONE_KEYS, mergeProgress } from '../shared/progress.ts';
 import { GameError, type Lobby } from './lobby.ts';
 import type { Network } from './network.ts';
 import { STATE_DIR } from './paths.ts';
+import { maskEmail } from './mail.ts';
 
 // ---------------------------------------------------------------- Regeln
 
@@ -173,8 +174,16 @@ export class Accounts {
     this.net = net;
     this.mail = opts.mail;
     const file = opts.file ?? process.env.ACCOUNTS_DB ?? path.join(STATE_DIR, 'accounts.db');
-    if (file !== ':memory:') mkdirSync(path.dirname(file), { recursive: true });
-    this.db = new DatabaseSync(file);
+    try {
+      if (file !== ':memory:') mkdirSync(path.dirname(file), { recursive: true });
+      this.db = new DatabaseSync(file);
+    } catch (e) {
+      // häufigster Fall im Container: State-Ordner gehört root (von Docker angelegt) → klar sagen, was zu tun ist
+      throw new Error(
+        `Account-Datenbank ${file} lässt sich nicht öffnen (${(e as Error).message}). Darf der Server in den Ordner schreiben? ` +
+          `Im Container läuft er als Benutzer 1000 – auf dem Host z.B.: sudo chown -R 1000:1000 <State-Ordner>`,
+      );
+    }
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     this.db.exec(SCHEMA);
     this.cleanup();
@@ -307,13 +316,16 @@ export class Accounts {
 
   // -------------------------------------------------------------- Passwort vergessen
 
-  /** Reset-Link per Mail; antwortet immer gleich (verrät nicht, ob es die Adresse gibt) */
+  /**
+   * Reset-Link per Mail. Verrät nie, ob es die Adresse gibt: gleiche Antwort, sofort (verschickt wird im Hintergrund –
+   * sonst wäre die Antwort bei echten Accounts messbar langsamer), und ein Versandfehler landet nur im Log.
+   */
   async forgot(email: unknown, baseUrl: string): Promise<void> {
     const mail = cleanEmail(email);
-    if (!mail) return;
+    if (!mail || !this.mail) return;
     const users = this.db.prepare('SELECT * FROM users WHERE email = ?').all(mail) as unknown as UserRow[];
-    if (!users.length || !this.mail) {
-      if (users.length) console.warn('Passwort-Reset angefragt, aber kein Mailversand eingerichtet (SMTP_URL).');
+    if (!users.length) {
+      console.log(`Passwort-Reset: kein Account mit ${maskEmail(mail)}`);
       return;
     }
     const links: string[] = [];
@@ -322,10 +334,13 @@ export class Accounts {
       this.db.prepare('INSERT INTO resets (hash, user_id, expires) VALUES (?, ?, ?)').run(sha(t), u.id, Date.now() + RESET_MS);
       links.push(`${u.name}: ${baseUrl}/?reset=${t}`);
     }
-    await this.mail(
+    this.mail(
       mail,
       'BimGuesser – Passwort zurücksetzen',
       `Hallo!\n\nJemand (hoffentlich du) möchte das Passwort für BimGuesser zurücksetzen. Der Link gilt 1 Stunde:\n\n${links.join('\n')}\n\nWarst du das nicht? Dann einfach ignorieren – dein Passwort bleibt, wie es ist.\n`,
+    ).then(
+      () => console.log(`Passwort-Reset: Mail an ${maskEmail(mail)} verschickt`),
+      (e: Error) => console.warn(`✖ Passwort-Reset: Mail an ${maskEmail(mail)} fehlgeschlagen – ${e.message}`),
     );
   }
 

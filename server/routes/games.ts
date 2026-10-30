@@ -10,13 +10,13 @@ import { QuizGame } from '../quiz.ts';
 import { closeStream, openStream, rateLimit } from '../security.ts';
 
 export function gameRoutes(app: Express, games: GameManager, account?: { accounts: Accounts; optionalUser: (req: Request) => AccountUser | null }) {
-  const limitInvite = rateLimit('invite', 30, 10 * MIN, 'Zu viele Einladungen – bitte kurz warten.');
-  const limitCreate = rateLimit('create', 10, 10 * MIN, 'Zu viele neue Lobbys – bitte in ein paar Minuten nochmal.');
-  const limitJoin = rateLimit('join', 30, 10 * MIN, 'Zu viele Beitrittsversuche – bitte kurz warten.');
+  const limitInvite = rateLimit('invite', 30, 10 * MIN, 'Zu viele Einladungen – bitte {wait} nochmal.');
+  const limitCreate = rateLimit('create', 10, 10 * MIN, 'Zu viele neue Lobbys – bitte {wait} nochmal.');
+  const limitJoin = rateLimit('join', 30, 10 * MIN, 'Zu viele Beitrittsversuche – bitte {wait} nochmal.');
   // jeder Start fragt die Wiener-Linien-API dutzende Male ab
-  const limitStart = rateLimit('start', 12, 10 * MIN, 'Zu viele Spielstarts – bitte kurz warten.');
+  const limitStart = rateLimit('start', 12, 10 * MIN, 'Zu viele Spielstarts – bitte {wait} nochmal.');
   const limitEvents = rateLimit('events', 60, MIN);
-  const limitChat = rateLimit('chat', 60, MIN, 'Zu viele Nachrichten – bitte kurz warten.');
+  const limitChat = rateLimit('chat', 60, MIN, 'Zu viele Nachrichten – nächste {wait}.');
 
   // fehlende Lobby antwortet wie ein fremder Token (403) – sonst ließen sich Codes ausprobieren (Befund L-07).
   // Nur „Beitreten“ sagt ausdrücklich „Lobby nicht gefunden“ (dort mit eigenem Rate-Limit).

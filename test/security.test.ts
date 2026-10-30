@@ -359,6 +359,20 @@ function defineTests() {
   });
 
   describe('Ressourcen', () => {
+    test('Rate-Limit sagt, wie lange man warten muss („Passwort vergessen“: 5 je 30 min)', async () => {
+      const s = await spawnServer({ env: { RATE_LIMIT_SCALE: '1', MAIL_FILE: path.join(tmpdir(), `bg-mails-${process.pid}.jsonl`) } });
+      try {
+        const st: number[] = [];
+        let last: { status: number; body: { error?: string; retryAfter?: number } } | null = null;
+        for (let i = 0; i < 6; i++) st.push((last = await s.call('POST', '/api/auth/forgot', { email: 'wer@example.org' })).status);
+        assert.deepEqual(st, [200, 200, 200, 200, 200, 429]);
+        assert.match(String(last!.body.error), /bitte in (30|29) Minuten nochmal/);
+        assert.ok(last!.body.retryAfter! > 1700 && last!.body.retryAfter! <= 1800);
+      } finally {
+        await s.stop();
+      }
+    });
+
     test('Live-Verbindungen: höchstens 3 pro Spieler', async () => {
       const s = await spawnServer();
       try {

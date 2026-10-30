@@ -297,7 +297,8 @@ function bind() {
             break;
           case 'forgot':
             await accountApi.forgot(v('email'));
-            f.innerHTML = '<p class="good">📬 Falls es einen Account mit dieser Adresse gibt, ist eine E-Mail unterwegs (Link gilt 1 Stunde).</p>';
+            f.innerHTML = `<p class="good">📬 Wenn <b>${esc(v('email'))}</b> bei einem Account eingetragen ist, ist jetzt eine E-Mail mit Link unterwegs (gilt 1 Stunde).</p>
+              <p class="muted">Nichts da? Schau im Spam-Ordner nach. Mails gehen nur an Adressen, die im Account unter ⚙️ eingetragen sind.</p>`;
             break;
           case 'email':
             account.me = await accountApi.setEmail(v('email'));
