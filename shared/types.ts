@@ -566,6 +566,102 @@ export interface Me {
   friendRequests: number;
   friendsOnline: string[];
   invites: InvitePublic[];
+  /** darf die Admin-Seite sehen (vergeben nur über die Kommandozeile) */
+  admin?: boolean;
+}
+
+// ---------------------------------------------------------------- Admin
+
+export interface AdminUserRow {
+  name: string;
+  email: string | null;
+  admin: boolean;
+  created: number;
+  lastSeen: number;
+  online: boolean;
+  level: number;
+  games: number;
+  sessions: number;
+}
+
+export interface AdminUserDetail extends AdminUserRow {
+  xp: number;
+  stats: AccountStats;
+  medals: MedalPublic[];
+  friends: string[];
+  incoming: string[];
+  outgoing: string[];
+  /** synchronisierter Spielstand: Schlüssel → Größe in Bytes */
+  data: Record<string, number>;
+  invites: number;
+}
+
+export interface AdminLogEntry {
+  at: number;
+  admin: string;
+  action: string;
+  target: string | null;
+  detail: string | null;
+}
+
+export interface AdminLobby {
+  code: string;
+  mode: GameMode;
+  phase: string;
+  players: { name: string; account?: string; connected: boolean }[];
+  createdAt: number;
+  lastActivity: number;
+}
+
+export interface AdminOverview {
+  version: string;
+  uptimeSec: number;
+  memoryMb: number;
+  users: { total: number; online: number; new7d: number; admins: number; withEmail: number };
+  lobbies: AdminLobby[];
+  activeGames: number;
+  mail: boolean;
+  warnings: string[];
+  timetable: { loaded: boolean; validUntil: string | null };
+}
+
+/** Stellschrauben der Routenberechnung (Standardwerte siehe server/overrides.ts) */
+export interface RoutingParams {
+  /** Umsteigen an derselben Haltestelle (min) */
+  changeMin: number;
+  /** Fußweg zu einer anderen Haltestelle höchstens (m) */
+  transferWalkM: number;
+  /** von/zu einer Adresse höchstens zu Fuß (m) */
+  accessWalkM: number;
+  /** ganz zu Fuß bis (m) */
+  walkOnlyM: number;
+  /** höchstens so viele Fahrten in einer Verbindung */
+  maxRides: number;
+  /** „Realistisch“: Anteil der Ø-Wartezeit an der ersten Haltestelle */
+  firstWaitFactor: number;
+}
+
+/** Änderung an einer Linie im Referenzfahrplan – Stationen als Netz-IDs */
+export type LineEdit =
+  /** über die bisherige Endstation `at` hinaus weiterfahren: `stops` der Reihe nach, `min` = Fahrzeit ab dem vorigen Halt */
+  | { kind: 'extend'; line: string; at: string; stops: { station: string; min: number }[] }
+  /** bei `at` enden: den Teil Richtung `beyond` weglassen */
+  | { kind: 'cut'; line: string; at: string; beyond: string }
+  /** Fahrzeit zwischen zwei aufeinanderfolgenden Halten (beide Richtungen) */
+  | { kind: 'time'; line: string; from: string; to: string; min: number };
+
+export interface RoutingOverrides {
+  params: Partial<RoutingParams>;
+  edits: LineEdit[];
+  updatedAt?: number;
+  updatedBy?: string;
+}
+
+export interface RoutingAdminState {
+  overrides: RoutingOverrides;
+  defaults: RoutingParams;
+  /** Ergebnis beim Anwenden: je Änderung, wie viele Fahrten/Haltefolgen betroffen waren, oder ein Fehler */
+  report: string[];
 }
 
 export interface FriendsList {

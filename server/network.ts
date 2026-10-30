@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { distM, normName } from '../shared/geo.ts';
-import type { GameSettings, Headways, Line, NetMode, NetworkData, NetworkPublic, SlotId, Station, StationKind, StationRef } from '../shared/types.ts';
+import type { GameSettings, Headways, Line, LineEdit, NetMode, NetworkData, NetworkPublic, SlotId, Station, StationKind, StationRef } from '../shared/types.ts';
 import { distanceRange, linePatterns } from '../shared/rules.ts';
 import { inStationKinds } from '../shared/pools.ts';
 import type { EfaPoint } from './efa.ts';
@@ -51,6 +51,9 @@ export class Network {
    *  versehentlich als Haltestelle erkannt werden */
   private virtual = new Map<string, Station>();
   private addresses: [number, number, string, number][] = [];
+  /** Haltefolgen wie in network.json – Linien-Änderungen der Admin-Seite setzen immer hier auf */
+  private baseLines = new Map<string, { patterns: string[][]; nets: string[] }>();
+  private baseStationLines = new Map<string, string[]>();
 
   constructor(data: NetworkData) {
     this.data = data;
@@ -64,13 +67,72 @@ export class Network {
       const k = normName(s.name);
       this.byNorm.set(k, [...(this.byNorm.get(k) ?? []), s]);
     }
-    for (const l of data.lines) this.lines.set(l.id, l);
+    for (const l of data.lines) {
+      this.lines.set(l.id, l);
+      this.baseLines.set(l.id, { patterns: l.patterns.map((p) => [...p]), nets: [...l.nets] });
+    }
+    for (const s of data.stations) this.baseStationLines.set(s.id, [...s.lines]);
     for (const [sid, ids] of Object.entries(data.efaIds)) for (const id of ids) this.efaToStation.set(id, sid);
     try {
       for (const [id, n] of Object.entries(JSON.parse(readFileSync(USAGE_FILE, 'utf8')) as Record<string, number>)) this.usage.set(id, n);
     } catch {
       /* noch keine Statistik */
     }
+  }
+
+  /** Netz-Station zu einer EFA-ID */
+  stationOfEfa(efaId: string): string | null {
+    return this.efaToStation.get(efaId) ?? null;
+  }
+
+  /**
+   * Linien-Änderungen (Admin-Seite) auf die Haltefolgen des regulären Netzes anwenden – damit man eine verlängerte
+   * Linie im Routen-Baukasten auch bis zum neuen Ende wählen kann. Fahrzeiten ändern nur den Fahrplan (timetable.ts).
+   * Beginnt immer beim Stand aus network.json; Haltefolgen, die auch im aktuellen Netz gelten („cr“), bleiben dort gleich.
+   */
+  applyLineEdits(edits: LineEdit[]) {
+    for (const [id, b] of this.baseLines) {
+      const l = this.lines.get(id)!;
+      l.patterns = b.patterns.map((p) => [...p]);
+      l.nets = [...b.nets];
+    }
+    for (const s of this.data.stations) s.lines = [...this.baseStationLines.get(s.id)!];
+    for (const e of edits) {
+      const line = this.lines.get(e.line);
+      if (!line || e.kind === 'time') continue;
+      const edit = (p: string[]): string[] => {
+        if (e.kind === 'extend') {
+          const ids = e.stops.map((s) => s.station).filter((id) => this.stations.has(id));
+          if (!ids.length || p.some((x) => ids.includes(x))) return p;
+          if (p[p.length - 1] === e.at) return [...p, ...ids];
+          if (p[0] === e.at) return [...[...ids].reverse(), ...p];
+          return p;
+        }
+        const ia = p.indexOf(e.at);
+        const ib = p.indexOf(e.beyond);
+        if (ia < 0 || ib < 0) return p;
+        return ib > ia ? p.slice(0, ia + 1) : p.slice(ia);
+      };
+      const patterns: string[][] = [];
+      const nets: string[] = [];
+      line.patterns.forEach((p, i) => {
+        const n = line.nets[i];
+        const q = n.includes('r') ? edit(p) : p;
+        if (q === p) return void (patterns.push(p), nets.push(n));
+        const c = n.replace('r', '');
+        if (c) (patterns.push(p), nets.push(c));
+        if (q.length >= 2) (patterns.push(q), nets.push('r'));
+      });
+      line.patterns = patterns;
+      line.nets = nets;
+      const served = new Set(patterns.flat());
+      for (const id of served) {
+        const s = this.stations.get(id);
+        if (s && !s.lines.includes(line.id)) s.lines.push(line.id);
+      }
+      for (const s of this.data.stations) if (!served.has(s.id) && s.lines.includes(line.id)) s.lines = s.lines.filter((x) => x !== line.id);
+    }
+    this.candidateCache.clear();
   }
 
   /** Start/Ziel verwendet → seltener ziehen (gespeichert in data/usage.json) */

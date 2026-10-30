@@ -9,6 +9,12 @@ import { rateLimit } from '../security.ts';
 
 export const COOKIE = 'bg_sid';
 
+/** Adresse für Links zum Zurücksetzen – nie aus dem Host-Header (nur lokal in der Entwicklung unbedenklich) */
+export function resetBase(req: Request): string | null {
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(req.get('host') ?? '');
+  return publicUrl() ?? (local ? `${req.protocol}://${req.get('host')}` : null);
+}
+
 /** Kontakt für Datenschutz-Fragen: CONTACT_EMAIL oder die Adresse aus MAIL_FROM („Name <adresse>“) */
 export function contactEmail(): string | null {
   const raw = process.env.CONTACT_EMAIL || process.env.MAIL_FROM || '';
@@ -32,7 +38,7 @@ function setCookie(req: Request, res: Response, token: string | null) {
  * Schutz gegen fremde Seiten (CSRF): ändernde Anfragen mit Cookie nur als JSON – ein Formular einer anderen Seite kann
  * kein `application/json` schicken, und ein Skript dort bräuchte eine CORS-Freigabe, die es nicht gibt.
  */
-function jsonOnly(req: Request, _res: Response, next: NextFunction) {
+export function jsonOnly(req: Request, _res: Response, next: NextFunction) {
   if (req.method !== 'GET' && !req.is('application/json')) return next(new GameError('Ungültige Anfrage', 415));
   next();
 }
@@ -79,11 +85,6 @@ export function accountRoutes(app: Express, accounts: Accounts, alive: (code: st
       return { ok: true };
     }),
   );
-  /** Adresse für den Link in der Reset-Mail – nie aus dem Host-Header (nur lokal in der Entwicklung unbedenklich) */
-  const resetBase = (req: Request): string | null => {
-    const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(req.get('host') ?? '');
-    return publicUrl() ?? (local ? `${req.protocol}://${req.get('host')}` : null);
-  };
   /** kann dieser Server Reset-Mails schicken? (sonst blendet die Seite „Passwort vergessen“ aus) */
   const canReset = (req: Request) => !!accounts.mail && !!resetBase(req);
 

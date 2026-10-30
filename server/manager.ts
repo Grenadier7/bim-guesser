@@ -88,6 +88,11 @@ export class GameManager {
     return n;
   }
 
+  /** alle Lobbys (Admin-Übersicht) */
+  list(): Lobby[] {
+    return [...this.games.values()];
+  }
+
   get lobbyCount(): number {
     return this.games.size;
   }

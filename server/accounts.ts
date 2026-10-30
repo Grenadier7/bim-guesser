@@ -9,6 +9,10 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type {
   AccountStats,
+  AdminLogEntry,
+  AdminOverview,
+  AdminUserDetail,
+  AdminUserRow,
   FavoriteLine,
   FriendsList,
   GameMode,
@@ -147,6 +151,7 @@ CREATE TABLE IF NOT EXISTS usage (
   PRIMARY KEY (user_id, kind, key)
 );
 CREATE TABLE IF NOT EXISTS medals (user_id INTEGER NOT NULL, medal TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (user_id, medal));
+CREATE TABLE IF NOT EXISTS admin_log (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, admin TEXT NOT NULL, action TEXT NOT NULL, target TEXT, detail TEXT);
 `;
 
 export interface AccountUser {
@@ -186,6 +191,9 @@ export class Accounts {
     }
     this.db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
     this.db.exec(SCHEMA);
+    // neuere Spalten in bestehenden Datenbanken nachrüsten
+    const cols = new Set((this.db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map((c) => c.name));
+    if (!cols.has('is_admin')) this.db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
     this.cleanup();
   }
 
@@ -287,6 +295,11 @@ export class Accounts {
   async deleteAccount(userId: number, password: unknown) {
     const u = this.row(userId);
     if (!(await verifyPassword(String(password ?? ''), u.pw))) throw new GameError('Das Passwort stimmt nicht.', 401);
+    this.purge(userId);
+  }
+
+  /** alles zu einem Account löschen (eigene Löschung und Admin) */
+  purge(userId: number) {
     this.db.exec('BEGIN');
     try {
       for (const sql of [
@@ -731,9 +744,10 @@ export class Accounts {
   // -------------------------------------------------------------- „Ich“
 
   me(userId: number, alive: (code: string) => boolean): Me {
-    const u = this.row(userId);
+    const u = this.row(userId) as UserRow & { is_admin: number };
     const f = this.friends(userId);
     return {
+      ...(u.is_admin ? { admin: true } : {}),
       name: u.name,
       email: u.email,
       level: this.level(userId),
@@ -743,6 +757,180 @@ export class Accounts {
       friendsOnline: f.friends.filter((x) => x.online).map((x) => x.name),
       invites: this.invites(userId, alive),
     };
+  }
+}
+
+// ================================================================ Admin
+
+/**
+ * Verwaltung für Admins (Rechte nur über die Kommandozeile: server/admin-cli.ts). Jede Änderung landet im Protokoll.
+ * Als eigene Klasse über derselben Datenbank, damit die Spiel-Logik in Accounts übersichtlich bleibt.
+ */
+export class AccountAdmin {
+  private acc: Accounts;
+
+  constructor(acc: Accounts) {
+    this.acc = acc;
+  }
+
+  private get db(): DatabaseSync {
+    return (this.acc as unknown as { db: DatabaseSync }).db;
+  }
+
+  private target(name: string): UserRow & { is_admin: number } {
+    const u = this.db.prepare('SELECT * FROM users WHERE name = ?').get(String(name ?? '').trim()) as (UserRow & { is_admin: number }) | undefined;
+    if (!u) throw new GameError('Diesen Account gibt es nicht.', 404);
+    return u;
+  }
+
+  isAdmin(userId: number): boolean {
+    return !!(this.db.prepare('SELECT is_admin FROM users WHERE id = ?').get(userId) as { is_admin: number } | undefined)?.is_admin;
+  }
+
+  /** Kommandozeile: Admin-Rechte geben/nehmen */
+  setAdmin(name: string, on: boolean): string {
+    const u = this.target(name);
+    this.db.prepare('UPDATE users SET is_admin = ? WHERE id = ?').run(on ? 1 : 0, u.id);
+    this.log('Kommandozeile', on ? 'Admin-Rechte gegeben' : 'Admin-Rechte genommen', u.name);
+    return u.name;
+  }
+
+  admins(): string[] {
+    return (this.db.prepare('SELECT name FROM users WHERE is_admin = 1 ORDER BY name').all() as { name: string }[]).map((r) => r.name);
+  }
+
+  log(admin: string, action: string, target: string | null = null, detail: string | null = null) {
+    this.db.prepare('INSERT INTO admin_log (at, admin, action, target, detail) VALUES (?, ?, ?, ?, ?)').run(Date.now(), admin, action, target, detail);
+    this.db.prepare('DELETE FROM admin_log WHERE id <= (SELECT MAX(id) FROM admin_log) - 2000').run();
+  }
+
+  logEntries(limit = 200): AdminLogEntry[] {
+    return this.db.prepare('SELECT at, admin, action, target, detail FROM admin_log ORDER BY id DESC LIMIT ?').all(limit) as unknown as AdminLogEntry[];
+  }
+
+  counts(): AdminOverview['users'] {
+    const one = (sql: string, ...a: number[]) => (this.db.prepare(sql).get(...a) as { n: number }).n;
+    const now = Date.now();
+    return {
+      total: one('SELECT COUNT(*) AS n FROM users'),
+      online: one('SELECT COUNT(*) AS n FROM users WHERE last_seen > ?', now - ONLINE_MS),
+      new7d: one('SELECT COUNT(*) AS n FROM users WHERE created > ?', now - 7 * DAY),
+      admins: one('SELECT COUNT(*) AS n FROM users WHERE is_admin = 1'),
+      withEmail: one('SELECT COUNT(*) AS n FROM users WHERE email IS NOT NULL'),
+    };
+  }
+
+  private rowOf(u: UserRow & { is_admin: number }): AdminUserRow {
+    const n = (sql: string) => (this.db.prepare(sql).get(u.id) as { n: number }).n;
+    return {
+      name: u.name,
+      email: u.email,
+      admin: !!u.is_admin,
+      created: u.created,
+      lastSeen: u.last_seen,
+      online: Date.now() - u.last_seen < ONLINE_MS,
+      level: this.acc.level(u.id).level,
+      games: n("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind IN ('route', 'quiz')"),
+      sessions: n('SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?'),
+    };
+  }
+
+  /** alle Accounts (Suche in Name und E-Mail), zuletzt aktive zuerst */
+  users(q: unknown, offset = 0): AdminUserRow[] {
+    const s = `%${String(q ?? '').trim().replace(/[%_\\]/g, (c) => `\\${c}`)}%`;
+    const rows = this.db
+      .prepare("SELECT * FROM users WHERE name LIKE ?1 ESCAPE '\\' OR email LIKE ?1 ESCAPE '\\' ORDER BY last_seen DESC LIMIT 100 OFFSET ?2")
+      .all(s, Math.max(0, Math.floor(offset))) as unknown as (UserRow & { is_admin: number })[];
+    return rows.map((u) => this.rowOf(u));
+  }
+
+  user(name: string): AdminUserDetail {
+    const u = this.target(name);
+    const f = this.acc.friends(u.id);
+    let data: Record<string, unknown> = {};
+    try {
+      data = JSON.parse(u.data) as Record<string, unknown>;
+    } catch {
+      /* kaputt → leer anzeigen */
+    }
+    return {
+      ...this.rowOf(u),
+      xp: this.acc.level(u.id).xp,
+      stats: this.acc.stats(u.id),
+      medals: this.acc.medals(u.id),
+      friends: f.friends.map((x) => x.name),
+      incoming: f.incoming.map((x) => x.name),
+      outgoing: f.outgoing.map((x) => x.name),
+      data: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, JSON.stringify(v).length])),
+      invites: (this.db.prepare('SELECT COUNT(*) AS n FROM invites WHERE to_id = ?').get(u.id) as { n: number }).n,
+    };
+  }
+
+  /** Account löschen – nicht bei Admins (zuerst über die Kommandozeile die Rechte nehmen) */
+  remove(admin: string, name: string) {
+    const u = this.target(name);
+    if (u.is_admin) throw new GameError('Admins lassen sich hier nicht löschen – zuerst über die Kommandozeile die Admin-Rechte nehmen.', 403);
+    this.acc.purge(u.id);
+    this.log(admin, 'Account gelöscht', u.name, u.email ? `E-Mail ${u.email}` : null);
+  }
+
+  async setPassword(admin: string, name: string, pw: unknown) {
+    const u = this.target(name);
+    const p = String(pw ?? '');
+    if (p.length < 8 || p.length > 200) throw new GameError('Passwort: mindestens 8 Zeichen.');
+    this.db.prepare('UPDATE users SET pw = ? WHERE id = ?').run(await hashPassword(p), u.id);
+    this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(u.id);
+    this.log(admin, 'Passwort neu gesetzt (alle Geräte abgemeldet)', u.name);
+  }
+
+  /** Link zum Zurücksetzen (1 Stunde) – zum Weitergeben, wenn keine Mail geht */
+  resetLink(admin: string, name: string, base: string): string {
+    const u = this.target(name);
+    const t = newToken();
+    this.db.prepare('INSERT INTO resets (hash, user_id, expires) VALUES (?, ?, ?)').run(sha(t), u.id, Date.now() + RESET_MS);
+    this.log(admin, 'Link zum Zurücksetzen erzeugt', u.name);
+    return `${base}/?reset=${t}`;
+  }
+
+  logout(admin: string, name: string): number {
+    const u = this.target(name);
+    const n = Number(this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(u.id).changes);
+    this.log(admin, 'Auf allen Geräten abgemeldet', u.name, `${n} Sitzung(en)`);
+    return n;
+  }
+
+  /** Statistik, Medaillen, Lieblinge und Spiel-XP auf null (Lernstand bleibt – den hat auch der Browser) */
+  resetStats(admin: string, name: string) {
+    const u = this.target(name);
+    this.db.exec('BEGIN');
+    try {
+      for (const sql of ['DELETE FROM results WHERE user_id = ?', 'DELETE FROM usage WHERE user_id = ?', 'DELETE FROM medals WHERE user_id = ?', 'UPDATE users SET game_xp = 0 WHERE id = ?'])
+        this.db.prepare(sql).run(u.id);
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+    this.log(admin, 'Statistik zurückgesetzt', u.name);
+  }
+
+  rename(admin: string, name: string, newName: unknown): string {
+    const u = this.target(name);
+    const n = String(newName ?? '').trim();
+    if (!NAME_RE.test(n)) throw new GameError('Benutzername: 3–20 Zeichen, nur Buchstaben, Ziffern und _ . -');
+    const other = this.db.prepare('SELECT id FROM users WHERE name = ?').get(n) as { id: number } | undefined;
+    if (other && other.id !== u.id) throw new GameError('Diesen Benutzernamen gibt es schon.', 409);
+    this.db.prepare('UPDATE users SET name = ? WHERE id = ?').run(n, u.id);
+    this.log(admin, 'Umbenannt', n, `vorher ${u.name}`);
+    return n;
+  }
+
+  setEmail(admin: string, name: string, email: unknown) {
+    const u = this.target(name);
+    const mail = cleanEmail(email);
+    if (mail === undefined) throw new GameError('Diese E-Mail-Adresse sieht nicht gültig aus.');
+    this.db.prepare('UPDATE users SET email = ? WHERE id = ?').run(mail, u.id);
+    this.log(admin, mail ? 'E-Mail geändert' : 'E-Mail entfernt', u.name);
   }
 }
 

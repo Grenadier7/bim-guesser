@@ -2,15 +2,18 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import express from 'express';
-import { Accounts } from './accounts.ts';
+import { AccountAdmin, Accounts } from './accounts.ts';
 import { errorHandler, MIN, stripDangerousKeys } from './http.ts';
 import { smtpMailer, type SendMail } from './mail.ts';
 import { GameManager } from './manager.ts';
 import type { Network } from './network.ts';
+import { overrides } from './overrides.ts';
+import { adminRoutes } from './routes/admin.ts';
 import { accountRoutes } from './routes/accounts.ts';
 import { gameRoutes } from './routes/games.ts';
 import { trainingRoutes } from './routes/training.ts';
 import { rateLimit, securityHeaders } from './security.ts';
+import { configureTimetable, reloadTimetable } from './timetable.ts';
 import { TrainingService } from './training.ts';
 
 const DIST = path.resolve(import.meta.dirname, '../dist');
@@ -31,7 +34,22 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
   games.onCreate = (g) => accounts.watch(g);
   setInterval(() => accounts.cleanup(), 3600_000).unref();
   const training = new TrainingService(net);
-  const networkJson = JSON.stringify(net.publicData());
+  // Routenberechnung (Admin-Seite): Fahrplan-Halte ↔ Netz-Stationen, Linien-Änderungen auf Netz und Fahrplan
+  configureTimetable({
+    stationOf: (efaId) => net.stationOfEfa(efaId),
+    station: (id) => {
+      const st = net.stations.get(id);
+      return st ? { name: st.name, lat: st.lat, lon: st.lon, efaId: net.mainEfaId(id) } : null;
+    },
+  });
+  let networkJson = '';
+  const applyRouting = () => {
+    net.applyLineEdits(overrides().edits);
+    networkJson = JSON.stringify(net.publicData());
+    return reloadTimetable();
+  };
+  if (overrides().edits.length) applyRouting();
+  else networkJson = JSON.stringify(net.publicData());
 
   const app = express();
   app.disable('x-powered-by');
@@ -49,11 +67,13 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
   });
 
   app.get('/api/network', (_req, res) => {
-    res.type('json').set('Cache-Control', 'public, max-age=3600').send(networkJson);
+    // no-cache + ETag: Browser fragen jedes Mal kurz nach (304) – Linien-Änderungen der Admin-Seite sind sofort sichtbar
+    res.type('json').set('Cache-Control', 'no-cache').send(networkJson);
   });
 
   const { optionalUser } = accountRoutes(app, accounts, (code) => games.has(code));
   gameRoutes(app, games, { accounts, optionalUser });
+  adminRoutes(app, { accounts, admin: new AccountAdmin(accounts), games, net, version, started, applyRouting });
   trainingRoutes(app, training, { accounts, optionalUser });
 
   app.use('/api', (_req, res) => {

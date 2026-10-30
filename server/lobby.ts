@@ -2,7 +2,7 @@
 // Spieler mit geheimem Token, Host, Live-Verbindungen, Events.
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
-import type { ChatMessage, GameEvent, GameMode, GamePhase, LobbyState, PlayerPublic } from '../shared/types.ts';
+import type { AdminLobby, ChatMessage, GameEvent, GameMode, GamePhase, LobbyState, PlayerPublic } from '../shared/types.ts';
 import { cleanChat, cleanName } from './security.ts';
 
 export class GameError extends Error {
@@ -236,6 +236,18 @@ export abstract class Lobby extends EventEmitter {
   /** Öffentliche ID zum Token (für die eigene Anzeige im Client) */
   playerIdFor(token: string): string {
     return this.auth(token).id;
+  }
+
+  /** für die Admin-Übersicht: wer ist drin, läuft es noch? */
+  adminInfo(): AdminLobby {
+    return {
+      code: this.id,
+      mode: this.mode,
+      phase: this.phase,
+      players: [...this.players.values()].map((p) => ({ name: p.name, ...(p.account ? { account: p.account } : {}), connected: p.connections > 0 })),
+      createdAt: this.createdAt,
+      lastActivity: this.lastActivity,
+    };
   }
 
   get playerCount(): number {

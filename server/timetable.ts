@@ -9,19 +9,13 @@
 // Fußwege: zwischen Halten bis 500 m und von/zu Adressen bis 1,5 km, Luftlinie × 1,3 bei 80 m/min (wie im Spiel).
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import type { LatLon, Mode } from '../shared/types.ts';
+import type { LatLon, LineEdit, Mode } from '../shared/types.ts';
 import type { EfaLeg, EfaPoint, EfaTrip, TripQuery } from './efa.ts';
+import { overrides, params } from './overrides.ts';
 
 const FILE = process.env.TIMETABLE_FILE ?? path.resolve(import.meta.dirname, '../data/timetable.json');
-/** Fußweg zwischen zwei Halten höchstens so weit (Umsteigen zu einer anderen Haltestelle) */
-const TRANSFER_WALK_M = 500;
-/** von einer Adresse / zu einer Adresse höchstens so weit zu Fuß */
-const ACCESS_WALK_M = 1500;
-/** ganz zu Fuß wird bis zu dieser Entfernung angeboten */
-const WALK_ONLY_M = 1200;
-/** Umsteigen in ein anderes Fahrzeug an derselben Haltestelle (min) */
-const CHANGE_MIN = 2;
-const MAX_RIDES_DEFAULT = 5;
+// Umsteigezeit, Fußwege und höchstens so viele Fahrten: params (server/overrides.ts, Admin-Seite) –
+// Standard 2 min Umsteigen, Fußweg zu anderer Haltestelle ≤ 500 m, von/zu Adressen ≤ 1,5 km, ganz zu Fuß ≤ 1,2 km, ≤ 5 Fahrten
 
 const walkMin = (m: number) => Math.max(1, Math.round((m * 1.3) / 80));
 
@@ -85,6 +79,31 @@ function efaIdOf(key: string): string {
 let data: Data | null | undefined;
 let validUntil: string | null = null;
 
+/** Netz-Stationen ↔ Fahrplan-Halte (für Linien-Änderungen der Admin-Seite) – setzt app.ts */
+export interface StationContext {
+  /** Netz-Station zu einer EFA-ID (oder null) */
+  stationOf(efaId: string): string | null;
+  /** Netz-Station: Name, Lage und Haupt-EFA-ID (für neue Halte) */
+  station(id: string): { name: string; lat: number; lon: number; efaId: string } | null;
+}
+let ctx: StationContext | null = null;
+let report: string[] = [];
+
+export function configureTimetable(c: StationContext) {
+  ctx = c;
+}
+
+/** Fahrplan neu laden (nach Änderungen auf der Admin-Seite); liefert, was die Linien-Änderungen bewirkt haben */
+export function reloadTimetable(): string[] {
+  data = undefined;
+  if (load() || !overrides().edits.length) return report;
+  return ['⚠ Referenzfahrplan ist aus (TIMETABLE=off oder data/timetable.json fehlt) – Linien-Änderungen wirken nur auf den Routen-Baukasten.'];
+}
+
+export function timetableInfo(): { loaded: boolean; validUntil: string | null } {
+  return { loaded: !!load(), validUntil };
+}
+
 /**
  * Warnung, wenn der Referenzfahrplan abgelaufen ist: laut Lizenz (Abschnitt 6a/7d) nach Ende der Gültigkeit nicht
  * mehr in öffentlich zugänglichen Auskunftssystemen verwenden – neue Daten laden (scripts/build-timetable.ts) oder
@@ -108,12 +127,14 @@ function load(): Data | null {
     trips: Record<string, number[][]>;
   };
   validUntil = raw.validUntil ?? null;
+  report = applyEdits(raw, overrides().edits);
   const nodes = raw.nodes.map(([key, name, lat, lon]) => ({ key, efaId: efaIdOf(key), name, lat, lon }));
   const patterns = raw.patterns.map(([line, stops, contLine, contAt]) => ({ line, stops, cont: contLine != null ? { line: contLine, at: contAt! } : null }));
   const stopPatterns: [number, number][][] = nodes.map(() => []);
   patterns.forEach((p, pi) => p.stops.forEach((s, pos) => stopPatterns[s].push([pi, pos])));
-  // Fußwege: grobes Raster für die Nachbarsuche
-  const cell = (lat: number, lon: number) => `${Math.floor(lat * 200)}:${Math.floor(lon * 130)}`;
+  // Fußwege: grobes Raster für die Nachbarsuche (Zellen mindestens so groß wie der längste Umsteige-Fußweg)
+  const reach = Math.max(300, params.transferWalkM);
+  const cell = (lat: number, lon: number) => `${Math.floor((lat * 111_000) / reach)}:${Math.floor((lon * 74_000) / reach)}`;
   const grid = new Map<string, number[]>();
   nodes.forEach((n, i) => (grid.get(cell(n.lat, n.lon)) ?? grid.set(cell(n.lat, n.lon), []).get(cell(n.lat, n.lon))!).push(i));
   const footpaths = nodes.map((n, i) => {
@@ -124,7 +145,7 @@ function load(): Data | null {
         for (const j of grid.get(`${a + x}:${b + y}`) ?? []) {
           if (j === i) continue;
           const d = distM(n, nodes[j]);
-          if (d <= TRANSFER_WALK_M) out.push([j, walkMin(d) + CHANGE_MIN]);
+          if (d <= params.transferWalkM) out.push([j, walkMin(d) + params.changeMin]);
         }
     return out;
   });
@@ -152,6 +173,128 @@ function load(): Data | null {
   data = { nodes, byEfa, lines: raw.lines.map(([name, mode, mot]) => ({ name, mode, mot })), patterns, stopPatterns, footpaths, days };
   console.log(`Referenzfahrplan geladen: ${nodes.length} Halte, ${patterns.length} Muster, Tage ${Object.values(raw.days).join(', ')}`);
   return data;
+}
+
+// ---------------------------------------------------------------- Linien-Änderungen (Admin-Seite)
+
+type RawPattern = [number, number[]] | [number, number[], number, number];
+interface Raw {
+  nodes: [string, string, number, number][];
+  lines: [string, Mode, number][];
+  patterns: RawPattern[];
+  trips: Record<string, number[][]>;
+}
+
+/**
+ * Änderungen auf die Rohdaten anwenden, bevor daraus die Suchstrukturen entstehen. Fahrten sind [Muster, Abfahrt,
+ * Fahrzeit zum 2. Halt, zum 3. Halt, …] – verlängern/kürzen ändert Haltefolge und diese Fahrzeiten gemeinsam.
+ */
+function applyEdits(raw: Raw, edits: LineEdit[]): string[] {
+  if (!edits.length) return [];
+  if (!ctx) return ['Linien-Änderungen nicht angewendet (Netz noch nicht verbunden).'];
+  const c = ctx;
+  const nodeStation = new Map<number, string | null>();
+  const stationAt = (i: number) => {
+    if (!nodeStation.has(i)) nodeStation.set(i, c.stationOf(efaIdOf(raw.nodes[i][0])));
+    return nodeStation.get(i)!;
+  };
+  const tripsOf = (pi: number) => Object.values(raw.trips).flatMap((list) => list.filter((t) => t[0] === pi));
+  /** Halt im Fahrplan für eine Netz-Station: am liebsten einer, den schon eine Linie desselben Verkehrsmittels nutzt */
+  const nodeFor = (station: string, mode: Mode): number => {
+    const cands = raw.nodes.map((_, i) => i).filter((i) => stationAt(i) === station);
+    const sameMode = cands.find((i) => raw.patterns.some(([li, stops]) => raw.lines[li][1] === mode && stops.includes(i)));
+    if (sameMode != null) return sameMode;
+    if (cands.length) return cands[0];
+    const st = c.station(station);
+    if (!st) throw new Error(`Station ${station} gibt es nicht`);
+    raw.nodes.push([st.efaId, st.name, st.lat, st.lon]);
+    nodeStation.set(raw.nodes.length - 1, station);
+    return raw.nodes.length - 1;
+  };
+  const name = (station: string) => c.station(station)?.name ?? station;
+  const out: string[] = [];
+  for (const e of edits) {
+    const li = raw.lines.findIndex(([n]) => n === e.line);
+    if (li < 0) {
+      out.push(`✖ ${e.line}: Linie nicht im Fahrplan`);
+      continue;
+    }
+    const mode = raw.lines[li][1];
+    let pats = 0;
+    let trips = 0;
+    try {
+      raw.patterns.forEach((p, pi) => {
+        if (p[0] !== li && p[2] !== li) return;
+        const stops = p[1];
+        if (e.kind === 'extend') {
+          if (p[2] != null) return;
+          const add = e.stops.map((s) => nodeFor(s.station, mode));
+          if (stops.some((s) => add.includes(s))) return; // schon verlängert
+          if (stationAt(stops[stops.length - 1]) === e.at) {
+            p[1] = [...stops, ...add];
+            for (const t of tripsOf(pi)) (t.push(...e.stops.map((s) => s.min)), trips++);
+          } else if (stationAt(stops[0]) === e.at) {
+            const total = e.stops.reduce((a, s) => a + s.min, 0);
+            p[1] = [...[...add].reverse(), ...stops];
+            const mins = e.stops.map((s) => s.min).reverse();
+            for (const t of tripsOf(pi)) (t.splice(1, 1, t[1] - total, ...mins), trips++);
+          } else return;
+          pats++;
+        } else if (e.kind === 'cut') {
+          if (p[0] !== li) return;
+          const ia = stops.findIndex((s) => stationAt(s) === e.at);
+          const ib = stops.findIndex((s) => stationAt(s) === e.beyond);
+          if (ia < 0 || ib < 0) return;
+          const list = tripsOf(pi);
+          if (ib > ia) {
+            // Teil danach weg: Haltefolge bis `at`, Fahrzeiten danach weg
+            p[1] = stops.slice(0, ia + 1);
+            for (const t of list) t.splice(2 + ia);
+            if (p[3] != null && p[3] > ia) (p.length = 2);
+          } else {
+            // Teil davor weg: Abfahrt verschiebt sich auf `at`
+            p[1] = stops.slice(ia);
+            for (const t of list) {
+              const skip = t.slice(2, 2 + ia).reduce((a, x) => a + x, 0);
+              t.splice(1, 1 + ia, t[1] + skip);
+            }
+            if (p[3] != null) {
+              const at = p[3] - ia;
+              if (at <= 0) (p[0] = p[2]!, (p.length = 2));
+              else p[3] = at;
+            }
+          }
+          pats++;
+          trips += list.length;
+          // nur noch ein Halt: Fahrten ganz weg
+          if (p[1].length < 2) for (const [k, l] of Object.entries(raw.trips)) raw.trips[k] = l.filter((t) => t[0] !== pi);
+        } else {
+          let hit = false;
+          for (let j = 1; j < stops.length; j++) {
+            const a = stationAt(stops[j - 1]);
+            const b = stationAt(stops[j]);
+            if ((a === e.from && b === e.to) || (a === e.to && b === e.from)) {
+              for (const t of tripsOf(pi)) ((t[1 + j] = e.min), trips++);
+              hit = true;
+            }
+          }
+          if (hit) pats++;
+        }
+      });
+    } catch (err) {
+      out.push(`✖ ${e.line}: ${(err as Error).message}`);
+      continue;
+    }
+    const what =
+      e.kind === 'extend'
+        ? `ab/bis ${name(e.at)} weiter nach ${e.stops.map((s) => `${name(s.station)} (+${s.min})`).join(', ')}`
+        : e.kind === 'cut'
+          ? `endet bei ${name(e.at)} (ohne Richtung ${name(e.beyond)})`
+          : `${name(e.from)} ↔ ${name(e.to)}: ${e.min} min`;
+    out.push(pats ? `✔ ${e.line} ${what}: ${pats} Haltefolge(n), ${trips} Fahrt(en)` : `✖ ${e.line} ${what}: keine passende Haltefolge gefunden`);
+  }
+  console.log(`Linien-Änderungen im Referenzfahrplan:\n  ${out.join('\n  ')}`);
+  return out;
 }
 
 /** Gibt es den Referenzfahrplan für diesen Zeitpunkt? (sonst fragt efa.ts die Auskunft) */
@@ -240,8 +383,8 @@ function raptor(d: Data, day: Day, origins: Access[], targets: Access[], t0: num
         }
         // früher einsteigen möglich?
         const ready = tau[k - 1][s];
-        if (ready < INF && (trip < 0 || ready + (k > 1 ? CHANGE_MIN : 0) <= dp.times[trip * len + pos])) {
-          const need = ready + (k > 1 && !originMin.has(s) ? CHANGE_MIN : 0);
+        if (ready < INF && (trip < 0 || ready + (k > 1 ? params.changeMin : 0) <= dp.times[trip * len + pos])) {
+          const need = ready + (k > 1 && !originMin.has(s) ? params.changeMin : 0);
           // erste Fahrt mit Abfahrt ≥ need an dieser Position (Fahrten überholen sich praktisch nie)
           let lo = 0;
           let hi = trip >= 0 ? trip : dp.count;
@@ -370,7 +513,7 @@ function access(d: Data, id: string): { list: Access[]; point: EfaPoint; address
     const p: EfaPoint = { id, name: 'Adresse', place: 'Wien', lat, lon };
     const list = d.nodes
       .map((n, i) => ({ node: i, m: distM(n, p) }))
-      .filter((x) => x.m <= ACCESS_WALK_M)
+      .filter((x) => x.m <= params.accessWalkM)
       .sort((a, b) => a.m - b.m)
       .slice(0, 40)
       .map((x) => ({ node: x.node, min: walkMin(x.m) }));
@@ -379,7 +522,7 @@ function access(d: Data, id: string): { list: Access[]; point: EfaPoint; address
   const i = d.byEfa.get(id);
   if (i == null) return null;
   // auch von Nachbarhaltestellen derselben Gegend los (wie die Auskunft: Station + Umgebung)
-  return { list: [{ node: i, min: 0 }, ...d.footpaths[i].map(([node, min]) => ({ node, min: min - CHANGE_MIN }))], point: point(d, i), address: false };
+  return { list: [{ node: i, min: 0 }, ...d.footpaths[i].map(([node, min]) => ({ node, min: min - params.changeMin }))], point: point(d, i), address: false };
 }
 
 /** nur direkte Fahrten von A nach B (maxChanges 0): die nächsten Abfahrten, ohne Fußwege */
@@ -421,7 +564,7 @@ export function localTrip(q: TripQuery): EfaTrip[] | null {
   // direkt (für die Wartezeiten je Teilstrecke): alle Linien, die A → B fahren – ein Zwischenhalt (via) ist hier
   // überflüssig, die Auskunft brauchte ihn nur, weil sie sonst bloß die schnellste Linie liefert
   if (q.maxChanges === 0 && !from.address && !to.address) return direct(d, day, from.list[0].node, to.list[0].node, t, count, mots);
-  const maxRides = q.maxChanges != null ? q.maxChanges + 1 : MAX_RIDES_DEFAULT;
+  const maxRides = q.maxChanges != null ? q.maxChanges + 1 : params.maxRides;
   const search = (tt: number, f: Access[], g: Access[], fp: EfaPoint | null, gp: EfaPoint | null) =>
     raptor(d, day, f, g, tt, maxRides, mots).map((j) => toTrip(d, day, j, fp, gp));
   const run = (tt: number): EfaTrip[] => {
@@ -458,7 +601,7 @@ export function localTrip(q: TripQuery): EfaTrip[] | null {
   const fp = from.point;
   const tp = to.point;
   const dist = distM(fp, tp);
-  if (dist <= WALK_ONLY_M && q.via == null)
+  if (dist <= params.walkOnlyM && q.via == null)
     out.push({ legs: [{ mode: 'W', line: null, from: fp, to: tp, dep: q.time, arr: q.time + walkMin(dist), path: [[fp.lat, fp.lon], [tp.lat, tp.lon]], stops: [] }], dep: q.time, arr: q.time + walkMin(dist) });
   return out.sort((a, b) => a.dep - b.dep || a.arr - b.arr).slice(0, Math.max(count, out.length));
 }

@@ -15,6 +15,7 @@ import type { LatLon, Mode, NetMode, Restriction, RouteLeg, RouteOption, RouteSt
 import { lineColor, lineGroupLabel, regionalTrains, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
 import * as efa from './efa.ts';
 import { distM, type Network } from './network.ts';
+import { DEFAULT_PARAMS, params } from './overrides.ts';
 
 /** Abfahrtszeiten relativ zum Zeitfenster, an denen gesampelt wird (Minuten) */
 export const SAMPLE_OFFSETS = [0, 10, 20, 30, 40, 50];
@@ -427,7 +428,7 @@ export function expectedWait(departures: number[], t: number, window = HEADWAY_W
  * zur ersten Abfahrt kann man sich die Zeit meist einteilen – beim Umsteigen nicht.
  * Gilt nur, wenn die erste Linie direkt an der Start-Station abfährt (kein Fußweg dorthin).
  */
-export const FIRST_WAIT_FACTOR = 0.7;
+export const FIRST_WAIT_FACTOR = DEFAULT_PARAMS.firstWaitFactor;
 
 /**
  * Ø-Wartezeiten: Fahrzeit je Linie (Median) + Umsteigeweg + halber Takt der nächsten Linie.
@@ -478,7 +479,7 @@ async function averagedRoute(
     if (meanWait == null) return null;
     // "fährt etwa alle …": gleichwertiger regelmäßiger Takt
     const every = meanWait * 2;
-    const wait = meanWait * (i === 0 && !w0 ? FIRST_WAIT_FACTOR : 1);
+    const wait = meanWait * (i === 0 && !w0 ? params.firstWaitFactor : 1);
     if (i > 0 || countWait) {
       const before = t;
       add('wait', wait, { to: net.station(legs[i].from).name, every: Math.round(every), ...(extra?.[i]?.length ? { with: extra[i] } : {}) });
