@@ -16,6 +16,19 @@ export function seg(key: string, opts: Opt[], current: string, disabled: boolean
     .join('')}</div>`;
 }
 
+/**
+ * Gebiet wählen (Quiz, Training): „Ganz Wien“ oder ein Bezirk als Nummernraster 1–23 statt langer Liste –
+ * Name beim Drüberfahren und unter dem Raster. Knöpfe tragen data-area (0 = ganz Wien).
+ */
+export function areaPicker(districts: { id: number; name: string }[], current: number, disabled: boolean, note = ''): string {
+  const cur = districts.find((d) => d.id === current);
+  const btn = (id: number, label: string, title: string, cls = '') =>
+    `<button type="button" data-area="${id}" class="${cls} ${id === current ? 'on' : ''}" aria-pressed="${id === current}" title="${esc(title)}" ${disabled ? 'disabled' : ''}>${label}</button>`;
+  return `<div class="area-pick" role="group" aria-label="Gebiet">
+    <div class="ap-grid">${btn(0, 'Ganz Wien', 'Ganz Wien', 'ap-all')}${districts.map((d) => btn(d.id, String(d.id), `${d.id}. ${d.name}`)).join('')}</div>
+    <small class="ap-name">${cur ? `<b>${cur.id}. ${esc(cur.name)}</b>` : '<b>Ganz Wien</b>'}${note ? ` – ${note}` : ''}</small></div>`;
+}
+
 /** Kleines ⓘ – Erklärung erscheint beim Drüberfahren/Antippen in einem Fenster */
 export function infoTip(html: string): string {
   return `<button type="button" class="info-tip" aria-label="Erklärung anzeigen">ⓘ<span class="tip-pop" role="tooltip">${html}</span></button>`;

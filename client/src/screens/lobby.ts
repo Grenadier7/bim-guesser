@@ -74,7 +74,7 @@ function stationsText(kinds: StationKind[]): string {
 }
 
 /** Erklärung zu „Was zählt?“ */
-const scoringInfo = () => SCORING_MODES.map((m) => `<b>${m.icon} ${m.label}:</b> ${esc(m.hint)}`).join('<br>');
+const scoringInfo = () => SCORING_MODES.map((m) => `<b>${m.icon} ${m.label}:</b> ${esc(m.hint)}`).join('<br><br>');
 
 type AdvTab = 'diff' | 'rules' | 'world';
 const ADV_TABS: { id: AdvTab; label: string }[] = [
@@ -205,7 +205,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
             mode ?? '',
             ro,
           )}
-            ${mode ? `<small class="hint">${esc(SCORING_MODES.find((m) => m.id === mode)!.hint)}</small>` : '<small class="hint">Eigene Kombination (z.B. aus einem älteren geteilten Link) – einen Modus antippen, um sie zu ersetzen.</small>'}</div>
+            ${mode ? '' : '<small class="hint">Eigene Kombination (alter Link) – einen Modus antippen.</small>'}</div>
           ${
             mode === 'realistic'
               ? `<div class="toggles">${toggleInfo(

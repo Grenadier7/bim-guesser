@@ -7,7 +7,7 @@ import { api } from '../../api.ts';
 import { app, endSession, inviteLink, isHost, quizState, savePrefs } from '../../store.ts';
 import { inviteButton } from '../../accountui.ts';
 import { esc, toast } from '../../ui.ts';
-import { deferWhileEditing, patchQueue, seg } from '../../widgets.ts';
+import { areaPicker, deferWhileEditing, patchQueue, seg } from '../../widgets.ts';
 import { bindKick } from '../host.ts';
 import type { Screen } from '../screen.ts';
 import { openSettingsDialog } from '../../settingsShare.ts';
@@ -64,8 +64,7 @@ export function quizLobbyScreen(panel: HTMLElement): Screen {
         <div class="setting"><span>Fragen</span>${seg('questions', QUIZ_QUESTION_COUNTS.map((n) => ({ value: String(n), label: String(n) })), String(s.questions), ro)}</div>
         <div class="setting"><span>Zeit pro Frage</span>${seg('timeSec', QUIZ_TIMES.map((n) => ({ value: String(n), label: `${n} s` })), String(s.timeSec), ro)}
           <small class="hint">Richtig gibt 500–1000 Punkte – je schneller, desto mehr.</small></div>
-        <div class="setting"><span>Gebiet</span>
-          <select id="area" aria-label="Gebiet" ${ro ? 'disabled' : ''}><option value="0">Ganz Wien</option>${app.net.data.districts.map((d) => `<option value="${d.id}" ${d.id === s.area ? 'selected' : ''}>${d.id}. ${esc(d.name)}</option>`).join('')}</select></div>
+        <div class="setting"><span>Gebiet</span>${areaPicker(app.net.data.districts, s.area, ro, s.area ? 'Fragen nur zu diesem Bezirk' : '')}</div>
         <div class="setting"><span>Verkehrsmittel</span><div class="quiz-modes">${(['U', 'S', 'T', 'B', 'N'] as Mode[])
           .map((m) => `<button data-mode="${m}" class="${s.modes.includes(m) ? 'on' : ''}" ${ro ? 'disabled' : ''}>${MODE_ICON[m]} ${MODE_LABEL[m]}</button>`)
           .join('')}</div></div>
@@ -131,7 +130,7 @@ export function quizLobbyScreen(panel: HTMLElement): Screen {
       if (!confirm('Alle Quiz-Einstellungen auf den Standard zurücksetzen?')) return;
       send(structuredClone(DEFAULT_QUIZ_SETTINGS));
     });
-    panel.querySelector<HTMLSelectElement>('#area')!.addEventListener('change', (e) => send({ area: Number((e.target as HTMLSelectElement).value) }));
+    panel.querySelectorAll<HTMLButtonElement>('[data-area]').forEach((b) => b.addEventListener('click', () => send({ area: Number(b.dataset.area) })));
     panel.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((b) =>
       b.addEventListener('click', () => {
         const m = b.dataset.mode as Mode;

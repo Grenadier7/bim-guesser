@@ -4758,3 +4758,91 @@ details.advanced > summary .icon {
   margin: 0;
   font-weight: 600;
 }
+
+/* ---------------------------------------------------------------- Gebietswahl (Quiz, Training): Nummernraster statt Liste */
+.area-pick {
+  display: grid;
+  gap: 6px;
+}
+.ap-grid {
+  display: grid;
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  gap: 4px;
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 4px;
+}
+.ap-grid button {
+  border: 0;
+  background: transparent;
+  border-radius: 7px;
+  padding: 6px 0;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  cursor: pointer;
+}
+.ap-grid button.ap-all {
+  grid-column: span 4;
+  padding: 6px 8px;
+}
+.ap-grid button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+}
+.ap-grid button.on {
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  font-weight: 700;
+  color: var(--accent);
+}
+.ap-grid button:disabled {
+  cursor: default;
+}
+.ap-name {
+  color: var(--muted);
+  font-size: 13px;
+}
+.ap-name b {
+  color: var(--ink);
+}
+
+/* ---------------------------------------------------------------- Training: kompakte Einstellungen */
+.train-lead {
+  margin: 2px 0 0;
+  color: var(--muted);
+}
+details.train-how {
+  margin: 2px 0 6px;
+  font-size: 13px;
+}
+details.train-how > summary {
+  cursor: pointer;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  width: fit-content;
+}
+details.train-how .facts {
+  margin: 6px 0 4px;
+  gap: 4px;
+  list-style: disc;
+  padding-left: 18px;
+}
+details.train-how .facts li {
+  background: none;
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.train-stats {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 14px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 8px;
+}
+.train-stats b {
+  color: var(--ink);
+}
