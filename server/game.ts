@@ -427,6 +427,8 @@ export class Game extends Lobby {
       elapsedSec: Math.round(elapsedMs / 100) / 10,
     });
     this.touch();
+    // Statistik der Admin-Seite: gewählte Linien
+    this.emit('lines', round.submissions.get(playerId)!.legs.map((l) => l.line));
     this.emitEvent({ type: 'submitted', round: roundIdx, playerId });
     this.emitState();
     return this.maybeReveal(round);

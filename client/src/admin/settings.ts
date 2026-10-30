@@ -3,7 +3,7 @@
 // Adressen, Chat-Moderation. Jeder Bereich: speichern, auf Standard zurück, „geändert“-Hinweis; frühere Versionen.
 import type { GameConfig, GameConfigSection, PresetId } from '../../../shared/config.ts';
 import { QUIZ_QUESTION_COUNTS, QUIZ_TIMES } from '../../../shared/quiz.ts';
-import { inStationKinds } from '../../../shared/pools.ts';
+import { ruleMatches } from '../../../shared/pools.ts';
 import { DISTANCES, MODE_LABEL, NET_MODES, RESTRICTION_FREQUENCIES, SCORING_MODES, STATION_GROUPS, STATION_KINDS, TIME_LIMITS, TIME_SLOTS, XTREME_LEVELS, scoringModeOf, type ScoringMode } from '../../../shared/rules.ts';
 import type { DayType, Mode, StationKind, TipKind } from '../../../shared/types.ts';
 import type { NetIndex } from '../net.ts';
@@ -20,6 +20,13 @@ interface ConfigState {
   defaults: GameConfig;
   labels: Record<GameConfigSection, string>;
 }
+
+const TIP_WHAT: Record<TipKind, string> = {
+  startLines: 'Linien an der Start-Station',
+  endLines: 'Linien an der Ziel-Station',
+  modeChain: 'Verkehrsmittel der schnellsten Route',
+  transfers: 'Umstiegsorte der schnellsten Route auf der Karte',
+};
 
 const ORDER: GameConfigSection[] = ['announcement', 'slots', 'netModes', 'scoring', 'tips', 'difficulty', 'defaults', 'pools', 'addresses', 'chat'];
 const DAY_LABEL: Record<DayType, string> = { wd: 'Werktag', sa: 'Samstag', su: 'Sonntag' };
@@ -44,6 +51,8 @@ export function settingsTab(rerender: () => void): Tab {
   let addrHits: { id: string; name: string; district: number; removed: boolean; own: boolean }[] = [];
   const newAddr = { name: '', district: 0, point: null as { lat: number; lon: number } | null };
   let versions: { id: string; at: number; by: string; note: string }[] | null = null;
+  /** zuletzt bearbeitete Haltestellen-Gruppe bleibt offen */
+  let openPool = '';
 
   const draft = <K extends GameConfigSection>(k: K): GameConfig[K] => {
     if (!drafts.has(k)) drafts.set(k, structuredClone(st!.config[k]));
@@ -93,8 +102,8 @@ export function settingsTab(rerender: () => void): Tab {
       }
       case 'tips': {
         const d = draft('tips');
-        return `<table class="adm-table"><thead><tr><th>Joker</th><th>Name</th><th>Abzug</th></tr></thead><tbody>${(Object.keys(d.kinds) as TipKind[])
-          .map((k) => `<tr><td><small class="muted">${k}</small></td><td>${inp(`kinds.${k}.label`, d.kinds[k].label, 'maxlength="40"')}</td><td>${num(`kinds.${k}.share`, Math.round(d.kinds[k].share * 100), 'min="0" max="90" data-pct="1"')} %</td></tr>`)
+        return `<table class="adm-table"><thead><tr><th>Zeigt</th><th>Name</th><th>Abzug</th></tr></thead><tbody>${(Object.keys(d.kinds) as TipKind[])
+          .map((k) => `<tr><td><small class="muted">${TIP_WHAT[k]}</small></td><td>${inp(`kinds.${k}.label`, d.kinds[k].label, 'maxlength="40"')}</td><td>${num(`kinds.${k}.share`, Math.round(d.kinds[k].share * 100), 'min="0" max="90" data-pct="1"')} %</td></tr>`)
           .join('')}</tbody></table>
           <div class="adm-grid2"><label class="field adm-inline"><span>Stufe „Günstig“</span>${num('levels.cheap', Math.round(d.levels.cheap * 100), 'min="-50" max="50" data-pct="1"')} Prozentpunkte</label>
           <label class="field adm-inline"><span>Stufe „Teuer“</span>${num('levels.expensive', Math.round(d.levels.expensive * 100), 'min="-50" max="50" data-pct="1"')} Prozentpunkte</label></div>
@@ -141,16 +150,36 @@ export function settingsTab(rerender: () => void): Tab {
       }
       case 'pools': {
         const d = draft('pools');
+        if (!net) return '';
+        const n = net;
+        const modeOf: Record<string, Mode> = { Ukey: 'U', U: 'U', Skey: 'S', S: 'S', Tkey: 'T', T: 'T' };
         return STATION_GROUPS.map(
           (g) => `<h4>${g.icon} ${esc(g.label)}</h4>${g.levels
             .map((k) => {
-              const count = net ? net.data.stations.filter((s) => inStationKinds(s, [k.id], (id) => net!.lines.get(id))).length : 0;
-              const list = (side: 'add' | 'remove') =>
-                (d[side][k.id] ?? []).map((id) => `<span class="adm-tag">${esc(net?.stations.get(id)?.name ?? id)}<button type="button" data-pool="${side}:${k.id}:${esc(id)}" aria-label="entfernen">✕</button></span>`).join('') ||
-                '<small class="muted">–</small>';
-              return `<div class="adm-box"><b>${esc(k.label)}</b> <small class="muted">${count} Stationen · ${esc(k.hint)}</small>
-                <div class="adm-grid2"><div class="field"><span>Zusätzlich dabei</span><div class="adm-tags">${list('add')}</div>${pickerSlot('station', `add:${k.id}`, '', 'Station hinzufügen …')}</div>
-                <div class="field"><span>Ausgenommen</span><div class="adm-tags">${list('remove')}</div>${pickerSlot('station', `remove:${k.id}`, '', 'Station ausnehmen …')}</div></div></div>`;
+              const add = new Set(d.add[k.id] ?? []);
+              const rem = new Set(d.remove[k.id] ?? []);
+              const member = (s: (typeof n.data.stations)[number]) => add.has(s.id) || (!rem.has(s.id) && ruleMatches(s, k.id, (id) => n.lines.get(id)));
+              const mode = modeOf[k.id];
+              const count = n.data.stations.filter(member).length;
+              const changes = add.size + rem.size;
+              // Schiene: alle Stationen dieses Verkehrsmittels zum An-/Abwählen; Bus (Tausende): nur Suche
+              const chips = mode
+                ? `<div class="adm-poolchips">${n.data.stations
+                    .filter((s) => s.modes.includes(mode))
+                    .sort((a, b) => a.name.localeCompare(b.name, 'de'))
+                    .map((s) => {
+                      const on = member(s);
+                      const why = add.has(s.id) ? 'added' : rem.has(s.id) ? 'removed' : '';
+                      return `<button type="button" class="adm-pool ${on ? 'on' : ''} ${why}" data-pooltoggle="${k.id}:${s.id}" title="${on ? 'dabei – klicken zum Ausnehmen' : 'nicht dabei – klicken zum Aufnehmen'}">${why === 'added' ? '✚ ' : why === 'removed' ? '✕ ' : ''}${esc(s.name)}</button>`;
+                    })
+                    .join('')}</div>`
+                : `<div class="adm-grid2"><div class="field"><span>Zusätzlich dabei</span><div class="adm-tags">${
+                    [...add].map((id) => `<span class="adm-tag">${esc(n.stations.get(id)?.name ?? id)}<button type="button" data-pool="add:${k.id}:${esc(id)}" aria-label="entfernen">✕</button></span>`).join('') || '<small class="muted">–</small>'
+                  }</div>${pickerSlot('station', `add:${k.id}`, '', 'Station hinzufügen …')}</div>
+                  <div class="field"><span>Ausgenommen</span><div class="adm-tags">${
+                    [...rem].map((id) => `<span class="adm-tag">${esc(n.stations.get(id)?.name ?? id)}<button type="button" data-pool="remove:${k.id}:${esc(id)}" aria-label="entfernen">✕</button></span>`).join('') || '<small class="muted">–</small>'
+                  }</div>${pickerSlot('station', `remove:${k.id}`, '', 'Station ausnehmen …')}</div></div>`;
+              return `<details class="adm-box adm-poolbox" ${openPool === k.id ? 'open' : ''}><summary><b>${esc(k.label)}</b> <small class="muted">${count} Stationen${changes ? ` · ${changes} von Hand geändert` : ''} · ${esc(k.hint)}</small></summary>${chips}</details>`;
             })
             .join('')}`,
         ).join('');
@@ -183,7 +212,7 @@ export function settingsTab(rerender: () => void): Tab {
     return `<p class="muted">Gilt sofort für neue Lobbys und alle, die die Seite neu laden. „Standard“ = Wert aus dem Spiel selbst.</p>
       ${ORDER.map(
         (k) => `<details class="adm-sec" data-sec="${k}" ${open === k ? 'open' : ''}><summary>${esc(st!.labels[k])}${st!.changed.includes(k) ? ' <span class="adm-badge adm-badge-mod">geändert</span>' : ''}</summary>
-          ${open === k ? `<div class="adm-sec-body">${section(k)}<div class="adm-row adm-save"><button class="btn btn-primary" data-save="${k}">Speichern</button>${st!.changed.includes(k) ? `<button class="btn btn-ghost" data-reset="${k}">Auf Standard</button>` : ''}${drafts.has(k) ? `<button class="btn btn-ghost" data-discard="${k}">Verwerfen</button>` : ''}</div></div>` : ''}</details>`,
+          ${open === k ? `<div class="adm-sec-body">${section(k)}<div class="adm-row adm-save"><button class="btn btn-primary" data-save="${k}">Speichern</button>${st!.changed.includes(k) ? `<button class="btn btn-ghost" data-reset="${k}">Auf Standard</button>` : ''}${drafts.has(k) && JSON.stringify(drafts.get(k)) !== JSON.stringify(st!.config[k]) ? `<button class="btn btn-ghost" data-discard="${k}">Verwerfen</button>` : ''}</div></div>` : ''}</details>`,
       ).join('')}
       <details class="adm-versions" ${versions ? 'open' : ''}><summary>Frühere Versionen</summary>${
         versions
@@ -269,6 +298,25 @@ export function settingsTab(rerender: () => void): Tab {
         p[side][kind] = [...new Set([...(p[side][kind] ?? []), id])];
         rerender();
       });
+    // Station in einer Gruppe an-/abwählen: Regel-Mitglied → ausnehmen, sonst aufnehmen; Ausnahme wieder aufheben
+    root.querySelectorAll<HTMLButtonElement>('[data-pooltoggle]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const [kind, id] = b.dataset.pooltoggle!.split(':') as [StationKind, string];
+        const p = draft('pools');
+        const add = new Set(p.add[kind] ?? []);
+        const rem = new Set(p.remove[kind] ?? []);
+        const st = net!.stations.get(id)!;
+        const rule = ruleMatches(st, kind, (x) => net!.lines.get(x));
+        if (add.has(id)) add.delete(id);
+        else if (rem.has(id)) rem.delete(id);
+        else if (rule) rem.add(id);
+        else add.add(id);
+        p.add[kind] = [...add];
+        p.remove[kind] = [...rem];
+        openPool = kind;
+        rerender();
+      }),
+    );
     root.querySelectorAll<HTMLButtonElement>('[data-pool]').forEach((b) =>
       b.addEventListener('click', () => {
         const [side, kind, id] = b.dataset.pool!.split(':') as ['add' | 'remove', StationKind, string];

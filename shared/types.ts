@@ -621,9 +621,11 @@ export interface AdminLobby {
 
 export interface AdminStats {
   /** Momentaufnahmen (alle 5 min, ab 2 Tagen je Stunde der Höchstwert) */
-  samples: { at: number; online: number; lobbies: number; playing: number; players: number }[];
-  /** je Tag (Wien): fertige Spiele, Spieler darin, neue und aktive Accounts */
-  days: { day: string; route: number; quiz: number; players: number; newUsers: number; activeUsers: number }[];
+  samples: { at: number; online: number; lobbies: number; playing: number; players: number; visitors: number; anon: number }[];
+  /** je Tag (Wien): fertige Spiele, Spieler darin, neue und aktive Accounts, Besucher (mit/ohne Account) */
+  days: { day: string; route: number; quiz: number; players: number; newUsers: number; activeUsers: number; visitors: number; anonVisitors: number }[];
+  /** wie oft welche Linie in Routen gewählt wurde (Zeitraum), häufigste zuerst */
+  lines: { line: string; n: number }[];
 }
 
 export interface AdminUserStats {
@@ -681,8 +683,31 @@ export type LineEdit =
   | { kind: 'removeStation'; station: string }
   /** neue Linie in beide Richtungen; Fahrzeiten ab dem vorigen Halt; Takt je Tagestyp */
   | { kind: 'addLine'; line: string; mode: Mode; color: string; stops: { station: string; min: number }[]; service: Record<DayType, ServiceBand[]> }
-  | { kind: 'removeLine'; line: string };
+  | { kind: 'removeLine'; line: string }
+  /** Takt ändern: an diesem Tagestyp zwischen `from` und `to` alle `every` Minuten (Fahrzeiten wie bisher);
+   *  `pattern` = „Start>Ende“ (Station-IDs, beide Richtungen) – ohne: alle Haltefolgen der Linie */
+  | { kind: 'headway'; line: string; day: DayType; from: string; to: string; every: number; pattern?: string }
+  /** zusätzliche Fahrten einer bestehenden Linie auf eigener Haltefolge (beide Richtungen), z.B. jede 2. S1 nach Hütteldorf */
+  | { kind: 'addVariant'; line: string; stops: { station: string; min: number }[]; service: Record<DayType, ServiceBand[]> }
+  /** neuen Halt zwischen zwei aufeinanderfolgenden Halten einfügen (beide Richtungen): a → station `minA`, station → b `minB` */
+  | { kind: 'insertStop'; line: string; a: string; b: string; station: string; minA: number; minB: number }
+  /** Linie hält hier nicht mehr (fährt durch; andere Linien halten weiter) */
+  | { kind: 'skipStop'; line: string; station: string }
+  /** einzelne Abfahrten am ersten Halt einer Haltefolge („Start>Ende“, diese Richtung) hinzufügen/streichen */
+  | { kind: 'departures'; line: string; pattern: string; day: DayType; add: string[]; remove: string[] };
 export type NetEdit = LineEdit;
+
+/** eine Linie im Fahrplan (Admin): Verkehrsmittel, Fahrten je Tag, Endstationen, Takt am Werktag */
+export interface TimetableLineInfo {
+  line: string;
+  mode: Mode;
+  /** Regionalzug (fährt nur auf S-Bahn-Abschnitten mit) */
+  regional: boolean;
+  trips: Record<DayType, number>;
+  termini: string[];
+  /** typischer Takt Mo–Fr 6–20 Uhr (min) */
+  every: number | null;
+}
 
 /** Netzplan: Standard („regular“) oder weiterer Plan, der in der Lobby wählbar sein kann */
 export interface NetworkPlan {
@@ -702,9 +727,13 @@ export interface TimetableLineView {
   line: string;
   mode: Mode;
   patterns: {
+    /** „Start>Ende“ (Station-IDs) – für „Takt ändern“ */
+    key: string;
     stops: { station: string | null; name: string; min: number | null }[];
     /** Fahrten je Tagestyp und Stunde (0–24) */
     trips: Record<DayType, number[]>;
+    /** Abfahrten am ersten Halt (Minuten ab Mitternacht) */
+    deps: Record<DayType, number[]>;
     through: string | null;
   }[];
 }

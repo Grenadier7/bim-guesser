@@ -5284,7 +5284,7 @@ label.check {
 }
 .adm-charts {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
   gap: 10px;
   margin-bottom: 14px;
 }
@@ -5318,12 +5318,16 @@ figure.chart figcaption b {
 }
 .ch-axis {
   fill: var(--muted);
-  font-size: 11px;
+  font-size: 12px;
+}
+figure.chart.wide {
+  grid-column: 1 / -1;
 }
 .ch-line {
   fill: none;
   stroke-width: 2;
   stroke-linejoin: round;
+  stroke-linecap: round;
 }
 .ch-cross {
   stroke: var(--muted);
@@ -5363,10 +5367,16 @@ figure.chart figcaption b {
 }
 .ch-legend {
   display: flex;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 4px 14px;
   font-size: 12px;
   color: var(--muted);
-  margin-bottom: 2px;
+  margin-bottom: 4px;
+}
+.ch-legend b {
+  color: var(--ink);
+  font-size: 13px;
+  margin-left: 2px;
 }
 .ch-table summary {
   font-size: 12px;
@@ -5668,4 +5678,324 @@ details.adm-sec > summary {
   .adm-charts {
     grid-template-columns: 1fr;
   }
+}
+
+/* ---------------------------------------------------------------- Admin: Fahrplan (Liste + Linie) */
+.admin:has(.adm-ttlayout) {
+  max-width: 1280px;
+}
+.adm-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+.adm-subnav button {
+  border: 0;
+  background: transparent;
+  padding: 7px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+}
+.adm-subnav button.on {
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom-color: var(--ink);
+}
+.adm-ttbar {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.adm-ttbar .line-input {
+  max-width: 320px;
+}
+.adm-ttlayout {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.adm-ttlines {
+  max-height: calc(100vh - 230px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.adm-ttlines h4 {
+  margin: 10px 0 6px;
+  font-size: 13px;
+}
+.adm-ttgrid {
+  display: grid;
+  gap: 4px;
+}
+.adm-ttline {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  text-align: left;
+  border: 1px solid transparent;
+  background: var(--panel);
+  border-radius: 8px;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.adm-ttline .chip {
+  grid-row: span 2;
+  align-self: center;
+}
+.adm-ttline small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.adm-ttline:hover {
+  border-color: var(--line);
+}
+.adm-ttline.on {
+  border-color: var(--ink);
+}
+.adm-ttdetail {
+  position: sticky;
+  top: 0;
+  min-width: 0;
+}
+.adm-ttdhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.adm-ttdhead h3 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.adm-more {
+  gap: 12px;
+  font-size: 13px;
+}
+.link.danger {
+  color: var(--err);
+}
+.adm-stops td:first-child {
+  white-space: nowrap;
+}
+.adm-plus {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px dashed var(--muted);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  margin: 0 6px 0 0;
+  vertical-align: middle;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0;
+}
+/* Platz halten, wo kein „+“ steht – die Namen bleiben bündig */
+.adm-stops td:first-child {
+  padding-left: 32px;
+  text-indent: -26px;
+}
+.adm-plus:hover {
+  border-style: solid;
+  color: var(--ink);
+}
+.adm-insrow td {
+  background: #f4f8ff;
+}
+.adm-ins {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.adm-ins .picker {
+  flex: 1 1 240px;
+}
+.adm-ins input[type='number'] {
+  width: 56px;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+details.adm-deps {
+  margin: 8px 0;
+  font-size: 13px;
+}
+details.adm-deps > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.adm-deplist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 6px 0;
+  max-height: 220px;
+  overflow-y: auto;
+}
+.adm-dep {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 1px 2px 1px 6px;
+}
+.adm-dep button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 0 3px;
+}
+.adm-dep.gone {
+  text-decoration: line-through;
+  color: var(--err);
+  background: #fde8e8;
+}
+.adm-dep.new {
+  background: #e3f4e8;
+  color: #0f6b3a;
+  font-weight: 600;
+}
+.adm-hw {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.adm-hw input {
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.adm-hw input[type='number'] {
+  width: 60px;
+}
+.adm-netmap {
+  height: min(70vh, 640px);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+@media (max-width: 860px) {
+  .adm-ttlayout {
+    grid-template-columns: 1fr;
+  }
+  .adm-ttlines {
+    max-height: 320px;
+  }
+  .adm-ttdetail {
+    position: static;
+  }
+}
+
+/* ---------------------------------------------------------------- Admin: Rangliste (Linien), aktuelle Werte */
+.ch-now {
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 6px;
+}
+.ch-now i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  margin-right: 3px;
+}
+.ch-empty {
+  padding: 30px 0;
+  text-align: center;
+}
+.ch-rankfig {
+  grid-row: span 2;
+}
+.ch-rank {
+  display: grid;
+  gap: 5px;
+  margin-top: 4px;
+}
+.ch-rrow {
+  display: grid;
+  grid-template-columns: 64px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.ch-rlabel {
+  display: flex;
+  justify-content: flex-end;
+}
+.ch-rbar {
+  background: var(--bg);
+  border-radius: 4px;
+  height: 14px;
+  overflow: hidden;
+}
+.ch-rbar i {
+  display: block;
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+}
+.ch-rrow b {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.ch-rrow:hover .ch-rbar i {
+  opacity: 0.85;
+}
+
+/* ---------------------------------------------------------------- Admin: Haltestellen-Gruppen */
+.adm-poolbox > summary {
+  cursor: pointer;
+}
+.adm-poolchips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.adm-pool {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  border-radius: 99px;
+  padding: 2px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.adm-pool.on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #fff;
+}
+.adm-pool.added {
+  background: #0f6b3a;
+  border-color: #0f6b3a;
+  color: #fff;
+}
+.adm-pool.removed {
+  background: #fde8e8;
+  border-color: var(--err);
+  color: var(--err);
+  text-decoration: line-through;
 }

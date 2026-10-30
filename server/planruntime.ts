@@ -5,7 +5,7 @@ import type { LineEdit, NetMode } from '../shared/types.ts';
 import { Network } from './network.ts';
 import { planIdOf } from './plancontext.ts';
 import type { PlanStore } from './plans.ts';
-import { configureTimetable, forgetTimetable, reloadTimetable, type PlanContext } from './timetable.ts';
+import { configureTimetable, forgetTimetable, reloadTimetable, timetableHeadways, type PlanContext } from './timetable.ts';
 
 type AddressCfg = Parameters<Network['applyAddresses']>[0];
 
@@ -13,6 +13,7 @@ export class PlanRuntime {
   readonly base: Network;
   private plans: PlanStore;
   private others = new Map<string, Network>();
+  private pristine: Network | null = null;
   private json = new Map<string, string>();
   private addresses: () => AddressCfg;
   /** nach jeder Änderung (z.B. Quiz-Netz neu aufbauen) */
@@ -28,6 +29,8 @@ export class PlanRuntime {
   /** Netz eines Plans (null = unbekannt) */
   planNet(id: string): Network | null {
     if (id === 'regular') return this.base;
+    // „wie gebaut“: Netz und Fahrplan ohne jede Änderung (nur zum Ansehen)
+    if (id === '__base') return (this.pristine ??= Network.load());
     const plan = this.plans.get(id);
     if (!plan) return null;
     let n = this.others.get(id);
@@ -51,12 +54,20 @@ export class PlanRuntime {
     const n = this.planNet(id);
     if (!n) return null;
     let j = this.json.get(id);
-    if (!j) this.json.set(id, (j = JSON.stringify(n.publicData())));
+    if (!j) {
+      const data = n.publicData();
+      // Takt von Linien, deren Fahrplan der Plan ändert, aus dem Fahrplan des Plans
+      const plan = this.plans.get(id);
+      const changed = [...new Set((plan?.edits ?? []).filter((e) => ['headway', 'departures', 'addVariant', 'addLine', 'extend', 'cut'].includes(e.kind)).map((e) => ('line' in e ? e.line : '')))].filter(Boolean);
+      if (changed.length && data.headways) data.headways = { ...data.headways, ...timetableHeadways(id, changed) };
+      this.json.set(id, (j = JSON.stringify(data)));
+    }
     return j;
   }
 
   /** was der Fahrplan eines Plans braucht */
   context(id: string): PlanContext | null {
+    if (id === '__base') return { params: this.plans.params('__none__'), edits: [], stations: null };
     const plan = this.plans.get(id);
     const n = this.planNet(id);
     if (!plan || !n) return null;

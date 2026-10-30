@@ -377,3 +377,93 @@ describe('Sicherheit', () => {
     assert.ok(st.days.every((x: Record<string, unknown>) => 'route' in x && 'quiz' in x && 'newUsers' in x));
   });
 });
+
+describe('Fahrplan bearbeiten', () => {
+  const S40 = () => net.data.lines.find((l) => l.id === 'S40')!;
+  const st = (name: string) => S40().patterns.flat().find((s) => net.station(s).name === name)!;
+  const put = (plan: string, edits: object[]) => boss.b.call('PUT', `/api/admin/routing/plans/${plan}`, { label: 'Fahrplan-Test', params: {}, edits });
+  type View = { patterns: { key: string; stops: { station: string | null; min: number | null }[]; trips: Record<string, number[]>; deps: Record<string, number[]> }[] };
+  const view = async (plan: string, line = 'S40') => (await boss.b.call('GET', `/api/admin/routing/timetable?plan=${plan}&line=${line}`)).body as View;
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+  test('Linienliste: Netzlinien und Regionalzüge mit Fahrten und Endstationen', async () => {
+    const r = await boss.b.call('GET', '/api/admin/routing/lines?plan=regular');
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const lines = r.body as { line: string; regional: boolean; trips: Record<string, number>; termini: string[] }[];
+    for (const id of ['U1', 'S40']) assert.ok(lines.some((l) => l.line === id && !l.regional && l.trips.wd > 0 && l.termini.length), id);
+    assert.ok(lines.some((l) => l.regional && l.trips.wd >= 20), 'Regionalzüge dabei');
+    assert.equal((await boss.b.call('GET', '/api/admin/routing/lines?plan=gibtsnicht')).status, 404);
+    assert.equal((await boss.b.call('GET', '/api/admin/routing/timetable?plan=regular&line=X99')).status, 404);
+  });
+
+  test('Takt, Abfahrten, Halt auslassen, Halt einfügen, Zusatzfahrten – nur im eigenen Plan', async () => {
+    const before = await view('regular');
+    const main = before.patterns[0];
+    assert.ok(main.deps.wd.length > 10, 'Abfahrten am ersten Halt');
+    const HEILI = st('Heiligenstadt');
+    const SPITTELAU = st('Spittelau');
+    const FJB = st('Franz-Josefs-Bahnhof');
+    const first = main.deps.wd.find((m) => m >= 0)!;
+    const r = await put('fahrplantest', [
+      { kind: 'headway', line: 'S40', day: 'wd', from: '06:00', to: '09:00', every: 5, pattern: main.key },
+      { kind: 'departures', line: 'S40', pattern: main.key, day: 'wd', add: ['23:58'], remove: [hhmm(first)] },
+      { kind: 'skipStop', line: 'S40', station: SPITTELAU },
+      { kind: 'addStation', station: 'n2001', name: 'Zwischenhalt', lat: 48.24, lon: 16.36, district: 19 },
+      { kind: 'insertStop', line: 'S40', a: HEILI, b: FJB, station: 'n2001', minA: 2, minB: 3 },
+      { kind: 'addVariant', line: 'S40', stops: [{ station: HEILI, min: 0 }, { station: FJB, min: 5 }], service: { wd: [{ from: '10:00', to: '12:00', every: 30 }], sa: [], su: [] } },
+    ]);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.report.fahrplantest.map((x: string) => x[0]), ['✔', '✔', '✔', '✔', '✔', '✔'], r.body.report.fahrplantest.join(' | '));
+
+    const after = await view('fahrplantest');
+    const p = after.patterns.find((x) => x.key === main.key)!;
+    assert.ok(p, 'Haltefolge noch da');
+    for (const h of [6, 7, 8]) assert.ok(p.trips.wd[h] >= 11, `Takt 5 min um ${h} Uhr: ${p.trips.wd[h]}`);
+    assert.ok(p.deps.wd.includes(23 * 60 + 58), 'Abfahrt dazu');
+    assert.ok(!p.deps.wd.includes(first), 'Abfahrt gestrichen');
+    assert.ok(after.patterns.every((x) => !x.stops.some((s) => s.station === SPITTELAU)), 'Spittelau ausgelassen');
+    assert.ok(after.patterns.some((x) => x.stops.some((s) => s.station === 'n2001')), 'neuer Halt eingefügt');
+    assert.ok(after.patterns.some((x) => x.stops.length === 2 && x.stops[0].station === HEILI && x.stops[1].station === FJB), 'Zusatzfahrten Heiligenstadt–FJB');
+
+    // Netz des Plans: S40 hält nicht mehr in Spittelau, aber am neuen Halt; Standard unverändert
+    const pn = (await (await realFetch(`${base}/api/network?plan=fahrplantest`)).json()) as { stations: { id: string; lines: string[] }[] };
+    assert.ok(!pn.stations.find((x) => x.id === SPITTELAU)!.lines.includes('S40'));
+    assert.ok(pn.stations.find((x) => x.id === 'n2001')!.lines.includes('S40'));
+    assert.ok(net.station(SPITTELAU).lines.includes('S40'), 'Standard-Netz unverändert');
+    assert.deepEqual((await view('regular')).patterns[0].deps.wd, main.deps.wd, 'Standard-Fahrplan unverändert');
+
+    // unsinnige Werte → abgelehnt
+    assert.equal((await put('fahrplantest', [{ kind: 'headway', line: 'S40', day: 'wd', from: '09:00', to: '06:00', every: 5 }])).status, 400);
+    assert.equal((await put('fahrplantest', [{ kind: 'departures', line: 'S40', pattern: main.key, day: 'wd', add: ['25:99'], remove: [] }])).status, 400);
+    assert.equal((await put('fahrplantest', [{ kind: 'skipStop', line: 'S40', station: 'gibtsnicht' }])).status, 400);
+    assert.equal((await boss.b.call('DELETE', '/api/admin/routing/plans/fahrplantest')).status, 200);
+  });
+});
+
+describe('Besucher und Linien-Statistik', () => {
+  test('Besuch per Kennung (mit/ohne Account) je Tag einmal; ungültige Kennung abgelehnt', async () => {
+    const anon = browser();
+    assert.equal((await anon.call('POST', '/api/ping', { v: 'x' })).status, 400);
+    assert.equal((await anon.call('POST', '/api/ping', { v: '../../etc/passwd' })).status, 400);
+    const before = (await boss.b.call('GET', '/api/admin/stats?days=1')).body.days.at(-1);
+    const id = uniq('testbesucher').toLowerCase();
+    assert.equal((await anon.call('POST', '/api/ping', { v: id })).status, 200);
+    assert.equal((await anon.call('POST', '/api/ping', { v: id })).status, 200);
+    assert.equal((await boss.b.call('POST', '/api/ping', { v: uniq('testadmin').toLowerCase() })).status, 200);
+    const now = (await boss.b.call('GET', '/api/admin/stats?days=1')).body.days.at(-1);
+    assert.equal(now.visitors - (before?.visitors ?? 0), 2, 'zweimal derselbe Browser zählt einmal');
+    assert.equal(now.anonVisitors - (before?.anonVisitors ?? 0), 1, 'einer davon ohne Account');
+  });
+
+  test('gewählte Linien werden gezählt und als Rangliste geliefert', async () => {
+    const { Accounts, AccountAdmin } = await import('../server/accounts.ts');
+    const a = new AccountAdmin(new Accounts(net, { file: ':memory:', mail: async () => {} }));
+    a.countLines(['U4', 'U4', 'S45', 'U4', '13A']);
+    a.countLines(['S45', '<script>', '']);
+    assert.deepEqual(a.stats(1).lines.map((x) => ({ ...x })), [
+      { line: 'U4', n: 3 },
+      { line: 'S45', n: 2 },
+      { line: '13A', n: 1 },
+    ]);
+  });
+});

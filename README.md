@@ -135,20 +135,35 @@ npm run admin -- grant <Benutzername>          # lokal (auch: list, revoke <Name
 docker exec oeffi-guesser node server/admin-cli.ts grant <Benutzername>   # im Container
 ```
 
-Danach gibt es im Account-Fenster „🛠 Admin-Bereich öffnen“ (außerhalb einer Lobby):
+Danach gibt es im Account-Fenster „🛠 Admin-Bereich öffnen“ (außerhalb einer Lobby). Er muss je Sitzung mit dem
+eigenen Passwort **entsperrt** werden (mind. 10 Zeichen) und sperrt sich nach 30 min ohne Aktion bzw. spätestens nach 8 h.
+Admins können andere Admins nicht ändern; Namen wie „admin“ oder „spielleitung“ sind für Spieler gesperrt; nach
+5 falschen Passwörtern ist ein Name 15 min gesperrt.
 
-- **Übersicht**: Accounts (gesamt, online, neu, mit E-Mail), Lobbys, laufende Spiele, Version, RAM, Mail- und
-  Fahrplan-Status. Jede Lobby lässt sich **verwalten** wie vom Host: starten, pausieren/fortsetzen, Runde abbrechen,
-  weiter, zurück in die Lobby, beenden, Spieler entfernen, Host-Rechte vergeben, als „Spielleitung“ in den Chat schreiben.
-- **Accounts**: suchen (Name/E-Mail), alles sehen (Statistik, Medaillen, Freunde, Geräte, Spielstand), Passwort setzen,
-  **Link zum Zurücksetzen** erzeugen (1 h, zum Weitergeben, wenn keine Mail geht), auf allen Geräten abmelden,
-  Statistik zurücksetzen, umbenennen, E-Mail ändern, löschen (Admins erst nach `revoke`).
-- **Routenberechnung**: Parameter (Umsteigezeit, Fußwege, Fahrten je Verbindung, Anteil der ersten Wartezeit) und
-  **Linien-Änderungen** im Referenzfahrplan – verlängern (z.B. S40 ab Heiligenstadt weiter nach Spittelau +3 min,
-  Franz-Josefs-Bahnhof +4 min), kürzen (S40 endet bei Heiligenstadt) oder Fahrzeit zwischen zwei Halten. Wirkt sofort
-  auf neue Runden, Training und den Routen-Baukasten; Probe-Abfrage zum Ausprobieren. Gespeichert in
-  `STATE_DIR/routing-overrides.json`.
+- **Übersicht**: Kennzahlen, Grafiken (Besucher online mit/ohne Account, Besucher je Tag, fertige Spiele, meistgewählte
+  Linien, Spieler in Lobbys, Accounts je Tag; Zeitraum 1/7/30/90 Tage, Tooltips, Tabellenansicht) und alle Lobbys –
+  verwalten wie vom Host: starten, pausieren/fortsetzen, Runde abbrechen, weiter, beenden, Spieler entfernen,
+  Host-Rechte vergeben, als „Spielleitung“ in den Chat schreiben. Besucher werden über eine zufällige Kennung je
+  Browser gezählt (`/api/ping`, kein Bezug zur Person).
+- **Accounts**: suchen, alles sehen (inkl. Verlauf als Grafik), Passwort setzen, **Link zum Zurücksetzen** (1 h),
+  auf allen Geräten abmelden, Statistik zurücksetzen, umbenennen, E-Mail ändern, löschen.
+- **Netzpläne**: „Standard“ (gilt für Spiele, Training, Quiz und Lernen) plus beliebig viele eigene Pläne, die in der
+  Lobby unter „Netz“ wählbar sein können (mit eigener Karte). Je Plan:
+  - **Fahrplan** – alle Linien (U, S, Regionalzüge mit Halt in Wien, Bim, Bus, Nachtbus) mit Halten, Fahrzeiten,
+    Abfahrten je Tagestyp und Takt; direkt änderbar (Fahrzeit, Halt auslassen/einfügen, Abfahrten streichen/dazu,
+    Takt je Zeitraum). „wie gebaut“ zeigt das Original.
+  - **Änderungen** – verlängern, kürzen, Fahrzeit, Stationen anlegen/umbenennen/verschieben/entfernen, Linien
+    anlegen/entfernen, Takt, Zusatzfahrten auf Teilstrecken (z.B. jede 2. S1 nach Hütteldorf), Halt einfügen/auslassen.
+  - **Karte** – das Netz des Plans; **Probe** – Route mit Details berechnen; **Plan** – Name, Erklärung, Parameter
+    (Umsteigezeit, Fußwege, …), Versionen zum Zurückholen.
+- **Einstellungen**: Uhrzeiten, Netz-Auswahl, Was zählt? (inkl. Umstiegs-Aufschlag), Joker und ihr Abzug,
+  Schwierigkeit und Punkte-Faktoren, Standard-Einstellungen aller Lobbys, Haltestellen-Auswahl (welche Stationen
+  „wichtig“/„alle“ sind – per Klick), Adressen (eigene hinzufügen, ausnehmen), Chat-Moderation (Wortliste), Hinweis für alle.
 - **Protokoll**: jede Admin-Aktion mit Zeit, Admin und Ziel.
+
+Netzpläne und Einstellungen liegen in `STATE_DIR/config/` (jede Änderung als Version in `config/history/`).
+**Sicherung**: `deploy/backup.sh` läuft auf dem Host und legt Kopien in einem Ordner ab, den der Container nie sieht –
+siehe `BEFEHLE.md`.
 
 ## Eigener Referenzfahrplan (GTFS)
 
@@ -353,6 +368,8 @@ Normale Commits und Pushes deployen nichts – nur Tags `v*`.
 - `deploy/Caddyfile.snippet` ins Caddyfile übernehmen, Caddy neu laden.
 - `deploy/update.sh` nach `~/docker/services/bimguesser/` kopieren, ausführbar machen, cron-Eintrag:
   `*/2 * * * * ~/docker/services/bimguesser/update.sh >> ~/docker/services/bimguesser/update.log 2>&1`
+- `deploy/backup.sh` ebenso, cron-Eintrag (täglich 04:30):
+  `30 4 * * * bash ~/docker/services/bimguesser/backup.sh >> ~/docker/services/bimguesser/backup.log 2>&1`
 - Das Paket `bim-guesser` auf GitHub (Packages) auf **public** stellen – sonst braucht Ditto ein `docker login ghcr.io`.
 
 **Container-Details:** `Dockerfile` (Node 24, läuft als Benutzer `node`), Laufzeitdaten (Auskunfts-Cache,

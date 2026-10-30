@@ -61,6 +61,24 @@ function renderNotice() {
   });
 }
 
+/** Besucherzahl: zufällige Kennung dieses Browsers (kein Bezug zur Person), jede Minute, solange die Seite sichtbar ist */
+function startVisitorPing() {
+  let id = '';
+  try {
+    id = localStorage.getItem('oeffi-visitor') ?? '';
+    if (!/^[a-z0-9]{12,40}$/.test(id)) localStorage.setItem('oeffi-visitor', (id = crypto.randomUUID().replace(/-/g, '')));
+  } catch {
+    id = crypto.randomUUID().replace(/-/g, '');
+  }
+  const ping = () => {
+    if (document.visibilityState !== 'visible') return;
+    void fetch('/api/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: id }), credentials: 'same-origin' }).catch(() => {});
+  };
+  ping();
+  setInterval(ping, 60_000);
+  document.addEventListener('visibilitychange', ping);
+}
+
 /** Lobby mit eigenem Netzplan: dessen Netz laden (Karte, Routen-Baukasten), sonst das Standard-Netz */
 let netLoading: string | null = null;
 function ensurePlanNet() {
@@ -254,6 +272,7 @@ async function init() {
   // geteilter Einstellungs-Link → Startseite (legt die Lobby an) statt in die alte Lobby zurück
   if (new URLSearchParams(location.search).has('settings') || !(await restoreSession())) render();
   setInterval(tick, 250);
+  startVisitorPing();
   // ☆ hinter Liniennummern (z.B. in der Routenjagd-Auflösung): Linie für „Lernen → Üben“ merken
   // ☆ für mehrere gleichwertige Linien („S1/S2/S3“): alle merken, in der Meldung „nur S1“ wählbar (Punkt 8)
   document.addEventListener('click', (e) => {

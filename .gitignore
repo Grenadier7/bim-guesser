@@ -10,3 +10,4 @@ test/e2e/.state/
 data/accounts.db*
 data/mails.jsonl
 data/routing-overrides.json
+data/config/

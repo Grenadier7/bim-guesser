@@ -169,6 +169,8 @@ CREATE TABLE IF NOT EXISTS admin_log (id INTEGER PRIMARY KEY, at INTEGER NOT NUL
 CREATE TABLE IF NOT EXISTS metrics (at INTEGER PRIMARY KEY, online INTEGER NOT NULL, lobbies INTEGER NOT NULL, playing INTEGER NOT NULL, players INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS game_log (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, mode TEXT NOT NULL, players INTEGER NOT NULL, accounts INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS game_log_at ON game_log(at);
+CREATE TABLE IF NOT EXISTS visits (day TEXT NOT NULL, id TEXT NOT NULL, account INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, id));
+CREATE TABLE IF NOT EXISTS line_usage (day TEXT NOT NULL, line TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, line));
 `;
 
 export interface AccountUser {
@@ -215,6 +217,9 @@ export class Accounts {
     const scols = new Set((this.db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[]).map((c) => c.name));
     if (!scols.has('admin_until')) this.db.exec('ALTER TABLE sessions ADD COLUMN admin_until INTEGER NOT NULL DEFAULT 0');
     if (!scols.has('admin_since')) this.db.exec('ALTER TABLE sessions ADD COLUMN admin_since INTEGER NOT NULL DEFAULT 0');
+    const mcols = new Set((this.db.prepare('PRAGMA table_info(metrics)').all() as { name: string }[]).map((c) => c.name));
+    if (!mcols.has('visitors')) this.db.exec('ALTER TABLE metrics ADD COLUMN visitors INTEGER NOT NULL DEFAULT 0');
+    if (!mcols.has('anon')) this.db.exec('ALTER TABLE metrics ADD COLUMN anon INTEGER NOT NULL DEFAULT 0');
     this.cleanup();
   }
 
@@ -1022,12 +1027,29 @@ export class AccountAdmin {
 
   // -------------------------------------------------------------- Statistik
 
-  /** Momentaufnahme (alle 5 min): Accounts online, Lobbys, laufende Spiele, verbundene Spieler – 90 Tage aufheben */
-  sample(lobbies: number, playing: number, players: number) {
+  /** Momentaufnahme (alle 5 min): Accounts online, Lobbys, laufende Spiele, verbundene Spieler, Besucher – 90 Tage aufheben */
+  sample(lobbies: number, playing: number, players: number, visitors = 0, anon = 0) {
     const now = Date.now();
     const online = (this.db.prepare('SELECT COUNT(*) AS n FROM users WHERE last_seen > ?').get(now - ONLINE_MS) as { n: number }).n;
-    this.db.prepare('INSERT OR REPLACE INTO metrics (at, online, lobbies, playing, players) VALUES (?, ?, ?, ?, ?)').run(now, online, lobbies, playing, players);
+    this.db
+      .prepare('INSERT OR REPLACE INTO metrics (at, online, lobbies, playing, players, visitors, anon) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(now, online, lobbies, playing, players, visitors, anon);
     this.db.prepare('DELETE FROM metrics WHERE at < ?').run(now - 90 * DAY);
+    this.db.prepare('DELETE FROM visits WHERE day < ?').run(dayOf(now - 90 * DAY));
+  }
+
+  /** Besuch (zufällige Kennung des Browsers, ohne Bezug zur Person) – je Tag einmal gezählt */
+  visit(id: string, account: boolean) {
+    this.db
+      .prepare('INSERT INTO visits (day, id, account) VALUES (?, ?, ?) ON CONFLICT(day, id) DO UPDATE SET account = MAX(account, excluded.account)')
+      .run(dayOf(Date.now()), id, account ? 1 : 0);
+  }
+
+  /** gewählte Linien (Routen in Spielen und Training) */
+  countLines(lines: string[]) {
+    const day = dayOf(Date.now());
+    const st = this.db.prepare('INSERT INTO line_usage (day, line, n) VALUES (?, ?, 1) ON CONFLICT(day, line) DO UPDATE SET n = n + 1');
+    for (const l of lines) if (/^[\p{L}\d]{1,8}$/u.test(l)) st.run(day, l);
   }
 
   /** fertig gespieltes Spiel (alle, auch ohne Account) */
@@ -1037,10 +1059,10 @@ export class AccountAdmin {
 
   stats(days: number): AdminStats {
     const since = Date.now() - days * DAY;
-    const raw = this.db.prepare('SELECT at, online, lobbies, playing, players FROM metrics WHERE at >= ? ORDER BY at').all(since) as unknown as AdminStats['samples'];
+    const raw = this.db.prepare('SELECT at, online, lobbies, playing, players, visitors, anon FROM metrics WHERE at >= ? ORDER BY at').all(since) as unknown as AdminStats['samples'];
     // über 2 Tage: je Stunde der höchste Wert (sonst zu viele Punkte für die Grafik)
     const samples = days <= 2 ? raw : bucketMax(raw, 3600_000);
-    const empty = (k: string): AdminStats['days'][number] => ({ day: k, route: 0, quiz: 0, players: 0, newUsers: 0, activeUsers: 0 });
+    const empty = (k: string): AdminStats['days'][number] => ({ day: k, route: 0, quiz: 0, players: 0, newUsers: 0, activeUsers: 0, visitors: 0, anonVisitors: 0 });
     const rows = new Map<string, AdminStats['days'][number]>();
     for (let t = since; t <= Date.now() + DAY / 2; t += DAY) rows.set(dayOf(t), empty(dayOf(t)));
     const row = (t: number) => rows.get(dayOf(t)) ?? rows.set(dayOf(t), empty(dayOf(t))).get(dayOf(t))!;
@@ -1055,7 +1077,13 @@ export class AccountAdmin {
     for (const x of this.db.prepare('SELECT user_id, at FROM results WHERE at >= ?').all(since) as { user_id: number; at: number }[])
       (active.get(dayOf(x.at)) ?? active.set(dayOf(x.at), new Set()).get(dayOf(x.at))!).add(x.user_id);
     for (const [k, set] of active) (rows.get(k) ?? rows.set(k, empty(k)).get(k)!).activeUsers = set.size;
-    return { samples, days: [...rows.values()].sort((a, b) => a.day.localeCompare(b.day)) };
+    for (const v of this.db.prepare('SELECT day, COUNT(*) AS n, SUM(account = 0) AS anon FROM visits WHERE day >= ? GROUP BY day').all(dayOf(since)) as { day: string; n: number; anon: number }[]) {
+      const r = rows.get(v.day) ?? rows.set(v.day, empty(v.day)).get(v.day)!;
+      r.visitors = v.n;
+      r.anonVisitors = v.anon;
+    }
+    const lines = this.db.prepare('SELECT line, SUM(n) AS n FROM line_usage WHERE day >= ? GROUP BY line ORDER BY n DESC LIMIT 20').all(dayOf(since)) as { line: string; n: number }[];
+    return { samples, days: [...rows.values()].sort((a, b) => a.day.localeCompare(b.day)), lines };
   }
 
   /** Spiele eines Accounts je Tag */
@@ -1091,7 +1119,7 @@ function bucketMax(rows: AdminStats['samples'], ms: number): AdminStats['samples
     const k = Math.floor(r.at / ms) * ms;
     const b = out.get(k);
     if (!b) out.set(k, { ...r, at: k });
-    else for (const f of ['online', 'lobbies', 'playing', 'players'] as const) b[f] = Math.max(b[f], r[f]);
+    else for (const f of ['online', 'lobbies', 'playing', 'players', 'visitors', 'anon'] as const) b[f] = Math.max(b[f], r[f]);
   }
   return [...out.values()];
 }

@@ -172,8 +172,30 @@ export class Network {
         continue;
       }
       const line = this.lines.get(e.line);
-      if (!line || e.kind === 'time') continue;
+      // Fahrzeit und Takt ändern nur den Fahrplan
+      if (!line || e.kind === 'time' || e.kind === 'headway') continue;
       touched.add(line.id);
+      if (e.kind === 'skipStop') {
+        const keep = line.patterns.map((p) => p.filter((x) => x !== e.station));
+        line.nets = line.nets.filter((_, i) => keep[i].length >= 2);
+        line.patterns = keep.filter((p) => p.length >= 2);
+        continue;
+      }
+      if (e.kind === 'insertStop') {
+        if (!this.stations.has(e.station)) continue;
+        line.patterns = line.patterns.map((p) => {
+          for (let j = 1; j < p.length; j++)
+            if ((p[j - 1] === e.a && p[j] === e.b) || (p[j - 1] === e.b && p[j] === e.a)) return [...p.slice(0, j), e.station, ...p.slice(j)];
+          return p;
+        });
+        continue;
+      }
+      if (e.kind === 'departures') continue;
+      if (e.kind === 'addVariant') {
+        const ids = e.stops.map((s) => s.station).filter((id) => this.stations.has(id));
+        if (ids.length >= 2) (line.patterns.push(ids, [...ids].reverse()), line.nets.push('r', 'r'));
+        continue;
+      }
       const edit = (p: string[]): string[] => {
         if (e.kind === 'extend') {
           const ids = e.stops.map((s) => s.station).filter((id) => this.stations.has(id));

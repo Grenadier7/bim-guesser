@@ -50,7 +50,8 @@ Get-Content data/mails.jsonl -Tail 1
 npm run admin -- grant <Benutzername>
 ```
 
-3. Seite neu laden → Account-Fenster → **🛠 Admin-Bereich öffnen**.
+3. Seite neu laden → Account-Fenster → **🛠 Admin-Bereich öffnen** → mit dem eigenen Passwort entsperren
+   (mindestens 10 Zeichen, sonst erst unter „Passwort ändern“ ein längeres setzen). Nach 30 min ohne Klick sperrt er sich wieder.
 
 | Befehl | Was es macht |
 |---|---|
@@ -58,12 +59,24 @@ npm run admin -- grant <Benutzername>
 | `npm run admin -- grant <Name>` | zum Admin machen |
 | `npm run admin -- revoke <Name>` | Admin-Rechte nehmen |
 
+Was es im Admin-Bereich gibt:
+
+| Reiter | Inhalt |
+|---|---|
+| Übersicht | Besucher (mit/ohne Account), Spiele, meistgewählte Linien, offene Lobbys steuern |
+| Accounts | suchen, sperren, Passwort-Link, umbenennen, Statistik je Account |
+| Netzpläne | **Fahrplan** (jede Linie: Halte, Fahrzeiten, Abfahrten, Takt – direkt ändern; „wie gebaut“ zeigt das Original), **Änderungen** (Liste, einzeln löschen), **Karte**, **Probe** (Route testen), **Plan** (Name, in der Lobby wählbar, Versionen) |
+| Einstellungen | Uhrzeiten, Netz-Auswahl, Was zählt?, Joker, Schwierigkeit, Standard-Einstellungen, Haltestellen-Auswahl, Adressen, Chat-Moderation, Hinweis für alle |
+| Protokoll | wer hat wann was geändert |
+
+Jede Änderung an Netzplänen und Einstellungen wird als Version gespeichert und lässt sich zurückholen.
+
 ### Lokale Daten zurücksetzen
 
-Accounts, Admin-Einstellungen der Routenberechnung und Statistik liegen lokal in `data/` (nicht in Git):
+Accounts, Netzpläne, Einstellungen und Statistik liegen lokal in `data/` (nicht in Git):
 
 ```powershell
-Remove-Item data/accounts.db*, data/routing-overrides.json, data/usage.json -ErrorAction SilentlyContinue
+Remove-Item -Recurse data/accounts.db*, data/config, data/usage.json -ErrorAction SilentlyContinue
 ```
 
 Vorher den Server beenden (Strg+C), sonst ist die Datenbank gesperrt.
@@ -120,13 +133,36 @@ rm -f ~/.oeffi-update/bad
 bash ~/docker/services/bimguesser/update.sh --now
 ```
 
-### Backup der Accounts
+### Sicherung (Backup)
+
+`backup.sh` sichert Accounts, Netzpläne und Einstellungen nach `~/backups/bimguesser/` – ein Ordner, den der Container
+**nie** sieht. Auch ein Admin (oder jemand, der eine Lücke im Server findet) kommt so nicht an die Sicherungen.
+Behalten werden die letzten 14 Tage und je Woche eine für 12 Wochen.
+
+Einmal einrichten (Skript neben `update.sh` legen, dann in `crontab -e` diese Zeile dazu):
 
 ```bash
-docker exec oeffi-guesser sh -c "rm -f /app/state/backup-accounts.db && node -e \"new (require('node:sqlite').DatabaseSync)('/app/state/accounts.db').exec(\\\"VACUUM INTO '/app/state/backup-accounts.db'\\\")\""
+30 4 * * * bash ~/docker/services/bimguesser/backup.sh >> ~/docker/services/bimguesser/backup.log 2>&1
 ```
 
-Die Kopie liegt dann in `~/docker/services/bimguesser/state/backup-accounts.db`.
+| Befehl | Was es macht |
+|---|---|
+| `bash ~/docker/services/bimguesser/backup.sh` | jetzt sofort sichern |
+| `ls ~/backups/bimguesser` | vorhandene Sicherungen |
+| `tail -5 ~/docker/services/bimguesser/backup.log` | was die letzte Sicherung gemacht hat |
+
+**Den Ordner `~/backups` nie in `compose.yml` als Volume eintragen.**
+
+Zurückspielen (Beispiel: Sicherung vom 2026-10-30 04:30):
+
+```bash
+docker stop oeffi-guesser
+cd ~/docker/services/bimguesser/state
+mv accounts.db accounts.db.kaputt; rm -f accounts.db-wal accounts.db-shm
+cp ~/backups/bimguesser/2026-10-30_0430/accounts.db . && chmod 600 accounts.db
+tar -xzf ~/backups/bimguesser/2026-10-30_0430/config.tar.gz   # nur wenn auch Netzpläne/Einstellungen zurück sollen
+docker start oeffi-guesser
+```
 
 ## 5. Daten neu bauen (selten)
 

@@ -114,7 +114,7 @@ async function privacyHtml(): Promise<string> {
   return `<div class="privacy">
     <h4>Ohne Account</h4>
     <p>Einstellungen, Lernstand und Tutorial bleiben nur in deinem Browser. Am Server gibt es dazu nichts. Dein Spielname ist nur in der Lobby sichtbar, solange sie besteht.
-      Kein Tracking, keine Werbung, keine Analyse-Dienste.</p>
+      Kein Tracking, keine Werbung, keine Analyse-Dienste. Für die Besucherzahl meldet die Seite jede Minute eine zufällige Kennung dieses Browsers – ohne Bezug zu dir, nach 90 Tagen gelöscht.</p>
     <h4>Mit Account wird gespeichert</h4>
     <ul>
       <li><b>Benutzername</b> und <b>Passwort</b> – das Passwort nur verschlüsselt, niemand kann es lesen.</li>

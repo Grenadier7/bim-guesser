@@ -55,6 +55,26 @@ const hhmm = (v: unknown): string => {
   return s;
 };
 
+/** Betriebszeiten je Tagestyp: von–bis alle N Minuten */
+function service(input: unknown): Record<DayType, ServiceBand[]> {
+  const out = {} as Record<DayType, ServiceBand[]>;
+  const sv = (input ?? {}) as Record<string, unknown>;
+  for (const d of ['wd', 'sa', 'su'] as DayType[]) {
+    const bands = Array.isArray(sv[d]) ? (sv[d] as Record<string, unknown>[]) : [];
+    if (bands.length > 8) throw new GameError('Höchstens 8 Zeiträume je Tag.');
+    out[d] = bands.map((b) => {
+      const every = Math.round(Number(b.every));
+      if (!(every >= 2 && every <= 120)) throw new GameError('Takt: alle 2–120 Minuten.');
+      const from = hhmm(b.from);
+      const to = hhmm(b.to);
+      if (from > to) throw new GameError('„bis“ muss nach „von“ liegen.');
+      return { from, to, every };
+    });
+  }
+  if (!Object.values(out).some((b) => b.length)) throw new GameError('Mindestens einen Betriebszeitraum angeben.');
+  return out;
+}
+
 export function sanitizeParams(input: unknown): Partial<RoutingParams> {
   const out: Partial<RoutingParams> = {};
   for (const [k, v] of Object.entries((input ?? {}) as Record<string, unknown>)) {
@@ -98,6 +118,38 @@ export function sanitizeEdits(input: unknown): LineEdit[] {
         return { kind: 'moveStation', station: str(e.station, 'Station'), lat: coord(e.lat, 48.1, 48.33, 'Ort'), lon: coord(e.lon, 16.18, 16.58, 'Ort') };
       case 'removeStation':
         return { kind: 'removeStation', station: str(e.station, 'Station') };
+      case 'headway': {
+        const day = (['wd', 'sa', 'su'] as DayType[]).find((d) => d === e.day);
+        if (!day) throw new GameError('Tag wählen.');
+        const every = Math.round(Number(e.every));
+        if (!(every >= 2 && every <= 120)) throw new GameError('Takt: alle 2–120 Minuten.');
+        const from = hhmm(e.from);
+        const to = hhmm(e.to);
+        if (from >= to) throw new GameError('„bis“ muss nach „von“ liegen.');
+        const pattern = e.pattern == null || e.pattern === '' ? undefined : String(e.pattern);
+        if (pattern !== undefined && !/^[\w:.-]{1,40}>[\w:.-]{1,40}$/.test(pattern)) throw new GameError('Unbekannte Haltefolge.');
+        return { kind: 'headway', line: str(e.line, 'Linie'), day, from, to, every, ...(pattern ? { pattern } : {}) };
+      }
+      case 'insertStop':
+        return { kind: 'insertStop', line: str(e.line, 'Linie'), a: str(e.a, 'Halt davor'), b: str(e.b, 'Halt danach'), station: str(e.station, 'Neuer Halt'), minA: minutes(e.minA), minB: minutes(e.minB) };
+      case 'skipStop':
+        return { kind: 'skipStop', line: str(e.line, 'Linie'), station: str(e.station, 'Halt') };
+      case 'departures': {
+        const day = (['wd', 'sa', 'su'] as DayType[]).find((d) => d === e.day);
+        if (!day) throw new GameError('Tag wählen.');
+        const pattern = String(e.pattern ?? '');
+        if (!/^[\w:.-]{1,40}>[\w:.-]{1,40}$/.test(pattern)) throw new GameError('Unbekannte Haltefolge.');
+        const times = (v: unknown) => (Array.isArray(v) ? v.map(hhmm) : []);
+        const add = times(e.add);
+        const remove = times(e.remove);
+        if (add.length + remove.length === 0 || add.length + remove.length > 300) throw new GameError('1–300 Abfahrten angeben.');
+        return { kind: 'departures', line: str(e.line, 'Linie'), pattern, day, add, remove };
+      }
+      case 'addVariant': {
+        const stops = Array.isArray(e.stops) ? (e.stops as Record<string, unknown>[]) : [];
+        if (stops.length < 2 || stops.length > 80) throw new GameError('Zusätzliche Fahrten: 2–80 Halte.');
+        return { kind: 'addVariant', line: str(e.line, 'Linie'), stops: stops.map((s, i) => ({ station: str(s.station, 'Halt'), min: i ? minutes(s.min) : 0 })), service: service(e.service) };
+      }
       case 'addLine': {
         const line = str(e.line, 'Linienname', 8);
         if (!/^[\p{L}\d]{1,8}$/u.test(line)) throw new GameError('Linienname: 1–8 Buchstaben/Ziffern (z.B. U5, 13B).');
@@ -107,19 +159,7 @@ export function sanitizeEdits(input: unknown): LineEdit[] {
         if (!/^#[0-9a-f]{6}$/i.test(color)) throw new GameError('Farbe als #rrggbb.');
         const stops = Array.isArray(e.stops) ? (e.stops as Record<string, unknown>[]) : [];
         if (stops.length < 2 || stops.length > 80) throw new GameError(`${line}: 2–80 Halte.`);
-        const service = {} as Record<DayType, ServiceBand[]>;
-        const sv = (e.service ?? {}) as Record<string, unknown>;
-        for (const d of ['wd', 'sa', 'su'] as DayType[]) {
-          const bands = Array.isArray(sv[d]) ? (sv[d] as Record<string, unknown>[]) : [];
-          if (bands.length > 8) throw new GameError('Höchstens 8 Zeiträume je Tag.');
-          service[d] = bands.map((b) => {
-            const every = Math.round(Number(b.every));
-            if (!(every >= 2 && every <= 120)) throw new GameError('Takt: alle 2–120 Minuten.');
-            return { from: hhmm(b.from), to: hhmm(b.to), every };
-          });
-        }
-        if (!Object.values(service).some((b) => b.length)) throw new GameError(`${line}: mindestens einen Betriebszeitraum angeben.`);
-        return { kind: 'addLine', line, mode, color, stops: stops.map((s, i) => ({ station: str(s.station, 'Halt'), min: i ? minutes(s.min) : 0 })), service };
+        return { kind: 'addLine', line, mode, color, stops: stops.map((s, i) => ({ station: str(s.station, 'Halt'), min: i ? minutes(s.min) : 0 })), service: service(e.service) };
       }
       case 'removeLine':
         return { kind: 'removeLine', line: str(e.line, 'Linie') };

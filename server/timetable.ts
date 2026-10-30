@@ -9,7 +9,7 @@
 // Fußwege: zwischen Halten bis 500 m und von/zu Adressen bis 1,5 km, Luftlinie × 1,3 bei 80 m/min (wie im Spiel).
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import type { DayType, LatLon, LineEdit, Mode, RoutingParams, TimetableLineView } from '../shared/types.ts';
+import type { DayType, LatLon, LineEdit, Mode, RoutingParams, TimetableLineInfo, TimetableLineView } from '../shared/types.ts';
 import type { EfaLeg, EfaPoint, EfaTrip, TripQuery } from './efa.ts';
 import { DEFAULT_PARAMS } from './plans.ts';
 import { currentPlan } from './plancontext.ts';
@@ -95,7 +95,8 @@ export interface StationContext {
 export interface PlanContext {
   params: RoutingParams;
   edits: LineEdit[];
-  stations: StationContext;
+  /** null = keine Änderungen anzuwenden („wie gebaut“) */
+  stations: StationContext | null;
 }
 
 /** liefert app.ts – null = unbekannter Plan */
@@ -233,6 +234,8 @@ function applyEdits(raw: Raw, edits: LineEdit[], c: StationContext): string[] {
     if (!nodeStation.has(i)) nodeStation.set(i, c.stationOf(efaIdOf(raw.nodes[i][0])));
     return nodeStation.get(i)!;
   };
+  /** Ende einer Haltefolge für ihren Schlüssel „Start>Ende“: Netz-Station oder (außerhalb Wiens) der Halt selbst */
+  const endKey = (i: number) => stationAt(i) ?? efaIdOf(raw.nodes[i][0]);
   const allTrips = () => Object.values(raw.trips).flat();
   const tripsOf = (pi: number) => allTrips().filter((t) => t[0] === pi);
   const dropTrips = (keep: (t: number[]) => boolean) => {
@@ -263,7 +266,7 @@ function applyEdits(raw: Raw, edits: LineEdit[], c: StationContext): string[] {
     if (p[3] != null && p[3] > j) p[3]--;
     if (p[1].length < 2) dropTrips((t) => t[0] !== pi);
   };
-  const name = (station: string) => c.station(station)?.name ?? station;
+  const name = (id: string) => c.station(id)?.name ?? raw.nodes.find((n) => efaIdOf(n[0]) === id)?.[1] ?? id;
   const out: string[] = [];
   for (const e of edits) {
     let pats = 0;
@@ -321,6 +324,124 @@ function applyEdits(raw: Raw, edits: LineEdit[], c: StationContext): string[] {
       const li = raw.lines.findIndex(([n]) => n === e.line);
       if (li < 0) {
         out.push(`✖ ${e.line}: Linie nicht im Fahrplan`);
+        continue;
+      }
+      if (e.kind === 'addVariant') {
+        const mode = raw.lines[li][1];
+        const fwd = e.stops.map((s) => nodeFor(s.station, mode));
+        const mins = e.stops.slice(1).map((s) => s.min);
+        const piF = raw.patterns.push([li, fwd]) - 1;
+        const piB = raw.patterns.push([li, [...fwd].reverse()]) - 1;
+        for (const [type, bands] of Object.entries(e.service)) {
+          const list = (raw.trips[type] ??= []);
+          for (const b of bands)
+            for (let t = toMin(b.from); t <= toMin(b.to); t += b.every) {
+              list.push([piF, t, ...mins], [piB, t, ...[...mins].reverse()]);
+              trips += 2;
+            }
+        }
+        out.push(`✔ ${e.line} zusätzlich ${name(e.stops[0].station)} – ${name(e.stops[e.stops.length - 1].station)}: ${trips} Fahrt(en)`);
+        continue;
+      }
+      if (e.kind === 'insertStop' || e.kind === 'skipStop' || e.kind === 'departures') {
+        const mode = raw.lines[li][1];
+        const node = e.kind === 'insertStop' ? nodeFor(e.station, mode) : -1;
+        const [ka, kb] = e.kind === 'departures' ? e.pattern.split('>') : ['', ''];
+        const list = e.kind === 'departures' ? (raw.trips[e.day] ?? []) : [];
+        // gleiche Enden, aber andere Halte dazwischen → neue Abfahrten nur in die meistbefahrene Haltefolge
+        let mainOf = -1;
+        if (e.kind === 'departures') {
+          let most = -1;
+          raw.patterns.forEach((p, pi) => {
+            if (p[0] !== li || endKey(p[1][0]) !== ka || endKey(p[1][p[1].length - 1]) !== kb) return;
+            const n = list.filter((t) => t[0] === pi).length;
+            if (n > most) (most = n), (mainOf = pi);
+          });
+        }
+        for (let pi = 0; pi < raw.patterns.length; pi++) {
+          const p = raw.patterns[pi];
+          if (p[0] !== li && p[2] !== li) continue;
+          if (e.kind === 'skipStop') {
+            for (let j = p[1].length - 1; j >= 0; j--)
+              if (stationAt(p[1][j]) === e.station) {
+                removeStop(pi, j);
+                pats++;
+              }
+          } else if (e.kind === 'insertStop') {
+            for (let j = 1; j < p[1].length; j++) {
+              const a = stationAt(p[1][j - 1]);
+              const b = stationAt(p[1][j]);
+              const fwd = a === e.a && b === e.b;
+              if (!fwd && !(a === e.b && b === e.a)) continue;
+              p[1].splice(j, 0, node);
+              const [m1, m2] = fwd ? [e.minA, e.minB] : [e.minB, e.minA];
+              for (const t of tripsOf(pi)) t.splice(1 + j, 1, m1, m2);
+              if (p[3] != null && p[3] >= j) p[3]++;
+              pats++;
+              break;
+            }
+          } else {
+            if (p[0] !== li || endKey(p[1][0]) !== ka || endKey(p[1][p[1].length - 1]) !== kb) continue;
+            if (pi !== mainOf) {
+              const gone = new Set(e.remove.map(toMin));
+              const keep = list.filter((t) => t[0] !== pi || !gone.has(t[1]));
+              trips -= list.length - keep.length;
+              list.splice(0, list.length, ...keep);
+              continue;
+            }
+            const mine = list.filter((t) => t[0] === pi);
+            const len = p[1].length;
+            const med = Array.from({ length: len - 1 }, (_, j) => {
+              const xs = mine.map((t) => t[2 + j]).sort((x, y) => x - y);
+              return xs.length ? xs[Math.floor(xs.length / 2)] : 2;
+            });
+            const gone = new Set(e.remove.map(toMin));
+            const keep = list.filter((t) => t[0] !== pi || !gone.has(t[1]));
+            trips -= list.length - keep.length;
+            list.length = 0;
+            list.push(...keep);
+            for (const x of e.add) (list.push([pi, toMin(x), ...med]), trips++);
+            pats++;
+          }
+        }
+        if (e.kind === 'departures') raw.trips[e.day] = list;
+        const what =
+          e.kind === 'insertStop'
+            ? `hält zusätzlich in ${name(e.station)} (zwischen ${name(e.a)} und ${name(e.b)})`
+            : e.kind === 'skipStop'
+              ? `hält nicht mehr in ${name(e.station)}`
+              : `Abfahrten ${name(ka)} → ${name(kb)}: +${e.add.length} / −${e.remove.length}`;
+        out.push(pats ? `✔ ${e.line} ${what}: ${pats} Haltefolge(n)` : `✖ ${e.line} ${what}: keine passende Haltefolge`);
+        continue;
+      }
+      if (e.kind === 'headway') {
+        // je Haltefolge: Fahrten im Zeitraum durch neue im Takt ersetzen – mit den üblichen Fahrzeiten dieser Haltefolge
+        const [a, b] = (e.pattern ?? '').split('>');
+        const from = toMin(e.from);
+        const to = toMin(e.to);
+        let removed = 0;
+        const list = raw.trips[e.day] ?? [];
+        raw.patterns.forEach((p, pi) => {
+          if (p[0] !== li) return;
+          const s0 = endKey(p[1][0]);
+          const s1 = endKey(p[1][p[1].length - 1]);
+          if (e.pattern && !((s0 === a && s1 === b) || (s0 === b && s1 === a))) return;
+          const mine = list.filter((t) => t[0] === pi);
+          if (!mine.length) return;
+          const len = p[1].length;
+          const med = Array.from({ length: len - 1 }, (_, j) => {
+            const xs = mine.map((t) => t[2 + j]).sort((x, y) => x - y);
+            return xs[Math.floor(xs.length / 2)];
+          });
+          const keep = list.filter((t) => t[0] !== pi || t[1] < from || t[1] > to);
+          removed += list.length - keep.length;
+          list.length = 0;
+          list.push(...keep);
+          for (let t = from; t <= to; t += e.every) (list.push([pi, t, ...med]), trips++);
+          pats++;
+        });
+        raw.trips[e.day] = list;
+        out.push(pats ? `✔ ${e.line} ${e.day === 'wd' ? 'Mo–Fr' : e.day === 'sa' ? 'Sa' : 'So'} ${e.from}–${e.to} alle ${e.every} min: ${pats} Haltefolge(n), ${removed} → ${trips} Fahrten` : `✖ ${e.line}: keine passende Haltefolge`);
         continue;
       }
       if (e.kind === 'removeLine') {
@@ -411,7 +532,7 @@ function applyEdits(raw: Raw, edits: LineEdit[], c: StationContext): string[] {
 // ---------------------------------------------------------------- Fahrplan-Ansicht (Admin)
 
 /** Haltefolgen einer Linie mit Fahrzeiten (Median) und Fahrten je Stunde – zum Ansehen und direkt Ändern */
-export function timetableView(plan: string, lineName: string, stationOf: (efaId: string) => string | null): TimetableLineView | null {
+export function timetableView(plan: string, lineName: string, stationOf: (efaId: string) => string | null, nameOf?: (efaId: string) => string | null): TimetableLineView | null {
   const d = load(plan);
   if (!d) return null;
   const li = d.lines.findIndex((l) => l.name === lineName);
@@ -423,6 +544,7 @@ export function timetableView(plan: string, lineName: string, stationOf: (efaId:
     .map(({ p, pi }) => {
       const len = p.stops.length;
       const trips = { wd: Array(25).fill(0), sa: Array(25).fill(0), su: Array(25).fill(0) } as Record<DayType, number[]>;
+      const deps = { wd: [], sa: [], su: [] } as Record<DayType, number[]>;
       const gaps: number[][] = p.stops.map(() => []);
       for (const [type, day] of Object.entries(d.dayTypes) as [DayType, Day][]) {
         const dp = day.patterns[pi];
@@ -430,17 +552,90 @@ export function timetableView(plan: string, lineName: string, stationOf: (efaId:
         for (let i = 0; i < dp.count; i++) {
           const dep = dp.times[i * len];
           trips[type][Math.min(24, Math.max(0, Math.floor(dep / 60)))]++;
+          deps[type].push(dep);
           for (let j = 1; j < len; j++) gaps[j].push(dp.times[i * len + j] - dp.times[i * len + j - 1]);
         }
       }
+      const stops = p.stops.map((n, j) => ({ station: stationOf(d.nodes[n].efaId), name: nameOf?.(d.nodes[n].efaId) ?? d.nodes[n].name, min: j ? median(gaps[j]) : null }));
       return {
-        stops: p.stops.map((n, j) => ({ station: stationOf(d.nodes[n].efaId), name: d.nodes[n].name, min: j ? median(gaps[j]) : null })),
+        key: `${stops[0].station ?? d.nodes[p.stops[0]].efaId}>${stops[len - 1].station ?? d.nodes[p.stops[len - 1]].efaId}`,
+        stops,
+        deps,
         trips,
         through: p.cont ? d.lines[p.line === li ? p.cont.line : p.line].name : null,
       };
     })
-    .filter((x) => Object.values(x.trips).some((h) => h.some((n) => n > 0)));
+    // nur Haltefolgen mit Fahrten und mit mind. 2 Halten im Spielnetz; die meistbefahrenen zuerst
+    .filter((x) => Object.values(x.trips).some((h) => h.some((n) => n > 0)) && x.stops.filter((s) => s.station).length >= 2)
+    .sort((a, b) => b.deps.wd.length + b.deps.sa.length + b.deps.su.length - (a.deps.wd.length + a.deps.sa.length + a.deps.su.length));
   return { line: lineName, mode: d.lines[li].mode, patterns };
+}
+
+/** Linien des Fahrplans, die im Spiel eine Rolle spielen: alle Linien des Netzes und die Regionalzüge, die in Wien
+ *  regelmäßig fahren (mind. 20 Fahrten am Werktag) – seltene Einzelfahrten bleiben außen vor */
+export function timetableLines(plan: string, inNetwork: (line: string) => boolean, nameOf: (efaId: string) => string | null = () => null): TimetableLineInfo[] {
+  const d = load(plan);
+  if (!d) return [];
+  const out: TimetableLineInfo[] = [];
+  d.lines.forEach((l, li) => {
+    const pats = d.patterns.map((p, pi) => ({ p, pi })).filter(({ p }) => p.line === li);
+    const count = (day: Day | undefined) => pats.reduce((n, { pi }) => n + (day?.patterns[pi]?.count ?? 0), 0);
+    const trips = { wd: count(d.dayTypes.wd), sa: count(d.dayTypes.sa), su: count(d.dayTypes.su) };
+    const regional = /^(R|REX|CJX)\d+$/.test(l.name);
+    if (!(inNetwork(l.name) || (regional && trips.wd >= 20)) || trips.wd + trips.sa + trips.su === 0) return;
+    // Takt: Haltefolge mit den meisten Werktags-Fahrten (bei Gleichstand die längste im Spielnetz), Abstände 6–20 Uhr
+    const inNet = (p: Pattern) => p.stops.filter((n) => nameOf(d.nodes[n].efaId)).length;
+    const main = pats
+      .map(({ p, pi }) => ({ p, dp: d.dayTypes.wd?.patterns[pi] }))
+      .sort((a, b) => (b.dp?.count ?? 0) * Math.min(1, inNet(b.p) / 2) - (a.dp?.count ?? 0) * Math.min(1, inNet(a.p) / 2) || inNet(b.p) - inNet(a.p))[0];
+    let every: number | null = null;
+    if (main?.dp) {
+      const len = main.p.stops.length;
+      const deps = Array.from({ length: main.dp.count }, (_, i) => main.dp!.times[i * len]).filter((t) => t >= 360 && t <= 1200);
+      const gaps = deps.slice(1).map((t, i) => t - deps[i]).sort((a, b) => a - b);
+      every = gaps.length ? gaps[Math.floor(gaps.length / 2)] : null;
+    }
+    // Endstationen im Spielnetz (Züge fahren oft weiter hinaus)
+    const named = main ? main.p.stops.map((n) => nameOf(d.nodes[n].efaId)).filter((x): x is string => !!x) : [];
+    const termini = named.length >= 2 ? [named[0], named[named.length - 1]] : main ? [d.nodes[main.p.stops[0]].name, d.nodes[main.p.stops[main.p.stops.length - 1]].name] : [];
+    out.push({ line: l.name, mode: l.mode, regional, trips, termini, every });
+  });
+  return out;
+}
+
+/** Takt je Linie aus dem Fahrplan eines Plans (für Steckbriefe, „Was fährt hier ab?“): Zeitfenster wie headways.json */
+export function timetableHeadways(plan: string, lineNames: string[]): Record<string, Record<string, number | null>> {
+  const d = load(plan);
+  const out: Record<string, Record<string, number | null>> = {};
+  if (!d) return out;
+  const slots: [string, DayType, number][] = [
+    ['wd7', 'wd', 7],
+    ['wd12', 'wd', 12],
+    ['wd20', 'wd', 20],
+    ['sa12', 'sa', 12],
+    ['su12', 'su', 12],
+  ];
+  for (const name of lineNames) {
+    const li = d.lines.findIndex((l) => l.name === name);
+    if (li < 0) continue;
+    const pats = d.patterns.map((p, pi) => ({ p, pi })).filter(({ p }) => p.line === li);
+    out[name] = {};
+    for (const [key, day, h] of slots) {
+      const dt = d.dayTypes[day];
+      // meistbefahrene Haltefolge in dieser Stunde ± 1 h: mittlerer Abstand der Abfahrten
+      let best: number[] = [];
+      for (const { p, pi } of pats) {
+        const dp = dt?.patterns[pi];
+        if (!dp) continue;
+        const len = p.stops.length;
+        const deps = Array.from({ length: dp.count }, (_, i) => dp.times[i * len]).filter((t) => t >= (h - 1) * 60 && t <= (h + 1) * 60);
+        if (deps.length > best.length) best = deps;
+      }
+      const gaps = best.slice(1).map((t, i) => t - best[i]).sort((a, b) => a - b);
+      out[name][key] = gaps.length ? gaps[Math.floor(gaps.length / 2)] : null;
+    }
+  }
+  return out;
 }
 
 /** Gibt es den Referenzfahrplan für diesen Zeitpunkt? (sonst fragt efa.ts die Auskunft) */

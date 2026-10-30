@@ -2,11 +2,12 @@
 // entsperrt): Übersicht mit Statistik und Lobbys, Accounts, Netzpläne, Einstellungen, Protokoll.
 import type { AdminLobby, AdminLogEntry, AdminOverview, AdminStats, AdminUserDetail, AdminUserRow, AdminUserStats } from '../../../shared/types.ts';
 import { adm, LockedError, setOnLocked } from '../admin/api.ts';
-import { barChart, bindCharts, lineChart } from '../admin/charts.ts';
+import { barChart, bindCharts, lineChart, rankChart } from '../admin/charts.ts';
 import { plansTab, type Tab as SubTab } from '../admin/plans.ts';
 import { settingsTab } from '../admin/settings.ts';
+import { openAccount } from '../accountui.ts';
 import { app } from '../store.ts';
-import { esc, toast } from '../ui.ts';
+import { esc, lineChip, toast } from '../ui.ts';
 import { infoTip } from '../widgets.ts';
 import { loadingHtml, type Screen } from './screen.ts';
 
@@ -28,6 +29,8 @@ const phaseLabel = (p: string) => ({ lobby: 'wartet', playing: 'läuft', finishe
 export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
   let tab: Tab = 'overview';
   let locked = false;
+  /** Passwort zu kurz für den Admin-Bereich → Hinweis mit Knopf zum Ändern */
+  let weakPw = '';
   let query = '';
   let detail: string | null = null;
   let statDays = 7;
@@ -120,6 +123,10 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
   // -------------------------------------------------------------- Entsperren
 
   function unlockHtml(): string {
+    if (weakPw)
+      return `<div class="adm-unlock"><p class="err">${esc(weakPw)}</p>
+        <button class="btn btn-primary" id="adm-pw">Passwort jetzt ändern</button>
+        <button class="link" id="adm-retry">Nochmal entsperren</button></div>`;
     return `<form class="adm-unlock" id="adm-unlock"><p>🔒 Der Admin-Bereich ist gesperrt. Zum Entsperren bitte dein Passwort eingeben.</p>
       <label class="field"><span>Passwort</span><input type="password" name="password" required autocomplete="current-password"></label>
       <button class="btn btn-primary">Entsperren</button>
@@ -133,7 +140,12 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
     const card = (v: string | number, l: string) => `<div class="adm-card"><b>${v}</b><small>${l}</small></div>`;
     const fmtT = (t: number) =>
       statDays <= 2 ? new Date(t).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' }) : new Date(t).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' });
-    const pts = (f: 'online' | 'players') => s.samples.map((x) => ({ t: x.at, v: x[f] }));
+    const fmtTip = (t: number) => new Date(t).toLocaleString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const pts = (f: 'online' | 'players' | 'visitors' | 'anon') => s.samples.map((x) => ({ t: x.at, v: x[f] }));
+    const lineRow = (line: string) => {
+      const l = app.net.lines.get(line);
+      return lineChip(l?.mode ?? (/^(R|REX|CJX)\d/.test(line) ? 'S' : 'B'), line, l?.color ?? '#5b6170');
+    };
     return `
       ${o.warnings.length ? `<div class="adm-warn">${o.warnings.map((w) => `⚠ ${esc(w)}`).join('<br>')}</div>` : ''}
       <div class="adm-cards">
@@ -141,9 +153,11 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
       </div>
       <div class="adm-range">Zeitraum ${[1, 7, 30, 90].map((d) => `<button class="${d === statDays ? 'on' : ''}" data-days="${d}">${d === 1 ? '24 h' : `${d} Tage`}</button>`).join('')}</div>
       <div class="adm-charts">
-        ${lineChart('online', 'Accounts online', pts('online'), fmtT)}
-        ${lineChart('players', 'Spieler in Lobbys', pts('players'), fmtT)}
+        ${lineChart('visitors', 'Besucher online', [{ name: 'alle', points: pts('visitors') }, { name: 'ohne Account', points: pts('anon') }], fmtT, true, fmtTip)}
+        ${barChart('visits', 'Besucher je Tag', ['mit Account', 'ohne Account'], s.days.map((d) => ({ label: dayLabel(d.day), values: [d.visitors - d.anonVisitors, d.anonVisitors] })))}
         ${barChart('games', 'Fertige Spiele je Tag', ['Routenjagd', 'Quiz'], s.days.map((d) => ({ label: dayLabel(d.day), values: [d.route, d.quiz] })))}
+        ${rankChart('Meistgewählte Linien', s.lines.slice(0, 15).map((l) => ({ label: lineRow(l.line), n: l.n })), statDays === 1 ? 'heute' : `letzte ${statDays} Tage`)}
+        ${lineChart('players', 'Spieler in Lobbys', [{ name: 'Spieler', points: pts('players') }], fmtT, false, fmtTip)}
         ${barChart('users', 'Accounts je Tag', ['aktiv', 'neu'], s.days.map((d) => ({ label: dayLabel(d.day), values: [d.activeUsers, d.newUsers] })))}
       </div>
       <dl class="adm-facts">
@@ -281,6 +295,8 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
 
   function bindBody() {
     const root = panel.querySelector<HTMLElement>('.adm-body')!;
+    root.querySelector('#adm-pw')?.addEventListener('click', () => openAccount('settings'));
+    root.querySelector('#adm-retry')?.addEventListener('click', () => ((weakPw = ''), rerender()));
     const unlock = root.querySelector<HTMLFormElement>('#adm-unlock');
     if (unlock) {
       unlock.querySelector<HTMLInputElement>('input[type=password]')!.focus();
@@ -292,7 +308,9 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
             await adm('POST', '/api/admin/unlock', { password: pw });
             locked = false;
           } catch (err) {
-            toast((err as Error).message);
+            const m = (err as Error).message;
+            if (/mindestens \d+ Zeichen/.test(m)) weakPw = m;
+            else toast(m);
           }
           rerender();
         })();

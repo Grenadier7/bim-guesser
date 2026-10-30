@@ -23,10 +23,16 @@ function findLines(net: NetIndex, q: string): Line[] {
 function findStations(net: NetIndex, q: string): Station[] {
   const n = normName(q);
   if (n.length < 2) return [];
-  const all = net.data.stations;
-  const starts = all.filter((s) => normName(s.name).startsWith(n));
-  const contains = all.filter((s) => !starts.includes(s) && normName(s.name).includes(n));
-  return [...starts, ...contains].slice(0, 8);
+  // genauer Name zuerst, dann Anfang, dann irgendwo; bei Gleichstand wichtige Stationen (U/S, viele Linien) vorne
+  const rank = (s: Station) => {
+    const x = normName(s.name);
+    return x === n ? 0 : x.startsWith(n) ? 1 : x.includes(n) ? 2 : 9;
+  };
+  const weight = (s: Station) => (s.modes.includes('U') ? 20 : 0) + (s.modes.includes('S') ? 15 : 0) + (s.modes.includes('T') ? 5 : 0) + s.lines.length;
+  return net.data.stations
+    .filter((s) => rank(s) < 9)
+    .sort((a, b) => rank(a) - rank(b) || weight(b) - weight(a) || a.name.localeCompare(b.name, 'de'))
+    .slice(0, 8);
 }
 
 function stationHtml(net: NetIndex, s: Station): string {

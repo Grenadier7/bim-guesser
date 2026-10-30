@@ -14,6 +14,8 @@ interface Stored {
   settings: GameSettings;
   routes: RouteOption[];
   created: number;
+  /** gewählte Linien schon für die Statistik gezählt (nur der erste gültige Versuch je Strecke) */
+  counted?: boolean;
 }
 
 const MAX_ROUNDS = 2000;
@@ -24,6 +26,8 @@ export class TrainingService {
   /** zuletzt gezogene Strecken (für Abwechslung) */
   private recent: PastPair[] = [];
   private net: Network;
+  /** Statistik der Admin-Seite: gewählte Linien */
+  onLines?: (lines: string[]) => void;
 
   constructor(net: Network) {
     this.net = net;
@@ -90,10 +94,19 @@ export class TrainingService {
     const r = this.rounds.get(String(id));
     if (!r) throw new GameError('Trainingsrunde abgelaufen – bitte neue Strecke starten.', 404);
     let res;
+    const clean = cleanLegs(legs);
     try {
-      res = await evaluateUserRoute(this.net, cleanLegs(legs), r.from.id, r.to.id, r.time, r.settings.network, this.query(r.settings), r.routes);
+      res = await evaluateUserRoute(this.net, clean, r.from.id, r.to.id, r.time, r.settings.network, this.query(r.settings), r.routes);
     } catch {
       throw new GameError('Die Route konnte gerade nicht ausgewertet werden – bitte gleich nochmal.', 503);
+    }
+    if (!res.error && !r.counted) {
+      r.counted = true;
+      try {
+        this.onLines?.(clean.map((l) => l.line));
+      } catch {
+        /* Statistik darf nie stören */
+      }
     }
     return { route: res.route, durationMin: res.durationMin, matchedRank: res.matchedRank, error: res.error };
   }

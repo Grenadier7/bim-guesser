@@ -2,8 +2,11 @@
 // Routenberechnung, Änderungen an Netz und Fahrplan (jede Änderung wird sofort gespeichert und angewendet – so kennen
 // die Auswahlfelder gleich neue Stationen und Linien), Fahrplan je Linie mit direkt änderbaren Fahrzeiten,
 // Probe-Abfrage mit allen Details, Versionen.
-import type { DayType, LineEdit, Mode, NetworkPlan, RouteOption, RoutingAdminState, RoutingParams, ServiceBand, SlotId, TimetableLineView } from '../../../shared/types.ts';
-import { MODE_LABEL, TIME_SLOTS } from '../../../shared/rules.ts';
+import L from 'leaflet';
+import type { DayType, LineEdit, Mode, NetworkPlan, RouteOption, RoutingAdminState, RoutingParams, ServiceBand, SlotId, TimetableLineInfo, TimetableLineView } from '../../../shared/types.ts';
+import { lineColor, MODE_LABEL, TIME_SLOTS } from '../../../shared/rules.ts';
+import { NetGraph } from '../netgraph.ts';
+import { NetMapLayer, netView } from '../netmap.ts';
 import type { NetIndex } from '../net.ts';
 import { chain, esc, lineChip, makeExpandable, routeDetails, toast } from '../ui.ts';
 import { infoTip } from '../widgets.ts';
@@ -22,6 +25,8 @@ const PARAM_INFO: Record<keyof RoutingParams, { label: string; unit: string; hin
 
 type Kind = LineEdit['kind'];
 const KINDS: [Kind, string][] = [
+  ['headway', 'Takt ändern'],
+  ['addVariant', 'Zusätzliche Fahrten'],
   ['extend', 'Verlängern'],
   ['cut', 'Kürzen'],
   ['time', 'Fahrzeit'],
@@ -76,16 +81,50 @@ export function plansTab(rerender: () => void): Tab {
     mode: 'B' as Mode,
     color: '#0a295d',
     stops: [{ station: '', min: 0 }] as { station: string; min: number }[],
+    pattern: '',
+    day: 'wd' as DayType,
+    from: '06:00',
+    to: '20:00',
+    every: 10,
     service: { wd: [{ from: '05:00', to: '24:00', every: 10 }], sa: [{ from: '05:30', to: '24:00', every: 15 }], su: [{ from: '06:00', to: '24:00', every: 15 }] } as Record<DayType, ServiceBand[]>,
   };
+  /** Bereich des Reiters */
+  let section: 'fahrplan' | 'aenderungen' | 'karte' | 'probe' | 'plan' = 'fahrplan';
+  /** Fahrplan „wie gebaut“ (ohne Änderungen) ansehen */
+  let asBuilt = false;
+  let lines: TimetableLineInfo[] | null = null;
+  let linesFor = '';
+  let lineFilter = '';
   let ttLine = '';
-  let tt: TimetableLineView | null = null;
+  let ttDay: DayType = 'wd';
+  /** Haltefolgen der gewählten Linie (Fahrplan-Ansicht bzw. „Takt ändern“) */
+  let lineView: TimetableLineView | null = null;
+  let lineViewFor = '';
+  const lineInfo = (id: string) => lines?.find((l) => l.line === id);
+  /** „Halt einfügen“ offen: Haltefolge und Abschnitt */
+  let insertAt: { a: string; b: string; station: string; minA: number; minB: number } | null = null;
+  /** Abfahrten bearbeiten: je Haltefolge (key) gestrichene und neue Zeiten, bis „Speichern“ */
+  const depDraft = new Map<string, { remove: Set<number>; add: number[] }>();
+  /** „Takt“ je Haltefolge */
+  const hwDraft = new Map<string, { from: string; to: string; every: number }>();
+  const viewPlan = () => (asBuilt ? '__base' : planId);
+  const endNames = new Map<string, string>();
+  const loadLineView = async (line: string) => {
+    lineView = line ? await adm<TimetableLineView>('GET', `/api/admin/routing/timetable?plan=${encodeURIComponent(viewPlan())}&line=${encodeURIComponent(line)}`) : null;
+    lineViewFor = `${viewPlan()}:${line}`;
+    // Enden außerhalb Wiens stehen im Schlüssel als Halt-ID – Namen für die Änderungsliste merken
+    for (const p of lineView?.patterns ?? []) {
+      const [a, b] = p.key.split('>');
+      endNames.set(a, p.stops[0].name);
+      endNames.set(b, p.stops[p.stops.length - 1].name);
+    }
+  };
   const probe = { from: '', to: '', slot: 'wd12' as SlotId, routes: null as RouteOption[] | null, busy: false };
   let newPlan: { label: string; copy: boolean } | null = null;
   let versions: { id: string; at: number; by: string; note: string }[] | null = null;
 
   const plan = (): NetworkPlan => state!.plans.find((p) => p.id === planId) ?? state!.plans[0];
-  const stName = (id: string) => net?.stations.get(id)?.name ?? id;
+  const stName = (id: string) => net?.stations.get(id)?.name ?? endNames.get(id) ?? (/^(at:|\d{6,})/.test(id) ? 'außerhalb Wiens' : id);
   const line = () => (form.line ? net?.lines.get(form.line) : undefined);
   /** längste Haltefolge der Linie (für Verlängern/Kürzen) */
   const mainPattern = (): string[] => {
@@ -114,7 +153,27 @@ export function plansTab(rerender: () => void): Tab {
         return `Neue Linie ${lineChip(e.mode, e.line, e.color)} ${e.stops.map((s) => esc(stName(s.station))).join(' – ')}`;
       case 'removeLine':
         return `Linie <b>${esc(e.line)}</b> entfernt`;
+      case 'headway': {
+        const [a, b] = (e.pattern ?? '').split('>');
+        return `<b>${esc(e.line)}</b> ${DAYS.find((d) => d[0] === e.day)![1]} ${e.from}–${e.to}: <b>alle ${e.every} min</b>${e.pattern ? ` <small>(${esc(stName(a))} ↔ ${esc(stName(b))})</small>` : ''}`;
+      }
+      case 'addVariant':
+        return `<b>${esc(e.line)}</b> zusätzlich ${e.stops.map((x) => esc(stName(x.station))).join(' – ')} <small>(${serviceText(e.service)})</small>`;
+      case 'insertStop':
+        return `<b>${esc(e.line)}</b> hält zusätzlich in <b>${esc(stName(e.station))}</b> <small>(zwischen ${esc(stName(e.a))} und ${esc(stName(e.b))}, +${e.minA}/+${e.minB} min)</small>`;
+      case 'skipStop':
+        return `<b>${esc(e.line)}</b> hält nicht mehr in <b>${esc(stName(e.station))}</b>`;
+      case 'departures': {
+        const [a, b] = e.pattern.split('>');
+        return `<b>${esc(e.line)}</b> ${esc(stName(a))} → ${esc(stName(b))}, ${DAYS.find((d) => d[0] === e.day)![1]}: ${e.add.length ? `+${e.add.join(', ')}` : ''}${e.add.length && e.remove.length ? ' · ' : ''}${e.remove.length ? `<s>${e.remove.join(', ')}</s>` : ''}`;
+      }
     }
+  }
+
+  function serviceText(sv: Record<DayType, ServiceBand[]>): string {
+    return DAYS.filter(([d]) => sv[d]?.length)
+      .map(([d, l]) => `${l} ${sv[d].map((b) => `${b.from}–${b.to} alle ${b.every}`).join(', ')}`)
+      .join(' · ');
   }
 
   // -------------------------------------------------------------- speichern
@@ -143,33 +202,156 @@ export function plansTab(rerender: () => void): Tab {
     const p = plan();
     if (paramsFor !== p.id) ((params = { ...p.params }), (paramsFor = p.id));
     const report = state.report[planId] ?? [];
+    if (section === 'fahrplan' && linesFor !== viewPlan()) {
+      lines = await adm<TimetableLineInfo[]>('GET', `/api/admin/routing/lines?plan=${encodeURIComponent(viewPlan())}`);
+      linesFor = viewPlan();
+    }
+    if (ttLine && lineViewFor !== `${viewPlan()}:${ttLine}`) await loadLineView(ttLine);
+    const sections: [typeof section, string][] = [
+      ['fahrplan', '🗓 Fahrplan'],
+      ['aenderungen', `✏️ Änderungen (${p.edits.length})`],
+      ['karte', '🗺 Netzkarte'],
+      ['probe', '🔎 Probe-Abfrage'],
+      ['plan', '⚙️ Plan & Routenberechnung'],
+    ];
+    let content = '';
+    if (section === 'fahrplan') content = timetableSection();
+    else if (section === 'aenderungen')
+      content = `${p.edits.length ? `<ol class="adm-list adm-edits">${p.edits.map((e, i) => `<li><span>${describe(e)}</span><button class="icon-btn" data-rmedit="${i}" aria-label="Änderung entfernen">✕</button></li>`).join('')}</ol>` : '<p class="muted">Keine – Netz und Fahrplan wie gebaut.</p>'}
+        ${report.length ? `<ul class="adm-report">${report.map((r) => `<li class="${r.startsWith('✔') ? 'good' : 'err'}">${esc(r)}</li>`).join('')}</ul>` : ''}
+        <div class="adm-new"><h4>Änderung hinzufügen</h4>${formHtml()}</div>
+        ${versionsHtml()}`;
+    else if (section === 'karte')
+      content = `<p class="muted">So sieht das Netz dieses Plans aus – genau diese Karte bekommen alle, die mit ${p.id === 'regular' ? 'dem Standard-Netz' : `„${esc(p.label)}“`} spielen. Neue Linien werden als Verbindung zwischen ihren Halten gezeichnet.</p>
+        <div class="adm-netmap" id="pl-netmap"></div>`;
+    else if (section === 'probe')
+      content = `<p class="muted">Beste Verbindungen wie im Spiel („Realistisch“) mit diesem Netzplan – zum Ausprobieren von Änderungen.</p>
+        <div class="adm-probe">${pickerSlot('station', 'from', probe.from, 'Start')}${pickerSlot('station', 'to', probe.to, 'Ziel')}
+        <select id="pr-slot">${TIME_SLOTS.map((t) => `<option value="${t.id}" ${t.id === probe.slot ? 'selected' : ''}>${esc(t.short)}</option>`).join('')}</select>
+        <button class="btn btn-ghost" id="pr-go" ${probe.busy ? 'disabled' : ''}>${probe.busy ? 'Rechnet …' : 'Berechnen'}</button></div>
+        ${probe.routes ? probeHtml(probe.routes) : ''}`;
+    else
+      content = `${p.id === 'regular' ? '<p class="muted">Der Standard-Netzplan gilt für „Regulär“ – und damit für Quiz, Training, Lernen und alle Karten.</p>' : metaHtml(p)}
+        <h3>Routenberechnung</h3>${paramsHtml(p)}`;
     return `
       <div class="adm-plans">${state.plans
         .map((x) => `<button class="adm-plan ${x.id === planId ? 'on' : ''}" data-plan="${esc(x.id)}">${esc(x.id === 'regular' ? 'Standard' : x.label)}${x.inMenu ? ' <small>im Menü</small>' : ''}<small>${x.edits.length} Änderung${x.edits.length === 1 ? '' : 'en'}</small></button>`)
         .join('')}
         <button class="adm-plan adm-plan-new" id="pl-new">+ Neuer Netzplan</button></div>
       ${newPlan ? newPlanHtml() : ''}
-      ${p.id === 'regular' ? '<p class="muted">Der Standard-Netzplan gilt für „Regulär“ – und damit für Quiz, Training, Lernen und alle Karten.</p>' : metaHtml(p)}
-      <h3>Routenberechnung</h3>${paramsHtml(p)}
-      <h3>Änderungen am Netz</h3>
-      ${p.edits.length ? `<ol class="adm-list adm-edits">${p.edits.map((e, i) => `<li><span>${describe(e)}</span><button class="icon-btn" data-rmedit="${i}" aria-label="Änderung entfernen">✕</button></li>`).join('')}</ol>` : '<p class="muted">Keine – Netz und Fahrplan wie gebaut.</p>'}
-      ${report.length ? `<ul class="adm-report">${report.map((r) => `<li class="${r.startsWith('✔') ? 'good' : 'err'}">${esc(r)}</li>`).join('')}</ul>` : ''}
-      <details class="adm-new" ${form.line || form.kind !== 'extend' ? 'open' : ''}><summary>+ Änderung hinzufügen</summary>${formHtml()}</details>
-      <h3>Fahrplan ansehen ${infoTip('Haltefolgen einer Linie mit Fahrzeit je Abschnitt und Fahrten je Stunde. Eine Fahrzeit ändern = „Fahrzeit“-Änderung (wird sofort gespeichert).')}</h3>
-      <div class="adm-tt">${pickerSlot('line', 'tt', ttLine, 'Linie, z.B. 13A')}</div>
-      ${tt ? ttHtml(tt) : ''}
-      <h3>Probe-Abfrage ${infoTip('Beste Verbindungen wie im Spiel („Realistisch“) mit diesem Netzplan – zum Ausprobieren von Änderungen.')}</h3>
-      <div class="adm-probe">${pickerSlot('station', 'from', probe.from, 'Start')}${pickerSlot('station', 'to', probe.to, 'Ziel')}
-        <select id="pr-slot">${TIME_SLOTS.map((t) => `<option value="${t.id}" ${t.id === probe.slot ? 'selected' : ''}>${esc(t.short)}</option>`).join('')}</select>
-        <button class="btn btn-ghost" id="pr-go" ${probe.busy ? 'disabled' : ''}>${probe.busy ? 'Rechnet …' : 'Berechnen'}</button></div>
-      ${probe.routes ? probeHtml(probe.routes) : ''}
-      <details class="adm-versions" ${versions ? 'open' : ''}><summary>Frühere Versionen</summary>${
-        versions
-          ? versions.length
-            ? `<ul class="adm-list">${versions.map((v) => `<li><span>${date(v.at)} · ${esc(v.by)} · ${esc(v.note)}</span><button class="btn btn-ghost btn-small" data-restore="${v.id}">Wiederherstellen</button></li>`).join('')}</ul>`
-            : '<p class="muted">Noch keine.</p>'
-          : '<p class="muted">Lädt …</p>'
-      }</details>`;
+      <div class="adm-subnav">${sections.map(([k, l]) => `<button data-section="${k}" class="${section === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      ${content}`;
+  }
+
+  function versionsHtml(): string {
+    return `<details class="adm-versions" ${versions ? 'open' : ''}><summary>Frühere Versionen aller Netzpläne</summary>${
+      versions
+        ? versions.length
+          ? `<ul class="adm-list">${versions.map((v) => `<li><span>${date(v.at)} · ${esc(v.by)} · ${esc(v.note)}</span><button class="btn btn-ghost btn-small" data-restore="${v.id}">Wiederherstellen</button></li>`).join('')}</ul>`
+          : '<p class="muted">Noch keine.</p>'
+        : '<p class="muted">Lädt …</p>'
+    }</details>`;
+  }
+
+  // -------------------------------------------------------------- Fahrplan: alle Linien, je Linie alle Halte und Abfahrten
+
+  /** Uhrzeit des Betriebstags: nach Mitternacht als 24:30 usw. (so steht es auch im Fahrplan) */
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+  function timetableSection(): string {
+    const groups: [string, (l: TimetableLineInfo) => boolean][] = [
+      ['🚇 U-Bahn', (l) => l.mode === 'U'],
+      ['🚆 S-Bahn', (l) => l.mode === 'S' && !l.regional],
+      ['🚆 Regionalzüge (auf S-Bahn-Strecken)', (l) => l.regional],
+      ['🚋 Straßenbahn', (l) => l.mode === 'T'],
+      ['🚌 Bus', (l) => l.mode === 'B'],
+      ['🌙 Nachtbus', (l) => l.mode === 'N'],
+    ];
+    const f = lineFilter.trim().toLowerCase();
+    const shown = (lines ?? []).filter((l) => !f || l.line.toLowerCase().startsWith(f) || l.termini.some((t) => t.toLowerCase().includes(f)));
+    const chipOf = (l: TimetableLineInfo) => {
+      const nl = net?.lines.get(l.line);
+      return lineChip(l.mode, l.line, nl?.color ?? lineColor(l.mode, l.line));
+    };
+    return `<div class="adm-row adm-ttbar">
+        <label class="check"><input type="checkbox" id="tt-built" ${asBuilt ? 'checked' : ''}> wie gebaut (ohne Änderungen)</label>
+        <input class="line-input" id="tt-filter" placeholder="Linie oder Endstation filtern …" value="${esc(lineFilter)}" autocomplete="off"></div>
+      ${asBuilt ? '<p class="muted">Ansicht des Fahrplans aus den GTFS-Daten – zum Vergleichen; ändern geht im Netzplan.</p>' : ''}
+      <div class="adm-ttlayout">
+        <div class="adm-ttlines">${groups
+          .map(([title, pick]) => {
+            const ls = shown.filter(pick);
+            if (!ls.length) return '';
+            return `<h4>${title} <small class="muted">${ls.length}</small></h4><div class="adm-ttgrid">${ls
+              .map(
+                (l) => `<button class="adm-ttline ${l.line === ttLine ? 'on' : ''}" data-ttline="${esc(l.line)}">${chipOf(l)}<small>${esc(l.termini.join(' – '))}</small><small class="muted">${l.every ? `alle ${l.every} min · ` : ''}${l.trips.wd} Fahrten Mo–Fr</small></button>`,
+              )
+              .join('')}</div>`;
+          })
+          .join('')}</div>
+        <div class="adm-ttdetail">${ttLine && lineView ? lineDetailHtml(lineView) : '<p class="muted">Linie wählen – dann siehst du jede Haltefolge mit allen Halten, Fahrzeiten und Abfahrten.</p>'}</div>
+      </div>`;
+  }
+
+  function lineDetailHtml(v: TimetableLineView): string {
+    const info = lineInfo(v.line);
+    const nl = net?.lines.get(v.line);
+    const chip = lineChip(v.mode, v.line, nl?.color ?? lineColor(v.mode, v.line));
+    const ro = asBuilt;
+    const dayName = DAYS.find((x) => x[0] === ttDay)![1];
+    const strip = (hours: number[]) => {
+      const max = Math.max(1, ...hours);
+      return `<span class="adm-strip" aria-hidden="true">${hours
+        .slice(4, 25)
+        .map((n, i) => `<i style="height:${Math.round((n / max) * 100)}%" title="${i + 4}–${i + 5} Uhr: ${n} Fahrten"></i>`)
+        .join('')}</span>`;
+    };
+    return `<div class="adm-ttdhead"><h3>${chip} ${info ? esc(info.termini.join(' – ')) : ''}</h3>
+        ${ro ? '' : `<div class="adm-row adm-more"><button class="link" data-quick="addVariant">+ Zusätzliche Fahrten</button><button class="link" data-quick="extend">Verlängern</button><button class="link" data-quick="cut">Kürzen</button><button class="link danger" data-quick="removeLine">Linie entfernen</button></div>`}</div>
+      <div class="adm-range">Tag ${DAYS.map(([d, l]) => `<button class="${d === ttDay ? 'on' : ''}" data-ttday="${d}">${l}</button>`).join('')}</div>
+      ${v.patterns
+        .map((p) => {
+          const dd = depDraft.get(p.key);
+          // Nachtfahrten des Vortags (vor 0:00) gehören zum Vortag – hier nur dieser Betriebstag (bis 27:59)
+          const deps = p.deps[ttDay].filter((t) => t >= 0);
+          const hw = hwDraft.get(p.key) ?? { from: '06:00', to: '20:00', every: info?.every ?? 10 };
+          let cum = 0;
+          const rows = p.stops
+            .map((st, i) => {
+              cum += st.min ?? 0;
+              const prev = p.stops[i - 1];
+              const canEdit = !ro && st.station;
+              const ins =
+                !ro && i && insertAt && prev?.station && st.station && insertAt.a === prev.station && insertAt.b === st.station
+                  ? `<tr class="adm-insrow"><td colspan="4"><div class="adm-ins">${pickerSlot('station', 'ins', insertAt.station, 'Neuer Halt …')}
+                      <label>${esc(prev.name)} → neu <input type="number" min="0" max="60" data-ins="minA" value="${insertAt.minA}"> min</label>
+                      <label>neu → ${esc(st.name)} <input type="number" min="0" max="60" data-ins="minB" value="${insertAt.minB}"> min</label>
+                      <button class="btn btn-primary btn-small" id="ins-ok">Einfügen</button><button class="link" id="ins-cancel">Abbrechen</button></div></td></tr>`
+                  : '';
+              return `${ins}<tr><td>${
+                !ro && i && prev?.station && st.station ? `<button class="adm-plus" data-insert="${esc(prev.station)}|${esc(st.station)}" title="Halt zwischen ${esc(prev.name)} und ${esc(st.name)} einfügen" aria-label="Halt einfügen">+</button>` : ''
+              }${esc(st.name)}</td>
+                <td>${i ? (canEdit && prev?.station ? `<input type="number" min="0" max="60" class="adm-ttmin" data-tt="${esc(prev.station)}|${esc(st.station!)}" value="${st.min ?? ''}"> min` : `${st.min ?? '–'} min`) : ''}</td>
+                <td class="muted">${i ? `${cum} min` : 'Start'}</td>
+                <td>${canEdit && i && i < p.stops.length - 1 ? `<button class="link" data-skip="${esc(st.station!)}" title="${esc(v.line)} hält hier nicht mehr">auslassen</button>` : ''}</td></tr>`;
+            })
+            .join('');
+          const depChips = deps
+            .map((t) => `<span class="adm-dep ${dd?.remove.has(t) ? 'gone' : ''}">${hhmm(t)}${ro ? '' : `<button data-dep="${esc(p.key)}|${t}" aria-label="Abfahrt ${hhmm(t)} streichen">${dd?.remove.has(t) ? '↺' : '✕'}</button>`}</span>`)
+            .concat((dd?.add ?? []).map((t) => `<span class="adm-dep new">${hhmm(t)}<button data-depnew="${esc(p.key)}|${t}" aria-label="entfernen">✕</button></span>`))
+            .join('');
+          return `<div class="adm-ttp"><h4>→ ${esc(p.stops[p.stops.length - 1].name)} <small class="muted">ab ${esc(p.stops[0].name)}${p.through ? ` · durchgebunden mit ${esc(p.through)}` : ''}</small></h4>
+            <div class="adm-ttdays">${DAYS.map(([d, l]) => `<span><b>${l}</b> ${p.trips[d].reduce((a, b) => a + b, 0)} Fahrten ${strip(p.trips[d])}</span>`).join('')}</div>
+            <table class="adm-table adm-stops"><thead><tr><th>Halt</th><th>Fahrzeit</th><th>ab Start</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+            <details class="adm-deps" ${dd ? 'open' : ''}><summary>Abfahrten ${dayName} ab ${esc(p.stops[0].name)}: ${deps.length}</summary>
+              <div class="adm-deplist">${depChips || '<small class="muted">keine</small>'}</div>
+              ${ro ? '' : `<div class="adm-row"><input class="adm-hhmm" data-depadd="${esc(p.key)}" placeholder="HH:MM" maxlength="5"><button class="btn btn-ghost btn-small" data-depaddbtn="${esc(p.key)}">Abfahrt hinzufügen</button>
+                ${dd ? `<button class="btn btn-primary btn-small" data-depsave="${esc(p.key)}">Speichern</button><button class="link" data-depcancel="${esc(p.key)}">Verwerfen</button>` : ''}</div>`}
+            </details>
+            ${ro ? '' : `<div class="adm-hw"><b>Takt ${dayName}</b> von <input class="adm-hhmm" data-hw="${esc(p.key)}|from" value="${hw.from}" maxlength="5"> bis <input class="adm-hhmm" data-hw="${esc(p.key)}|to" value="${hw.to}" maxlength="5"> alle <input type="number" min="2" max="120" data-hw="${esc(p.key)}|every" value="${hw.every}"> min <button class="btn btn-ghost btn-small" data-hwsave="${esc(p.key)}">Übernehmen</button><small class="muted">beide Richtungen</small></div>`}
+          </div>`;
+        })
+        .join('')}`;
   }
 
   function newPlanHtml(): string {
@@ -204,7 +386,7 @@ export function plansTab(rerender: () => void): Tab {
 
   function formHtml(): string {
     const kinds = `<div class="adm-kinds">${KINDS.map(([k, l]) => `<button type="button" data-kind="${k}" class="${form.kind === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-    const needsLine = ['extend', 'cut', 'time', 'removeLine'].includes(form.kind);
+    const needsLine = ['extend', 'cut', 'time', 'removeLine', 'headway', 'addVariant'].includes(form.kind);
     const lineField = needsLine ? `<div class="field"><span>Linie</span>${pickerSlot('line', 'line', form.line)}</div>` : '';
     let body = '';
     const l = line();
@@ -213,6 +395,8 @@ export function plansTab(rerender: () => void): Tab {
     else if (form.kind === 'cut') body = cutHtml();
     else if (form.kind === 'time') body = timeHtml();
     else if (form.kind === 'removeLine') body = `<p>Die Linie <b>${esc(form.line)}</b> fährt in diesem Netzplan nicht mehr.</p>${addBtn('Linie entfernen')}`;
+    else if (form.kind === 'headway') body = headwayHtml();
+    else if (form.kind === 'addVariant') body = variantHtml();
     else if (form.kind === 'addLine') body = addLineHtml();
     else if (form.kind === 'addStation') body = addStationHtml();
     else body = stationEditHtml();
@@ -285,21 +469,47 @@ export function plansTab(rerender: () => void): Tab {
       ${form.pair ? `<label class="field"><span>Fahrzeit ${form.current != null ? `<small class="muted">(bisher ${form.current} min)</small>` : ''}</span><input type="number" min="0" max="60" data-f="min" value="${form.min}"> min</label>${addBtn()}` : ''}`;
   }
 
-  function addLineHtml(): string {
+  /** Takt ändern: Haltefolge (beide Richtungen), Tag, Zeitraum, alle X Minuten */
+  function headwayHtml(): string {
+    const keys = [...new Map(lineView?.patterns.map((p) => [p.key.split('>').sort().join('>'), p]) ?? []).values()];
+    const cur = lineInfo(form.line);
+    return `${cur?.every ? `<p class="muted">Bisher Mo–Fr tagsüber etwa alle ${cur.every} min.</p>` : ''}
+      <label class="field"><span>Haltefolge</span><select data-f="pattern"><option value="">alle der Linie</option>${keys
+        .map((p) => `<option value="${esc(p.key)}" ${form.pattern === p.key ? 'selected' : ''}>${esc(p.stops[0].name)} ↔ ${esc(p.stops[p.stops.length - 1].name)}</option>`)
+        .join('')}</select></label>
+      <div class="adm-grid3"><label class="field"><span>Tag</span><select data-f="day">${DAYS.map(([d, l]) => `<option value="${d}" ${form.day === d ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="field"><span>von</span><input data-f="from" value="${form.from}" maxlength="5" placeholder="06:00"></label>
+        <label class="field"><span>bis</span><input data-f="to" value="${form.to}" maxlength="5" placeholder="20:00"></label>
+        <label class="field"><span>alle … Minuten</span><input type="number" min="2" max="120" data-f="every" value="${form.every}"></label></div>
+      <p class="muted">Die Fahrten in diesem Zeitraum werden durch neue im gewählten Takt ersetzt – mit den üblichen Fahrzeiten der Linie.</p>${addBtn()}`;
+  }
+
+  /** zusätzliche Fahrten einer Linie auf eigener Haltefolge – z.B. jede 2. S1 nach Hütteldorf */
+  function variantHtml(): string {
+    return `<p class="muted">Eigene Haltefolge der ${esc(form.line)} mit eigenem Takt – z.B. „jede 2. S1 nach Hütteldorf“: hier die Halte bis Hütteldorf und alle 30 min, dazu bei „Takt ändern“ die bisherige S1 auf alle 30 min.</p>
+      <div class="field"><span>Halte der Reihe nach (Fahrzeit ab dem vorigen Halt) – fährt in beide Richtungen</span>${stopsHtml(true)}</div>
+      ${bandsHtml()}${addBtn('Fahrten hinzufügen')}`;
+  }
+
+  function bandsHtml(): string {
     const bands = (d: DayType) =>
       form.service[d]
         .map(
-          (b, i) => `<div class="adm-band"><input type="time" data-band="${d}:${i}:from" value="${b.from}"> bis <input type="text" class="adm-hhmm" data-band="${d}:${i}:to" value="${b.to}" maxlength="5"> alle
+          (b, i) => `<div class="adm-band"><input type="text" class="adm-hhmm" data-band="${d}:${i}:from" value="${b.from}" maxlength="5"> bis <input type="text" class="adm-hhmm" data-band="${d}:${i}:to" value="${b.to}" maxlength="5"> alle
             <input type="number" min="2" max="120" data-band="${d}:${i}:every" value="${b.every}"> min <button type="button" class="icon-btn" data-rmband="${d}:${i}" aria-label="Zeitraum entfernen">✕</button></div>`,
         )
         .join('') || '<small class="muted">fährt nicht</small>';
+    return `<div class="field"><span>Betriebszeiten und Takt</span>${DAYS.map(([d, l]) => `<div class="adm-day"><b>${l}</b>${bands(d)}<button type="button" class="link" data-addband="${d}">+ Zeitraum</button></div>`).join('')}
+      <small class="muted">Nach Mitternacht als 24:30, 25:00 … eintragen.</small></div>`;
+  }
+
+  function addLineHtml(): string {
     return `<div class="adm-grid2">
         <label class="field"><span>Name</span><input data-f="line" value="${esc(form.line)}" maxlength="8" placeholder="z.B. U5"></label>
         <label class="field"><span>Verkehrsmittel</span><select data-f="mode">${(['U', 'S', 'T', 'B', 'N'] as Mode[]).map((m) => `<option value="${m}" ${form.mode === m ? 'selected' : ''}>${MODE_LABEL[m]}</option>`).join('')}</select></label>
         <label class="field"><span>Farbe</span><input type="color" data-f="color" value="${form.color}"></label></div>
       <div class="field"><span>Halte der Reihe nach (Fahrzeit ab dem vorigen Halt) – fährt in beide Richtungen</span>${stopsHtml(true)}</div>
-      <div class="field"><span>Betriebszeiten und Takt</span>${DAYS.map(([d, l]) => `<div class="adm-day"><b>${l}</b>${bands(d)}<button type="button" class="link" data-addband="${d}">+ Zeitraum</button></div>`).join('')}
-        <small class="muted">Nach Mitternacht als 24:30, 25:00 … eintragen.</small></div>
+      ${bandsHtml()}
       ${addBtn('Linie anlegen')}`;
   }
 
@@ -364,42 +574,28 @@ export function plansTab(rerender: () => void): Tab {
       case 'removeStation':
         if (!form.station) return 'Station wählen.';
         return { kind: 'removeStation', station: form.station };
+      case 'headway': {
+        const t = /^([01]?\d|2[0-7]):[0-5]\d$/;
+        if (!t.test(form.from) || !t.test(form.to)) return 'Uhrzeiten im Format HH:MM.';
+        const pad = (x: string) => x.padStart(5, '0');
+        return { kind: 'headway', line: L, day: form.day, from: pad(form.from), to: pad(form.to), every: Math.round(form.every), ...(form.pattern ? { pattern: form.pattern } : {}) };
+      }
+      case 'addVariant':
+        if (form.stops.length < 2 || form.stops.some((x) => !x.station)) return 'Mindestens zwei Halte wählen.';
+        return { kind: 'addVariant', line: L, stops: form.stops.map((x, i) => ({ station: x.station, min: i ? Math.max(0, Math.round(x.min)) : 0 })), service: form.service };
+      // diese Änderungen entstehen direkt in der Fahrplan-Ansicht
+      case 'insertStop':
+      case 'skipStop':
+      case 'departures':
+        return 'Bitte direkt im Fahrplan der Linie ändern.';
     }
   }
 
   function resetForm(kind = form.kind) {
-    Object.assign(form, { kind, line: '', at: '', end: '', beyond: '', pair: '', min: 3, current: null, station: '', name: '', district: 0, point: null, stops: [{ station: '', min: kind === 'addLine' ? 0 : 3 }] });
+    Object.assign(form, { kind, line: '', at: '', end: '', beyond: '', pair: '', min: 3, current: null, station: '', name: '', district: 0, point: null, pattern: '', stops: [{ station: '', min: kind === 'addLine' || kind === 'addVariant' ? 0 : 3 }] });
   }
 
   // -------------------------------------------------------------- Fahrplan-Ansicht
-
-  function ttHtml(v: TimetableLineView): string {
-    const strip = (hours: number[]) => {
-      const max = Math.max(1, ...hours);
-      return `<span class="adm-strip" title="Fahrten je Stunde">${hours
-        .slice(4, 25)
-        .map((n, i) => `<i style="height:${Math.round((n / max) * 100)}%" title="${i + 4}–${i + 5} Uhr: ${n} Fahrten"></i>`)
-        .join('')}</span>`;
-    };
-    return `<div class="adm-ttv">${v.patterns
-      .map((p) => {
-        const sum = (d: DayType) => p.trips[d].reduce((a, b) => a + b, 0);
-        return `<div class="adm-ttp"><h4>→ ${esc(p.stops[p.stops.length - 1].name)}${p.through ? ` <small class="muted">(durchgebunden mit ${esc(p.through)})</small>` : ''}</h4>
-          <div class="adm-ttdays">${DAYS.map(([d, l]) => `<span><b>${l}</b> ${sum(d)} Fahrten ${strip(p.trips[d])}</span>`).join('')}</div>
-          <table class="adm-table"><tbody>${p.stops
-            .map(
-              (s, i) => `<tr><td>${esc(s.name)}</td><td>${
-                i && s.station && p.stops[i - 1].station
-                  ? `<input type="number" min="0" max="60" class="adm-ttmin" data-tt="${esc(p.stops[i - 1].station!)}|${esc(s.station)}" value="${s.min ?? ''}"> min`
-                  : i
-                    ? `${s.min ?? ''} min`
-                    : ''
-              }</td></tr>`,
-            )
-            .join('')}</tbody></table></div>`;
-      })
-      .join('')}</div>`;
-  }
 
   function probeHtml(routes: RouteOption[]): string {
     if (!routes.length) return '<p class="muted">Keine Verbindung gefunden.</p>';
@@ -428,17 +624,19 @@ export function plansTab(rerender: () => void): Tab {
     // Auswahlfelder: Linie/Station gewählt
     mountPickers(root, n, (key, id) => {
       if (key === 'line') {
-        Object.assign(form, { line: id, at: '', end: '', pair: '', current: null });
+        Object.assign(form, { line: id, at: '', end: '', pair: '', current: null, pattern: '' });
+        if (form.kind === 'headway')
+          return void run(async () => {
+            ttLine = id;
+            await loadLineView(id);
+          });
       } else if (key === 'station') {
         form.station = id;
         form.name = '';
         form.point = null;
       } else if (key.startsWith('stop:')) form.stops[Number(key.slice(5))].station = id;
-      else if (key === 'tt') {
-        ttLine = id;
-        return void run(async () => {
-          tt = await adm<TimetableLineView>('GET', `/api/admin/routing/timetable?plan=${encodeURIComponent(planId)}&line=${encodeURIComponent(id)}`);
-        });
+      else if (key === 'ins') {
+        if (insertAt) insertAt.station = id;
       } else if (key === 'from') probe.from = id;
       else if (key === 'to') probe.to = id;
       rerender();
@@ -447,7 +645,9 @@ export function plansTab(rerender: () => void): Tab {
       b.addEventListener('click', () => {
         planId = b.dataset.plan!;
         net = null;
-        tt = null;
+        lineView = null;
+        lineViewFor = '';
+        linesFor = '';
         ttLine = '';
         probe.routes = null;
         resetForm();
@@ -539,7 +739,9 @@ export function plansTab(rerender: () => void): Tab {
           }
           return rerender();
         }
-        if (k === 'min' || k === 'district') form[k] = Number(el.value);
+        if (k === 'min' || k === 'district' || k === 'every') form[k] = Number(el.value);
+        else if (k === 'day') form.day = el.value as DayType;
+        else if (k === 'pattern' || k === 'from' || k === 'to') form[k] = el.value;
         else if (k === 'mode') form.mode = el.value as Mode;
         else if (k === 'line' || k === 'name' || k === 'color') form[k] = el.value;
         if (k !== 'name' && k !== 'line') rerender();
@@ -580,6 +782,160 @@ export function plansTab(rerender: () => void): Tab {
         if (small) small.textContent = `(${p.lat.toFixed(5)}, ${p.lon.toFixed(5)})`;
       });
     }
+    // Bereiche, Fahrplan-Ansicht
+    root.querySelectorAll<HTMLButtonElement>('[data-section]').forEach((b) => b.addEventListener('click', () => ((section = b.dataset.section as typeof section), rerender())));
+    root.querySelector<HTMLInputElement>('#tt-built')?.addEventListener('change', (e) => {
+      asBuilt = (e.target as HTMLInputElement).checked;
+      rerender();
+    });
+    const filter = root.querySelector<HTMLInputElement>('#tt-filter');
+    filter?.addEventListener('input', () => {
+      lineFilter = filter.value;
+      rerender();
+      setTimeout(() => {
+        const n = document.querySelector<HTMLInputElement>('#tt-filter');
+        n?.focus();
+        n?.setSelectionRange(n.value.length, n.value.length);
+      }, 0);
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-ttline]').forEach((b) =>
+      b.addEventListener('click', () =>
+        run(async () => {
+          ttLine = b.dataset.ttline!;
+          await loadLineView(ttLine);
+        }),
+      ),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-ttday]').forEach((b) => b.addEventListener('click', () => ((ttDay = b.dataset.ttday as DayType), depDraft.clear(), rerender())));
+    const reloadView = async () => {
+      linesFor = '';
+      lineViewFor = '';
+    };
+    root.querySelectorAll<HTMLButtonElement>('[data-skip]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const station = b.dataset.skip!;
+        if (!confirm(`${ttLine} soll in ${n.stations.get(station)?.name ?? station} nicht mehr halten?`)) return;
+        void run(async () => {
+          await addEdit({ kind: 'skipStop', line: ttLine, station });
+          await reloadView();
+        });
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-insert]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const [a, c] = b.dataset.insert!.split('|');
+        insertAt = { a, b: c, station: '', minA: 2, minB: 2 };
+        rerender();
+      }),
+    );
+    root.querySelectorAll<HTMLInputElement>('[data-ins]').forEach((el) => el.addEventListener('change', () => insertAt && (insertAt[el.dataset.ins as 'minA' | 'minB'] = Number(el.value))));
+    root.querySelector('#ins-cancel')?.addEventListener('click', () => ((insertAt = null), rerender()));
+    root.querySelector('#ins-ok')?.addEventListener('click', () => {
+      const x = insertAt!;
+      if (!x.station) return toast('Neuen Halt wählen.');
+      void run(async () => {
+        await addEdit({ kind: 'insertStop', line: ttLine, a: x.a, b: x.b, station: x.station, minA: Math.round(x.minA), minB: Math.round(x.minB) });
+        insertAt = null;
+        await reloadView();
+      });
+    });
+    // Abfahrten: streichen/hinzufügen sammeln, dann eine Änderung je Richtung und Tag (mit früheren zusammengeführt)
+    const draftOf = (key: string) => depDraft.get(key) ?? depDraft.set(key, { remove: new Set(), add: [] }).get(key)!;
+    root.querySelectorAll<HTMLButtonElement>('[data-dep]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const [key, t] = b.dataset.dep!.split('|');
+        const d = draftOf(key);
+        const m = Number(t);
+        if (d.remove.has(m)) d.remove.delete(m);
+        else d.remove.add(m);
+        rerender();
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-depnew]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const [key, t] = b.dataset.depnew!.split('|');
+        const d = draftOf(key);
+        d.add = d.add.filter((x) => x !== Number(t));
+        rerender();
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-depaddbtn]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const key = b.dataset.depaddbtn!;
+        const inp = root.querySelector<HTMLInputElement>(`[data-depadd="${CSS.escape(key)}"]`)!;
+        const m = /^(\d{1,2}):([0-5]\d)$/.exec(inp.value.trim());
+        if (!m || Number(m[1]) > 27) return toast('Uhrzeit als HH:MM (nach Mitternacht 24:30 …).');
+        const d = draftOf(key);
+        d.add = [...new Set([...d.add, Number(m[1]) * 60 + Number(m[2])])].sort((x, y) => x - y);
+        rerender();
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-depcancel]').forEach((b) => b.addEventListener('click', () => (depDraft.delete(b.dataset.depcancel!), rerender())));
+    root.querySelectorAll<HTMLButtonElement>('[data-depsave]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const key = b.dataset.depsave!;
+        const d = depDraft.get(key)!;
+        const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+        const old = plan().edits.find((e) => e.kind === 'departures' && e.line === ttLine && e.pattern === key && e.day === ttDay) as Extract<LineEdit, { kind: 'departures' }> | undefined;
+        const add = new Set(old?.add ?? []);
+        const remove = new Set(old?.remove ?? []);
+        for (const m of d.remove) {
+          const t = fmt(m);
+          // eine früher hinzugefügte Abfahrt streichen = einfach nicht mehr hinzufügen
+          if (add.has(t)) add.delete(t);
+          else remove.add(t);
+        }
+        for (const m of d.add) add.add(fmt(m));
+        const edits = plan().edits.filter((e) => e !== old);
+        const next: LineEdit[] = add.size || remove.size ? [...edits, { kind: 'departures', line: ttLine, pattern: key, day: ttDay, add: [...add].sort(), remove: [...remove].sort() }] : edits;
+        void run(async () => {
+          await savePlan({ id: planId, edits: next }, 'Abfahrten gespeichert');
+          depDraft.delete(key);
+          await reloadView();
+        });
+      }),
+    );
+    // Takt je Haltefolge (beide Richtungen)
+    root.querySelectorAll<HTMLInputElement>('[data-hw]').forEach((el) =>
+      el.addEventListener('change', () => {
+        const [key, f] = el.dataset.hw!.split('|');
+        const cur = hwDraft.get(key) ?? { from: '06:00', to: '20:00', every: lineInfo(ttLine)?.every ?? 10 };
+        if (f === 'every') cur.every = Number(el.value);
+        else cur[f as 'from' | 'to'] = el.value.trim();
+        hwDraft.set(key, cur);
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-hwsave]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const key = b.dataset.hwsave!;
+        const hw = hwDraft.get(key) ?? { from: '06:00', to: '20:00', every: lineInfo(ttLine)?.every ?? 10 };
+        const t = /^([01]?\d|2[0-7]):[0-5]\d$/;
+        if (!t.test(hw.from) || !t.test(hw.to)) return toast('Uhrzeiten im Format HH:MM.');
+        void run(async () => {
+          await addEdit({ kind: 'headway', line: ttLine, day: ttDay, from: hw.from.padStart(5, '0'), to: hw.to.padStart(5, '0'), every: Math.round(hw.every), pattern: key });
+          await reloadView();
+        });
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-quick]').forEach((b) =>
+      b.addEventListener('click', () => {
+        resetForm(b.dataset.quick as Kind);
+        form.line = ttLine;
+        if (form.kind === 'addVariant') form.stops = [{ station: '', min: 0 }];
+        section = 'aenderungen';
+        rerender();
+      }),
+    );
+    const nm = root.querySelector<HTMLElement>('#pl-netmap');
+    if (nm) {
+      const map = L.map(nm, { minZoom: 10, maxZoom: 17, zoomSnap: 0.25 });
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { attribution: 'Esri, HERE, Garmin, © OpenStreetMap', maxZoom: 17 }).addTo(map);
+      map.setView([48.2085, 16.3725], 11.5);
+      setTimeout(() => {
+        map.invalidateSize();
+        new NetMapLayer(map, new NetGraph(n)).render(netView());
+      }, 60);
+    }
     root.querySelector('#ed-add')?.addEventListener('click', () => {
       const e = editFromForm();
       if (typeof e === 'string') return toast(e);
@@ -596,7 +952,8 @@ export function plansTab(rerender: () => void): Tab {
         const edits = plan().edits.filter((e) => !(e.kind === 'time' && e.line === ttLine && ((e.from === from && e.to === to) || (e.from === to && e.to === from))));
         void run(async () => {
           await savePlan({ id: planId, edits: [...edits, { kind: 'time', line: ttLine, from, to, min }] }, `${ttLine}: ${n.stations.get(from)?.name} ↔ ${n.stations.get(to)?.name} jetzt ${min} min`);
-          tt = await adm<TimetableLineView>('GET', `/api/admin/routing/timetable?plan=${encodeURIComponent(planId)}&line=${encodeURIComponent(ttLine)}`);
+          linesFor = '';
+          lineViewFor = '';
         });
       }),
     );

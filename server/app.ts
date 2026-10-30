@@ -53,6 +53,13 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
   games.onCreate = (g) => {
     accounts.watch(g);
     // Statistik der Admin-Seite: jedes fertige Spiel (auch ohne Accounts)
+    g.on('lines', (lines: string[]) => {
+      try {
+        adminAcc.countLines(lines);
+      } catch (e) {
+        console.warn('Statistik:', (e as Error).message);
+      }
+    });
     g.on('finished', () => {
       try {
         const info = g.adminInfo();
@@ -62,17 +69,31 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
       }
     });
   };
+  // Besucher: zufällige Kennung je Browser (kein Bezug zur Person), Meldung jede Minute, solange die Seite offen ist
+  const visitors = new Map<string, { at: number; account: boolean }>();
+  const visitorsNow = () => {
+    const cut = Date.now() - 2.5 * 60_000;
+    let all = 0;
+    let anon = 0;
+    for (const [id, v] of visitors) {
+      if (v.at < cut) visitors.delete(id);
+      else (all++, v.account || anon++);
+    }
+    return { all, anon };
+  };
   // Momentaufnahme für die Grafiken: alle 5 min
   setInterval(() => {
     try {
       const all = games.list();
-      adminAcc.sample(all.length, games.activeGames(), all.reduce((n, g) => n + g.adminInfo().players.filter((p) => p.connected).length, 0));
+      const v = visitorsNow();
+      adminAcc.sample(all.length, games.activeGames(), all.reduce((n, g) => n + g.adminInfo().players.filter((p) => p.connected).length, 0), v.all, v.anon);
     } catch (e) {
       console.warn('Statistik:', (e as Error).message);
     }
   }, 5 * 60_000).unref();
   setInterval(() => accounts.cleanup(), 3600_000).unref();
   const training = new TrainingService(net);
+  training.onLines = (lines) => adminAcc.countLines(lines);
 
   const app = express();
   app.disable('x-powered-by');
@@ -96,6 +117,19 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
     const json = /^[a-z0-9-]{1,24}$/.test(plan) ? runtime.networkJson(plan) : null;
     if (!json) return void res.status(404).json({ error: 'Diesen Netzplan gibt es nicht.' });
     res.type('json').set('Cache-Control', 'no-cache').send(json);
+  });
+  app.post('/api/ping', (req, res) => {
+    const id = String(req.body?.v ?? '');
+    if (!/^[a-z0-9]{12,40}$/.test(id)) return void res.status(400).json({ error: 'Ungültig' });
+    const account = !!optionalUser(req);
+    visitors.set(id, { at: Date.now(), account });
+    if (visitors.size > 50_000) visitorsNow();
+    try {
+      adminAcc.visit(id, account);
+    } catch {
+      /* Statistik darf nie stören */
+    }
+    res.json({ ok: true });
   });
   // Spiel-Konfiguration (Uhrzeiten, Wertungen, Standard-Einstellungen …) – der Browser wendet sie vor dem Start an
   app.get('/api/config', (_req, res) => {

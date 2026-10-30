@@ -33,7 +33,11 @@ export function inStationKinds(s: Station, kinds: StationKind[], line: (id: stri
   return kinds.some((k) => !!POOL_OVERRIDES.add[k]?.has(s.id) || (!POOL_OVERRIDES.remove[k]?.has(s.id) && matchesKind(s, k, lines)));
 }
 
-/** Regel je Haltestellen-Art (ohne die Ausnahmen der Admin-Seite) */
+/** Regel je Haltestellen-Art (ohne die Ausnahmen der Admin-Seite) – für die Vorschau auf der Admin-Seite */
+export function ruleMatches(s: Station, k: StationKind, line: (id: string) => Line | undefined): boolean {
+  return matchesKind(s, k, s.lines.map(line).filter((l): l is Line => !!l));
+}
+
 function matchesKind(s: Station, k: StationKind, lines: Line[]): boolean {
   const dayLines = lines.filter((l) => l.mode !== 'N').length;
   const rapid = lines.filter((l) => l.mode === 'U' || l.mode === 'S');

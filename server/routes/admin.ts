@@ -23,7 +23,7 @@ import { DEFAULT_PARAMS, sanitizeEdits, sanitizeParams, type PlanStore } from '.
 import { topRoutes } from '../routing.ts';
 import { rateLimit } from '../security.ts';
 import { slotTime } from '../timeslots.ts';
-import { timetableInfo, timetableView } from '../timetable.ts';
+import { timetableInfo, timetableLines, timetableView } from '../timetable.ts';
 import { jsonOnly, resetBase, sessionToken } from './accounts.ts';
 
 export interface AdminDeps {
@@ -51,9 +51,10 @@ const PARAM_NAMES: Record<keyof RoutingParams, string> = {
  * Verweise der Änderungen prüfen, der Reihe nach wie beim Anwenden: Linien und Stationen müssen zum Zeitpunkt der
  * Änderung existieren (neue Stationen/Linien zählen ab ihrer eigenen Änderung). Tippfehler → klare Meldung.
  */
-function checkRefs(edits: LineEdit[], base: Network) {
+function checkRefs(edits: LineEdit[], base: Network, extraLines: string[] = []) {
   const stations = new Set(base.stations.keys());
-  const lines = new Set(base.lines.keys());
+  // Regionalzüge gibt es nur im Fahrplan (nicht als Linie im Netz)
+  const lines = new Set([...base.lines.keys(), ...extraLines]);
   const st = (id: string) => {
     if (!stations.has(id)) throw new GameError(`Station ${id} gibt es (an dieser Stelle) nicht.`);
   };
@@ -96,6 +97,24 @@ function checkRefs(edits: LineEdit[], base: Network) {
       case 'removeLine':
         ln(e.line);
         lines.delete(e.line);
+        break;
+      case 'headway':
+        ln(e.line);
+        break;
+      case 'addVariant':
+        ln(e.line);
+        e.stops.forEach((s) => st(s.station));
+        break;
+      case 'insertStop':
+        ln(e.line);
+        [e.a, e.b, e.station].forEach(st);
+        break;
+      case 'skipStop':
+        ln(e.line);
+        st(e.station);
+        break;
+      case 'departures':
+        ln(e.line);
         break;
     }
   }
@@ -297,12 +316,35 @@ export function adminRoutes(app: Express, d: AdminDeps) {
           return `neue Linie ${e.line} (${e.stops.length} Halte)`;
         case 'removeLine':
           return `Linie ${e.line} entfernt`;
+        case 'headway':
+          return `${e.line} ${e.day} ${e.from}–${e.to} alle ${e.every} min`;
+        case 'addVariant':
+          return `${e.line} zusätzlich ${stName(e.stops[0].station)} – ${stName(e.stops[e.stops.length - 1].station)}`;
+        case 'insertStop':
+          return `${e.line} hält zusätzlich in ${stName(e.station)}`;
+        case 'skipStop':
+          return `${e.line} hält nicht mehr in ${stName(e.station)}`;
+        case 'departures':
+          return `${e.line} Abfahrten ${e.day}: +${e.add.length} / −${e.remove.length}`;
       }
     });
     return [...params, ...edits].join(' · ') || 'keine Änderungen';
   };
 
+  /** Regionalzüge des Standard-Fahrplans, die man bearbeiten kann */
+  const regionalLines = () => timetableLines('__base', () => false).map((l) => l.line);
   app.get('/api/admin/routing', h((req) => (admin(req), routingState())));
+  // alle Linien eines Netzplans im Fahrplan (plan=__base: wie gebaut, ohne Änderungen)
+  app.get(
+    '/api/admin/routing/lines',
+    h((req) => {
+      admin(req);
+      const plan = String(req.query.plan ?? 'regular');
+      const n = d.runtime.planNet(plan);
+      if (!n) throw new GameError('Diesen Netzplan gibt es nicht.', 404);
+      return timetableLines(plan, (l) => n.lines.has(l), (efa) => n.stations.get(n.stationOfEfa(efa) ?? '')?.name ?? null);
+    }),
+  );
   app.put(
     '/api/admin/routing/plans/:id',
     h((req) => {
@@ -310,7 +352,7 @@ export function adminRoutes(app: Express, d: AdminDeps) {
       const id = param(req, 'id');
       if (!/^[a-z0-9-]{1,24}$/.test(id)) throw new GameError('Kennung: 1–24 Kleinbuchstaben, Ziffern oder „-“.');
       const edits = sanitizeEdits(req.body?.edits);
-      checkRefs(edits, Network.load());
+      checkRefs(edits, Network.load(), regionalLines());
       const plan: NetworkPlan = {
         id,
         label: String(req.body?.label ?? (id === 'regular' ? 'Regulär' : id)),
@@ -367,7 +409,7 @@ export function adminRoutes(app: Express, d: AdminDeps) {
       const plan = String(req.query.plan ?? 'regular');
       const n = d.runtime.planNet(plan);
       if (!n) throw new GameError('Diesen Netzplan gibt es nicht.', 404);
-      const v = timetableView(plan, String(req.query.line ?? ''), (efa) => n.stationOfEfa(efa));
+      const v = timetableView(plan, String(req.query.line ?? ''), (efa) => n.stationOfEfa(efa), (efa) => n.stations.get(n.stationOfEfa(efa) ?? '')?.name ?? null);
       if (!v) throw new GameError('Diese Linie gibt es im Fahrplan nicht (oder der Fahrplan ist aus).', 404);
       return v;
     }),
