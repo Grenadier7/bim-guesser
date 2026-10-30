@@ -374,7 +374,12 @@ describe('Sitzungen und Konto', () => {
       body: JSON.stringify({ email: 'x@example.org' }),
     });
     assert.equal(res.status, 503);
-    assert.match((await res.json()).error, /nicht eingerichtet/);
+    const msg = (await res.json()).error as string;
+    assert.match(msg, /geht hier gerade nicht/);
+    assert.doesNotMatch(msg, /SMTP|PUBLIC_URL|eingerichtet/, 'keine Technik-Begriffe für Spieler');
+    // die Seite fragt vorher und blendet „Passwort vergessen?“ aus
+    const info = await (await realFetch(`http://localhost:${(srv.address() as AddressInfo).port}/api/privacy`)).json();
+    assert.equal(info.mail, false);
     srv.close();
   });
 

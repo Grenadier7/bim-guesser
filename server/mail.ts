@@ -11,7 +11,10 @@ export function smtpMailer(url = process.env.SMTP_URL, from = process.env.MAIL_F
   const file = process.env.MAIL_FILE;
   if (!url && file) return async (to, subject, text) => appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), to, subject, text })}
 `);
-  if (!url) return undefined;
+  if (!url) {
+    if (process.env.NODE_ENV === 'production') console.log('ℹ Kein Mailversand (SMTP_URL fehlt) – „Passwort vergessen“ ist aus.');
+    return undefined;
+  }
   let transport: ReturnType<typeof nodemailer.createTransport>;
   let host = '?';
   try {
