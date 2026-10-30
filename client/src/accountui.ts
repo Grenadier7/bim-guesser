@@ -203,7 +203,12 @@ async function body(): Promise<string> {
           <button class="btn btn-danger">Account endgültig löschen</button></form></details>
       <p class="muted"><button type="button" class="link" data-tab="privacy">Datenschutz – was gespeichert wird</button></p>`;
   const p = await accountApi.profile(me.name);
-  return `<div class="profile-head"><h3>${esc(me.name)}</h3></div>${levelBar(p.level)}${medalsHtml(p.medals)}${p.stats ? statsHtml(p.stats) : ''}`;
+  const adminBtn = me.admin
+    ? app.session
+      ? '<p class="muted">🛠 Den Admin-Bereich gibt es außerhalb einer Lobby.</p>'
+      : '<button class="btn btn-dark adm-open" id="adm-open">🛠 Admin-Bereich öffnen</button>'
+    : '';
+  return `${adminBtn}<div class="profile-head"><h3>${esc(me.name)}</h3></div>${levelBar(p.level)}${medalsHtml(p.medals)}${p.stats ? statsHtml(p.stats) : ''}`;
 }
 
 /** jede Anzeige bekommt eine Nummer – eine ältere, langsamere Antwort überschreibt nie eine neuere */
@@ -290,6 +295,11 @@ function bind() {
     }, 250);
   });
   sheet.querySelector('#logout')?.addEventListener('click', () => void signOut());
+  sheet.querySelector('#adm-open')?.addEventListener('click', () => {
+    close();
+    app.view = 'admin';
+    app.onChange();
+  });
   sheet.querySelectorAll<HTMLFormElement>('form[data-form]').forEach((f) =>
     f.addEventListener('submit', async (e) => {
       e.preventDefault();

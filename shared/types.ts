@@ -608,7 +608,12 @@ export interface AdminLobby {
   code: string;
   mode: GameMode;
   phase: string;
-  players: { name: string; account?: string; connected: boolean }[];
+  /** „Runde 2/5“ bzw. „Frage 3/10“ */
+  progress: string;
+  /** Zeit gerade angehalten */
+  paused: boolean;
+  players: { id: string; name: string; account?: string; connected: boolean; host: boolean; score: number }[];
+  chat: { name: string; text: string; at: number }[];
   createdAt: number;
   lastActivity: number;
 }

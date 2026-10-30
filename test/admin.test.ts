@@ -127,6 +127,39 @@ describe('Admin-Rechte', () => {
   });
 });
 
+describe('Lobbys steuern wie ein Host', () => {
+  test('Spieler entfernen, Host vergeben, Chat, starten, pausieren, zurück in die Lobby – alles im Protokoll', async () => {
+    const host = browser();
+    const lobby = (await host.call('POST', '/api/games', { mode: 'quiz', playerName: 'Gastgeber', settings: {} })).body;
+    const code = lobby.state.id;
+    const guest = (await browser().call('POST', `/api/games/${code}/join`, { playerName: 'Störer' })).body;
+    const other = (await browser().call('POST', `/api/games/${code}/join`, { playerName: 'Nett' })).body;
+    let info = (await boss.b.call('GET', `/api/admin/lobbies/${code}`)).body;
+    assert.deepEqual(info.players.map((p: { name: string; host: boolean }) => [p.name, p.host]), [['Gastgeber', true], ['Störer', false], ['Nett', false]]);
+    assert.ok(!JSON.stringify(info).includes(lobby.token), 'keine Spieler-Tokens in der Admin-Antwort');
+
+    info = (await boss.b.call('POST', `/api/admin/lobbies/${code}/kick`, { playerId: guest.playerId })).body;
+    assert.deepEqual(info.players.map((p: { name: string }) => p.name), ['Gastgeber', 'Nett']);
+    assert.ok(info.chat.some((m: { text: string }) => m.text === 'Störer wurde von der Spielleitung entfernt.'));
+    info = (await boss.b.call('POST', `/api/admin/lobbies/${code}/host`, { playerId: other.playerId, on: true })).body;
+    assert.equal(info.players.find((p: { name: string }) => p.name === 'Nett').host, true);
+    info = (await boss.b.call('POST', `/api/admin/lobbies/${code}/chat`, { text: 'Bitte freundlich bleiben' })).body;
+    assert.equal(info.chat.at(-1).text, 'Spielleitung: Bitte freundlich bleiben');
+
+    info = (await boss.b.call('POST', `/api/admin/lobbies/${code}/start`)).body;
+    assert.equal(info.phase, 'playing');
+    assert.match(info.progress, /^Frage 1\/\d+$/);
+    assert.equal((await boss.b.call('POST', `/api/admin/lobbies/${code}/pause`)).status, 200);
+    assert.equal((await boss.b.call('POST', `/api/admin/lobbies/${code}/resume`)).status, 200);
+    info = (await boss.b.call('POST', `/api/admin/lobbies/${code}/lobby`)).body;
+    assert.equal(info.phase, 'lobby');
+    // normale Spieler können das alles weiterhin nicht
+    assert.equal((await browser().call('POST', `/api/admin/lobbies/${code}/kick`, { playerId: other.playerId })).status, 401);
+    const log = (await boss.b.call('GET', '/api/admin/log')).body as { action: string; detail: string | null }[];
+    assert.ok(log.some((x) => x.action === 'Lobby: Spieler entfernt' && x.detail === 'Spieler Störer'));
+  });
+});
+
 describe('Routenberechnung einstellen', () => {
   const id = (name: string) => net.data.lines.find((l) => l.id === 'S40')!.patterns.flat().find((s) => net.station(s).name === name)!;
   const FJB = () => id('Franz-Josefs-Bahnhof');

@@ -2,7 +2,7 @@
 // Nur für Accounts mit Admin-Recht (vergeben über server/admin-cli.ts); geprüft bei jeder Anfrage in der Datenbank –
 // wer die Rechte verliert, verliert sie sofort. Jede Änderung steht im Protokoll.
 import type { Express, Request } from 'express';
-import type { AdminOverview, RoutingAdminState, RoutingOverrides } from '../../shared/types.ts';
+import type { AdminOverview, RoutingAdminState, RoutingOverrides, RoutingParams } from '../../shared/types.ts';
 import type { AccountAdmin, AccountUser, Accounts } from '../accounts.ts';
 import { h, param } from '../http.ts';
 import { GameError } from '../lobby.ts';
@@ -25,8 +25,30 @@ export interface AdminDeps {
   applyRouting: () => string[];
 }
 
+const PARAM_NAMES: Record<keyof RoutingParams, string> = {
+  changeMin: 'Umsteigezeit',
+  transferWalkM: 'Umsteige-Fußweg',
+  accessWalkM: 'Fußweg Adressen',
+  walkOnlyM: 'ganz zu Fuß bis',
+  maxRides: 'Fahrten höchstens',
+  firstWaitFactor: 'erste Wartezeit',
+};
+
 export function adminRoutes(app: Express, d: AdminDeps) {
   let lastReport: string[] = [];
+  const st = (id: string) => d.net.stations.get(id)?.name ?? id;
+  /** fürs Protokoll in Worten statt JSON */
+  const describeOverrides = (o: RoutingOverrides): string => {
+    const params = (Object.entries(o.params) as [keyof RoutingParams, number][]).map(([k, v]) => `${PARAM_NAMES[k]} ${v} (Standard ${DEFAULT_PARAMS[k]})`);
+    const edits = o.edits.map((e) =>
+      e.kind === 'extend'
+        ? `${e.line} über ${st(e.at)} hinaus: ${e.stops.map((s) => `${st(s.station)} +${s.min}`).join(', ')}`
+        : e.kind === 'cut'
+          ? `${e.line} endet bei ${st(e.at)} (ohne Richtung ${st(e.beyond)})`
+          : `${e.line} ${st(e.from)} ↔ ${st(e.to)}: ${e.min} min`,
+    );
+    return [...params, ...edits].join(' · ') || 'alles auf Standard';
+  };
 
   const admin = (req: Request): AccountUser => {
     const u = d.accounts.userFor(sessionToken(req));
@@ -58,6 +80,38 @@ export function adminRoutes(app: Express, d: AdminDeps) {
       };
     }),
   );
+  // alles, was ein Host kann – im Auftrag des Admins (Schlüssel bleibt im Server)
+  const lobbyAction = (path: string, label: string, act: (g: ReturnType<GameManager['get']>, req: Request) => unknown) =>
+    app.post(
+      `/api/admin/lobbies/:code/${path}`,
+      h(async (req) => {
+        const u = admin(req);
+        const g = d.games.get(param(req, 'code'));
+        // Name vorher merken – nach „entfernen“ ist der Spieler weg
+        const who = req.body?.playerId ? g.adminInfo().players.find((p) => p.id === req.body.playerId)?.name : null;
+        await act(g, req);
+        d.admin.log(u.name, label, g.id, who ? `Spieler ${who}` : null);
+        return g.adminInfo();
+      }),
+    );
+  lobbyAction('start', 'Lobby: Spiel gestartet', (g) => g.start(g.adminKey));
+  lobbyAction('next', 'Lobby: weiter', (g) => g.next(g.adminKey));
+  lobbyAction('pause', 'Lobby: pausiert', (g) => g.pause(g.adminKey));
+  lobbyAction('resume', 'Lobby: fortgesetzt', (g) => g.resume(g.adminKey));
+  lobbyAction('cancel', 'Lobby: Runde abgebrochen', (g) => g.cancelRound(g.adminKey));
+  lobbyAction('lobby', 'Lobby: zurück in die Lobby', (g) => g.backToLobby(g.adminKey));
+  lobbyAction('kick', 'Lobby: Spieler entfernt', (g, req) => g.kick(g.adminKey, String(req.body?.playerId ?? '')));
+  lobbyAction('host', 'Lobby: Host geändert', (g, req) => g.setHost(g.adminKey, String(req.body?.playerId ?? ''), req.body?.on !== false));
+  app.post(
+    '/api/admin/lobbies/:code/chat',
+    h((req) => {
+      admin(req);
+      const g = d.games.get(param(req, 'code'));
+      g.adminSay(req.body?.text);
+      return g.adminInfo();
+    }),
+  );
+  app.get('/api/admin/lobbies/:code', h((req) => (admin(req), d.games.get(param(req, 'code')).adminInfo())));
   app.post(
     '/api/admin/lobbies/:code/close',
     h((req) => {
@@ -106,10 +160,9 @@ export function adminRoutes(app: Express, d: AdminDeps) {
       }
       next.updatedAt = Date.now();
       next.updatedBy = u.name;
-      const before = JSON.stringify({ p: overrides().params, e: overrides().edits });
       saveOverrides(next);
       lastReport = d.applyRouting();
-      d.admin.log(u.name, 'Routenberechnung geändert', null, `vorher ${before} · jetzt ${JSON.stringify({ p: next.params, e: next.edits })}`.slice(0, 2000));
+      d.admin.log(u.name, 'Routenberechnung geändert', null, describeOverrides(next).slice(0, 2000));
       return routingState();
     }),
   );

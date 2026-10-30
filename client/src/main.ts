@@ -16,6 +16,7 @@ import { revealScreen } from './screens/reveal.ts';
 import { roundScreen } from './screens/round.ts';
 import { loadingHtml, type Screen } from './screens/screen.ts';
 import { trainingScreen } from './screens/training.ts';
+import { adminScreen } from './screens/admin.ts';
 import { tutorialScreen } from './screens/tutorial.ts';
 import { ChatWidget } from './chat.ts';
 import { hideIdle, idleCheck } from './idle.ts';
@@ -73,7 +74,7 @@ function keyFor(): string {
 
 function mount(key: string): Screen {
   // Startseite: großer Auswahlbildschirm ohne Karte
-  document.body.classList.toggle('panel-full', key === 'home');
+  document.body.classList.toggle('panel-full', key === 'home' || key === 'admin');
   // Handy: Karte nur, wo sie gebraucht wird – Bildschirme können das selbst ändern
   setMobileMap(!['home', 'lobby', 'final', 'qlobby', 'qfinal'].includes(key));
   setTimeout(() => app.map.invalidate(), 50);
@@ -85,6 +86,7 @@ function mount(key: string): Screen {
   if (key === 'learn') return learnScreen(panel, back);
   if (key === 'training') return trainingScreen(panel, back);
   if (key === 'tutorial') return tutorialScreen(panel, back);
+  if (key === 'admin') return adminScreen(panel, back);
   if (key === 'lobby') return lobbyScreen(panel);
   if (key === 'final') return finalScreen(panel);
   if (key === 'qlobby') return quizLobbyScreen(panel);
@@ -95,7 +97,7 @@ function mount(key: string): Screen {
   app.map.clear();
   const s = app.state;
   const n = (s?.mode === 'route' ? s.currentRound : 0) + 1;
-  panel.innerHTML = loadingHtml(`Runde ${n} wird vorbereitet …`, 'Die Wiener-Linien-API wird für mehrere Abfahrtszeiten abgefragt.');
+  panel.innerHTML = loadingHtml(`Runde ${n} wird vorbereitet …`, 'Der Fahrplan wird für mehrere Abfahrtszeiten durchgerechnet.');
   panel.prepend(hostBar());
   return {};
 }

@@ -126,6 +126,30 @@ also mitsichern), Passwörter mit Argon2id (`node:crypto`, braucht Node ≥ 24.7
 SHA-256 gespeichert. Ändernde Account-Anfragen nur als JSON (Schutz gegen fremde Seiten), eigene Rate-Limits für
 Anmelden/Registrieren/Passwort vergessen. Statistik-Fehler stören nie ein laufendes Spiel.
 
+## Admin
+
+Admin-Rechte gibt es **nur über die Kommandozeile** (wer Zugriff auf den Server hat, entscheidet):
+
+```bash
+npm run admin -- grant <Benutzername>          # lokal (auch: list, revoke <Name>)
+docker exec oeffi-guesser node server/admin-cli.ts grant <Benutzername>   # im Container
+```
+
+Danach gibt es im Account-Fenster „🛠 Admin-Bereich öffnen“ (außerhalb einer Lobby):
+
+- **Übersicht**: Accounts (gesamt, online, neu, mit E-Mail), Lobbys, laufende Spiele, Version, RAM, Mail- und
+  Fahrplan-Status. Jede Lobby lässt sich **verwalten** wie vom Host: starten, pausieren/fortsetzen, Runde abbrechen,
+  weiter, zurück in die Lobby, beenden, Spieler entfernen, Host-Rechte vergeben, als „Spielleitung“ in den Chat schreiben.
+- **Accounts**: suchen (Name/E-Mail), alles sehen (Statistik, Medaillen, Freunde, Geräte, Spielstand), Passwort setzen,
+  **Link zum Zurücksetzen** erzeugen (1 h, zum Weitergeben, wenn keine Mail geht), auf allen Geräten abmelden,
+  Statistik zurücksetzen, umbenennen, E-Mail ändern, löschen (Admins erst nach `revoke`).
+- **Routenberechnung**: Parameter (Umsteigezeit, Fußwege, Fahrten je Verbindung, Anteil der ersten Wartezeit) und
+  **Linien-Änderungen** im Referenzfahrplan – verlängern (z.B. S40 ab Heiligenstadt weiter nach Spittelau +3 min,
+  Franz-Josefs-Bahnhof +4 min), kürzen (S40 endet bei Heiligenstadt) oder Fahrzeit zwischen zwei Halten. Wirkt sofort
+  auf neue Runden, Training und den Routen-Baukasten; Probe-Abfrage zum Ausprobieren. Gespeichert in
+  `STATE_DIR/routing-overrides.json`.
+- **Protokoll**: jede Admin-Aktion mit Zeit, Admin und Ziel.
+
 ## Eigener Referenzfahrplan (GTFS)
 
 Für „Regulär“ sucht der Server Verbindungen selbst (`server/timetable.ts`, RAPTOR) auf einem Auszug der offiziellen

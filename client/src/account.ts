@@ -29,7 +29,8 @@ export const account = {
 };
 const changed = () => account.listeners.forEach((fn) => fn());
 
-async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
+/** JSON-Anfrage mit Cookie (Accounts, Admin) – Fehler mit der Meldung des Servers */
+export async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
     method,
     headers: method !== 'GET' ? { 'Content-Type': 'application/json' } : undefined,
