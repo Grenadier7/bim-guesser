@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import type { AdminLobby, ChatMessage, GameEvent, GameMode, GamePhase, LobbyState, PlayerPublic } from '../shared/types.ts';
 import { cleanChat, cleanName } from './security.ts';
+import { isOffensive, moderate } from './moderation.ts';
 
 export class GameError extends Error {
   status: number;
@@ -109,7 +110,8 @@ export abstract class Lobby extends EventEmitter {
 
   say(token: string, raw: unknown): ChatMessage {
     const p = this.auth(token);
-    const text = cleanChat(raw);
+    // Chat-Moderation: gesperrte Wörter werden zu Sternchen
+    const text = moderate(cleanChat(raw));
     if (!text) throw new GameError('Leere Nachricht.');
     const now = Date.now();
     const recent = (this.chatTimes.get(p.id) ?? []).filter((t) => now - t < CHAT_WINDOW_MS);
@@ -222,6 +224,7 @@ export abstract class Lobby extends EventEmitter {
     while (this.players.has(id));
     const token = randomBytes(24).toString('base64url');
     let clean = cleanName(name) || `Spieler ${this.players.size + 1}`;
+    if (isOffensive(clean)) throw new GameError('Dieser Name ist nicht erlaubt – bitte einen anderen wählen.');
     const taken = new Set([...this.players.values()].map((p) => p.name));
     for (let i = 2; taken.has(clean); i++) clean = `${clean.replace(/ \d+$/, '').slice(0, 17)} ${i}`;
     const player: Player = { id, token, name: clean, score: 0, connections: 0, lastSeen: Date.now(), userId: account?.id, account: account?.name };

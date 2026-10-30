@@ -31,7 +31,8 @@ export interface District {
 }
 
 /** current = aktueller Fahrplan inkl. Baustellen, regular = Referenztag ohne Störungen */
-export type NetMode = 'current' | 'regular';
+/** 'regular' = Standard-Netzplan, 'current' = nächster echter Tag (Auskunft), 'plan:<id>' = weiterer Netzplan der Admin-Seite */
+export type NetMode = 'current' | 'regular' | `plan:${string}`;
 
 export interface Line {
   id: string;
@@ -618,6 +619,17 @@ export interface AdminLobby {
   lastActivity: number;
 }
 
+export interface AdminStats {
+  /** Momentaufnahmen (alle 5 min, ab 2 Tagen je Stunde der Höchstwert) */
+  samples: { at: number; online: number; lobbies: number; playing: number; players: number }[];
+  /** je Tag (Wien): fertige Spiele, Spieler darin, neue und aktive Accounts */
+  days: { day: string; route: number; quiz: number; players: number; newUsers: number; activeUsers: number }[];
+}
+
+export interface AdminUserStats {
+  days: { day: string; route: number; quiz: number; training: number; points: number }[];
+}
+
 export interface AdminOverview {
   version: string;
   uptimeSec: number;
@@ -646,27 +658,62 @@ export interface RoutingParams {
   firstWaitFactor: number;
 }
 
-/** Änderung an einer Linie im Referenzfahrplan – Stationen als Netz-IDs */
+/** Betriebszeit einer neuen Linie an einem Tagestyp: von–bis alle `every` Minuten (bis auch nach Mitternacht, z.B. 24:30) */
+export interface ServiceBand {
+  from: string;
+  to: string;
+  every: number;
+}
+
+/** Änderung im Netzplan – Stationen als Netz-IDs; wird der Reihe nach angewendet */
 export type LineEdit =
   /** über die bisherige Endstation `at` hinaus weiterfahren: `stops` der Reihe nach, `min` = Fahrzeit ab dem vorigen Halt */
   | { kind: 'extend'; line: string; at: string; stops: { station: string; min: number }[] }
-  /** bei `at` enden: den Teil Richtung `beyond` weglassen */
+  /** Linie endet bei `at`: alle Halte hinter `at` (vom Ende `end` aus gesehen) fallen weg */
   | { kind: 'cut'; line: string; at: string; beyond: string }
   /** Fahrzeit zwischen zwei aufeinanderfolgenden Halten (beide Richtungen) */
-  | { kind: 'time'; line: string; from: string; to: string; min: number };
+  | { kind: 'time'; line: string; from: string; to: string; min: number }
+  /** neue Station (ID vergibt der Server: „n…“) */
+  | { kind: 'addStation'; station: string; name: string; lat: number; lon: number; district: number }
+  | { kind: 'renameStation'; station: string; name: string }
+  | { kind: 'moveStation'; station: string; lat: number; lon: number }
+  /** Station auflassen: Linien fahren durch, ohne zu halten */
+  | { kind: 'removeStation'; station: string }
+  /** neue Linie in beide Richtungen; Fahrzeiten ab dem vorigen Halt; Takt je Tagestyp */
+  | { kind: 'addLine'; line: string; mode: Mode; color: string; stops: { station: string; min: number }[]; service: Record<DayType, ServiceBand[]> }
+  | { kind: 'removeLine'; line: string };
+export type NetEdit = LineEdit;
 
-export interface RoutingOverrides {
+/** Netzplan: Standard („regular“) oder weiterer Plan, der in der Lobby wählbar sein kann */
+export interface NetworkPlan {
+  id: string;
+  label: string;
+  hint: string;
+  /** in der Lobby unter „Netz“ wählbar */
+  inMenu: boolean;
   params: Partial<RoutingParams>;
   edits: LineEdit[];
   updatedAt?: number;
   updatedBy?: string;
 }
 
+/** Fahrplan-Ansicht einer Linie (Admin): Haltefolgen mit Fahrzeiten und Fahrten je Stunde */
+export interface TimetableLineView {
+  line: string;
+  mode: Mode;
+  patterns: {
+    stops: { station: string | null; name: string; min: number | null }[];
+    /** Fahrten je Tagestyp und Stunde (0–24) */
+    trips: Record<DayType, number[]>;
+    through: string | null;
+  }[];
+}
+
 export interface RoutingAdminState {
-  overrides: RoutingOverrides;
+  plans: NetworkPlan[];
   defaults: RoutingParams;
-  /** Ergebnis beim Anwenden: je Änderung, wie viele Fahrten/Haltefolgen betroffen waren, oder ein Fehler */
-  report: string[];
+  /** Ergebnis beim Anwenden je Plan: je Änderung, wie viele Fahrten/Haltefolgen betroffen waren, oder ein Fehler */
+  report: Record<string, string[]>;
 }
 
 export interface FriendsList {

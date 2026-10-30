@@ -1,13 +1,7 @@
 import type { DayType, NetMode, ReferenceDay, SlotId } from '../shared/types.ts';
-import { SLOT_DAYTYPE } from '../shared/rules.ts';
+import { isRegularNet, SLOT_DAYTYPE, SLOT_TIME } from '../shared/rules.ts';
 import { naiveMinutes } from './efa.ts';
 
-const SLOT_TIME: Record<SlotId, [number, number]> = {
-  wd12: [12, 0],
-  wd17: [17, 0],
-  sa02: [2, 0], // Nacht Fr -> Sa (U-Bahn fährt durch)
-  su12: [12, 0],
-};
 
 /** Erlaubte Wochentage (0 = Mo … 6 = So) je Tagestyp; Wochentag = Di–Do */
 export const DAYTYPE_DAYS: Record<DayType, number[]> = { wd: [1, 2, 3], sa: [5], su: [6] };
@@ -89,7 +83,7 @@ function atTime(d: Date, [h, m]: [number, number]): number {
 /** Abfragezeitpunkt (naive Minuten) für Zeitfenster + Netzmodus */
 export function slotTime(slot: SlotId, net: NetMode, regularDays: Record<DayType, ReferenceDay>): number {
   const type = SLOT_DAYTYPE[slot];
-  const day = net === 'regular' ? new Date(`${regularDays[type].date}T00:00:00Z`) : nextTypicalDay(type);
+  const day = isRegularNet(net) ? new Date(`${regularDays[type].date}T00:00:00Z`) : nextTypicalDay(type);
   return atTime(day, SLOT_TIME[slot]);
 }
 

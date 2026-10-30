@@ -10,6 +10,7 @@ import {
   cleanStationKinds,
   isSlotId,
   matchPreset,
+  NET_MODES,
   stationKindsFromPool,
   xtremeBlocksLocate,
 } from '../shared/rules.ts';
@@ -18,7 +19,8 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   const out = { ...base };
   if (!s) return out;
   if (isSlotId(s.slot)) out.slot = s.slot;
-  if (s.network === 'current' || s.network === 'regular') out.network = s.network;
+  // Netz: Regulär, Aktuell oder ein Netzplan aus dem Menü (Admin-Seite)
+  if (NET_MODES.some((m) => m.id === s.network)) out.network = s.network!;
   // Schnellwahl setzt die Regler; einzelne Regler-Werte überschreiben danach
   const preset = DIFFICULTY_PRESETS.find((d) => d.id === s.difficulty);
   if (preset) Object.assign(out, { stations: [...preset.stations], distance: preset.distance, minTransfers: preset.minTransfers });

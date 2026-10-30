@@ -44,12 +44,13 @@ function browser() {
   return { call };
 }
 const uniq = (p: string) => `${p}${Math.random().toString(36).slice(2, 7)}`;
-async function newUser(prefix: string) {
+async function newUser(prefix: string, password = 'passwort1') {
   const b = browser();
   const name = uniq(prefix);
-  assert.equal((await b.call('POST', '/api/auth/register', { name, password: 'passwort1', email: `${name.toLowerCase()}@example.org` })).status, 200);
+  assert.equal((await b.call('POST', '/api/auth/register', { name, password, email: `${name.toLowerCase()}@example.org` })).status, 200);
   return { b, name };
 }
+const ADMIN_PW = 'sicheresPasswort1';
 /** Kommandozeile wie auf dem Server: node server/admin-cli.ts … (gleiche Datenbank) */
 const cli = (...args: string[]) =>
   execFileSync(process.execPath, ['server/admin-cli.ts', ...args], { env: { ...process.env, ACCOUNTS_DB: DB }, encoding: 'utf8', cwd: path.resolve(import.meta.dirname, '..') });
@@ -57,14 +58,25 @@ const cli = (...args: string[]) =>
 let boss: Awaited<ReturnType<typeof newUser>>;
 
 describe('Admin-Rechte', () => {
-  test('nur über die Kommandozeile; ohne Rechte 401/403; Rechte wirken sofort', async () => {
-    boss = await newUser('Chef');
+  test('nur über die Kommandozeile; ohne Rechte 401/403; Admin-Bereich erst nach Passwort; Rechte wirken sofort', async () => {
+    boss = await newUser('Chef', ADMIN_PW);
     assert.equal((await browser().call('GET', '/api/admin/overview')).status, 401);
     assert.equal((await boss.b.call('GET', '/api/admin/overview')).status, 403);
+    assert.equal((await boss.b.call('POST', '/api/admin/unlock', { password: ADMIN_PW })).status, 403, 'kein Admin → kein Entsperren');
     assert.equal((await boss.b.call('GET', '/api/me')).body.user.admin, undefined);
     assert.match(cli('grant', boss.name), /ist jetzt Admin/);
     assert.match(cli('list'), new RegExp(boss.name));
     assert.equal((await boss.b.call('GET', '/api/me')).body.user.admin, true);
+    // Login-Cookie allein reicht nicht: gesperrt, bis das Passwort nochmal eingegeben wurde
+    assert.equal((await boss.b.call('GET', '/api/admin/overview')).status, 423);
+    assert.deepEqual((await boss.b.call('GET', '/api/admin/status')).body, { admin: true, unlocked: false });
+    assert.equal((await boss.b.call('POST', '/api/admin/unlock', { password: 'falschfalsch' })).status, 401);
+    assert.equal((await boss.b.call('POST', '/api/admin/unlock', { password: ADMIN_PW })).status, 200);
+    assert.deepEqual((await boss.b.call('GET', '/api/admin/status')).body, { admin: true, unlocked: true });
+    // anderes Gerät desselben Admins: dort noch gesperrt
+    const other = browser();
+    await other.call('POST', '/api/auth/login', { name: boss.name, password: ADMIN_PW });
+    assert.equal((await other.call('GET', '/api/admin/overview')).status, 423);
     const o = await boss.b.call('GET', '/api/admin/overview');
     assert.equal(o.status, 200);
     assert.ok(o.body.users.total >= 1 && o.body.users.admins === 1);
@@ -73,6 +85,27 @@ describe('Admin-Rechte', () => {
     assert.equal((await boss.b.call('GET', '/api/admin/overview')).status, 403);
     cli('grant', boss.name);
     assert.throws(() => cli('grant', 'gibtsnicht123'), /Diesen Account gibt es nicht/);
+    // sperren und mit Passwort wieder öffnen
+    await boss.b.call('POST', '/api/admin/lock');
+    assert.equal((await boss.b.call('GET', '/api/admin/overview')).status, 423);
+    assert.equal((await boss.b.call('POST', '/api/admin/unlock', { password: ADMIN_PW })).status, 200);
+  });
+
+  test('Admin mit kurzem Passwort kann nicht entsperren; Admins können andere Admins nicht ändern', async () => {
+    const weak = await newUser('Schwach', 'kurzpw12');
+    cli('grant', weak.name);
+    const r = await weak.b.call('POST', '/api/admin/unlock', { password: 'kurzpw12' });
+    assert.equal(r.status, 403);
+    assert.match(r.body.error, /mindestens 10 Zeichen/);
+    for (const [m, url, body] of [
+      ['POST', `/api/admin/users/${weak.name}/password`, { password: 'neuesPasswort1' }],
+      ['POST', `/api/admin/users/${weak.name}/reset-link`, {}],
+      ['POST', `/api/admin/users/${weak.name}/logout`, {}],
+      ['PUT', `/api/admin/users/${weak.name}/name`, { name: 'Anders123' }],
+      ['DELETE', `/api/admin/users/${weak.name}`, {}],
+    ] as const)
+      assert.equal((await boss.b.call(m, url, body)).status, 403, `${m} ${url}`);
+    cli('revoke', weak.name);
   });
 
   test('Accounts: suchen, alles sehen, Passwort setzen, Reset-Link, abmelden, Statistik weg, umbenennen, E-Mail, löschen', async () => {
@@ -107,6 +140,8 @@ describe('Admin-Rechte', () => {
     assert.equal((await boss.b.call('GET', `/api/admin/users/${renamed}`)).body.email, null);
 
     assert.equal((await boss.b.call('DELETE', `/api/admin/users/${boss.name}`)).status, 403, 'Admins nicht löschbar');
+    const us = (await boss.b.call('GET', `/api/admin/users/${renamed}/stats`)).body;
+    assert.ok(Array.isArray(us.days) && us.days.length >= 90);
     assert.equal((await boss.b.call('DELETE', `/api/admin/users/${renamed}`)).status, 200);
     assert.equal((await boss.b.call('GET', `/api/admin/users/${renamed}`)).status, 404);
 
@@ -160,38 +195,37 @@ describe('Lobbys steuern wie ein Host', () => {
   });
 });
 
-describe('Routenberechnung einstellen', () => {
+describe('Netzpläne und Routenberechnung', () => {
   const id = (name: string) => net.data.lines.find((l) => l.id === 'S40')!.patterns.flat().find((s) => net.station(s).name === name)!;
   const FJB = () => id('Franz-Josefs-Bahnhof');
   const SPITTELAU = () => id('Spittelau');
   const HEILI = () => id('Heiligenstadt');
+  const NUSSDORF = () => id('Nußdorf');
+  const put = (plan: string, body: object) => boss.b.call('PUT', `/api/admin/routing/plans/${plan}`, { params: {}, edits: [], ...body });
 
-  test('Parameter: gespeichert, Grenzen geprüft, Unsinn abgelehnt', async () => {
-    const r = await boss.b.call('PUT', '/api/admin/routing', { params: { changeMin: 3, firstWaitFactor: 0.5 }, edits: [] });
+  test('Parameter des Standard-Plans: gespeichert, Grenzen geprüft, Unsinn abgelehnt', async () => {
+    const r = await put('regular', { params: { changeMin: 3, firstWaitFactor: 0.5 } });
     assert.equal(r.status, 200, JSON.stringify(r.body));
-    assert.deepEqual(r.body.overrides.params, { changeMin: 3, firstWaitFactor: 0.5 });
+    assert.deepEqual(r.body.plans.find((p: { id: string }) => p.id === 'regular').params, { changeMin: 3, firstWaitFactor: 0.5 });
     assert.equal(r.body.defaults.changeMin, 2);
-    assert.equal((await boss.b.call('PUT', '/api/admin/routing', { params: { changeMin: -1 }, edits: [] })).status, 400);
-    assert.equal((await boss.b.call('PUT', '/api/admin/routing', { params: {}, edits: [{ kind: 'cut', line: 'X99', at: 'a', beyond: 'b' }] })).status, 400);
-    assert.equal((await boss.b.call('GET', '/api/admin/routing')).body.overrides.params.changeMin, 3, 'falsche Eingabe ändert nichts');
+    assert.equal((await put('regular', { params: { changeMin: -1 } })).status, 400);
+    assert.equal((await put('regular', { edits: [{ kind: 'cut', line: 'X99', at: 'a', beyond: 'b' }] })).status, 400);
+    assert.equal((await boss.b.call('GET', '/api/admin/routing')).body.plans[0].params.changeMin, 3, 'falsche Eingabe ändert nichts');
+    await put('regular', {});
   });
 
-  test('S40 erst ab Heiligenstadt (kürzen), dann mit eigenen Fahrzeiten wieder ab FJB (verlängern), Fahrzeit ändern, zurücksetzen', async () => {
+  test('S40 erst ab Heiligenstadt (kürzen), mit eigenen Fahrzeiten wieder ab FJB (verlängern), Fahrzeit, Fahrplan-Ansicht', async () => {
     assert.ok(net.servesInOrder('S40', FJB(), HEILI(), 'regular'), 'vorher: S40 ab FJB');
-    // kürzen
-    let r = await boss.b.call('PUT', '/api/admin/routing', { params: {}, edits: [{ kind: 'cut', line: 'S40', at: HEILI(), beyond: FJB() }] });
+    let r = await put('regular', { edits: [{ kind: 'cut', line: 'S40', at: HEILI(), beyond: FJB() }] });
     assert.equal(r.status, 200, JSON.stringify(r.body));
-    assert.match(r.body.report[0], /^✔ S40 endet bei Heiligenstadt/);
+    assert.match(r.body.report.regular[0], /^✔ S40 endet bei Heiligenstadt/);
     assert.ok(!net.servesInOrder('S40', FJB(), HEILI(), 'regular'), 'Baukasten: S40 nicht mehr ab FJB');
-    assert.ok(net.servesInOrder('S40', FJB(), HEILI(), 'current'), '„Aktuell“ (Auskunft) unverändert');
-    assert.ok(!net.station(FJB()).lines.includes('S40') || net.lines.get('S40')!.nets.some((n) => n.includes('c')));
+    assert.ok(net.servesInOrder('S40', FJB(), HEILI(), 'current'), '„Aktuell“ unverändert');
     const pub = (await (await realFetch(`${base}/api/network`)).json()) as { lines: { id: string; patterns: string[][]; nets: string[] }[] };
     const s40 = pub.lines.find((l) => l.id === 'S40')!;
     assert.ok(s40.patterns.every((p, i) => !s40.nets[i].includes('r') || !p.includes(FJB())), 'auch in /api/network');
 
-    // wieder verlängern, mit eigenen Zeiten
-    r = await boss.b.call('PUT', '/api/admin/routing', {
-      params: {},
+    r = await put('regular', {
       edits: [
         { kind: 'cut', line: 'S40', at: HEILI(), beyond: FJB() },
         { kind: 'extend', line: 'S40', at: HEILI(), stops: [{ station: SPITTELAU(), min: 3 }, { station: FJB(), min: 4 }] },
@@ -199,20 +233,147 @@ describe('Routenberechnung einstellen', () => {
       ],
     });
     assert.equal(r.status, 200, JSON.stringify(r.body));
-    assert.equal(r.body.report.length, 3);
-    for (const line of r.body.report) assert.match(line, /^✔ S40 .*\d+ Fahrt/, line);
+    for (const line of r.body.report.regular) assert.match(line, /^✔ S40 .*\d+ Fahrt/, line);
     assert.ok(net.servesInOrder('S40', FJB(), HEILI(), 'regular'), 'wieder ab FJB');
-
-    // Probe-Abfrage läuft mit den neuen Einstellungen
-    const t = await boss.b.call('POST', '/api/admin/routing/test', { from: FJB(), to: id('Nußdorf') });
+    const view = (await boss.b.call('GET', '/api/admin/routing/timetable?plan=regular&line=S40')).body;
+    const seg = view.patterns.flatMap((p: { stops: { station: string; min: number | null }[] }) => p.stops.map((x, i) => [p.stops[i - 1]?.station, x.station, x.min]));
+    assert.ok(seg.some(([a, b, m]: [string, string, number]) => a === HEILI() && b === SPITTELAU() && m === 6), 'Fahrplan zeigt die neue Fahrzeit');
+    assert.ok(view.patterns.some((p: { trips: { wd: number[] } }) => p.trips.wd.reduce((a, b) => a + b, 0) > 10));
+    const t = await boss.b.call('POST', '/api/admin/routing/test', { from: FJB(), to: NUSSDORF() });
     assert.equal(t.status, 200, JSON.stringify(t.body));
-    assert.ok(Array.isArray(t.body) && t.body.length > 0);
-
-    // alles zurück
-    r = await boss.b.call('PUT', '/api/admin/routing', { params: {}, edits: [] });
-    assert.deepEqual(r.body.overrides, { params: {}, edits: [], updatedAt: r.body.overrides.updatedAt, updatedBy: boss.name });
+    assert.ok(t.body.length > 0);
+    await put('regular', {});
     assert.ok(net.servesInOrder('S40', FJB(), HEILI(), 'regular'));
-    const log = (await boss.b.call('GET', '/api/admin/log')).body as { action: string }[];
-    assert.ok(log.some((x) => x.action === 'Routenberechnung geändert'));
+  });
+
+  test('eigener Netzplan mit neuer Station und neuer Linie: in der Lobby wählbar, eigenes Netz, Standard-Netz unverändert', async () => {
+    const r = await put('zukunft', {
+      label: 'Zukunft',
+      hint: 'Mit der neuen U5',
+      inMenu: true,
+      edits: [
+        { kind: 'addStation', station: 'n1001', name: 'Neustadt', lat: 48.235, lon: 16.36, district: 19 },
+        { kind: 'addLine', line: 'U9', mode: 'U', color: '#aa00ff', stops: [{ station: HEILI(), min: 0 }, { station: 'n1001', min: 3 }, { station: SPITTELAU(), min: 4 }], service: { wd: [{ from: '05:00', to: '24:00', every: 5 }], sa: [], su: [] } },
+        { kind: 'renameStation', station: NUSSDORF(), name: 'Nußdorf Bahnhof' },
+      ],
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body.report.zukunft.map((x: string) => x[0]), ['✔', '✔', '✔'], r.body.report.zukunft.join(' | '));
+    // Lobby-Menü und Netzdaten
+    const cfg = (await (await realFetch(`${base}/api/config`)).json()) as { plans: { id: string; label: string; hint: string }[] };
+    assert.deepEqual(cfg.plans, [{ id: 'plan:zukunft', label: 'Zukunft', hint: 'Mit der neuen U5' }]);
+    const pn = (await (await realFetch(`${base}/api/network?plan=zukunft`)).json()) as { lines: { id: string }[]; stations: { id: string; name: string; lines: string[] }[] };
+    assert.ok(pn.lines.some((l) => l.id === 'U9'));
+    assert.deepEqual(pn.stations.find((x) => x.id === 'n1001')!.lines, ['U9']);
+    assert.equal(pn.stations.find((x) => x.id === NUSSDORF())!.name, 'Nußdorf Bahnhof');
+    const std = (await (await realFetch(`${base}/api/network`)).json()) as { lines: { id: string }[] };
+    assert.ok(!std.lines.some((l) => l.id === 'U9'), 'Standard-Netz ohne U9');
+    assert.equal((await realFetch(`${base}/api/network?plan=gibtsnicht`)).status, 404);
+    // Routenjagd mit dem Plan anlegen; Probe-Abfrage findet die neue Linie
+    const lobby = await browser().call('POST', '/api/games', { mode: 'route', playerName: 'P', settings: { network: 'plan:zukunft' } });
+    assert.equal(lobby.body.state.settings.network, 'plan:zukunft');
+    const t = await boss.b.call('POST', '/api/admin/routing/test', { plan: 'zukunft', from: HEILI(), to: 'n1001' });
+    assert.equal(t.status, 200, JSON.stringify(t.body));
+    assert.ok(t.body.some((x: { legs: { line: string }[] }) => x.legs.some((l) => l.line === 'U9')), 'U9 wird genutzt');
+    // doppelte Linie oder unbekannte Station → klare Meldung
+    const bad = await put('kaputt', { edits: [{ kind: 'addLine', line: 'U1', mode: 'U', color: '#000000', stops: [{ station: HEILI(), min: 0 }, { station: FJB(), min: 3 }], service: { wd: [{ from: '06:00', to: '08:00', every: 10 }] } }] });
+    assert.equal(bad.status, 400);
+    assert.match(bad.body.error, /U1 gibt es schon/);
+    // löschen → nicht mehr wählbar
+    assert.equal((await boss.b.call('DELETE', '/api/admin/routing/plans/zukunft')).status, 200);
+    assert.equal((await boss.b.call('DELETE', '/api/admin/routing/plans/regular')).status, 400);
+    const cfg2 = (await (await realFetch(`${base}/api/config`)).json()) as { plans: unknown[] };
+    assert.deepEqual(cfg2.plans, []);
+    // Versionen: Zustand vor dem Löschen wiederherstellen
+    const versions = (await boss.b.call('GET', '/api/admin/routing/versions')).body as { id: string; note: string }[];
+    const before = versions.find((v) => v.note.startsWith('Netzplan angelegt: Zukunft'))!;
+    assert.equal((await boss.b.call('POST', `/api/admin/routing/versions/${before.id}/restore`)).status, 200);
+    assert.ok((await boss.b.call('GET', '/api/admin/routing')).body.plans.some((p: { id: string }) => p.id === 'zukunft'));
+    await boss.b.call('DELETE', '/api/admin/routing/plans/zukunft');
+  });
+});
+
+describe('Spiel-Konfiguration', () => {
+  const cfg = async () => (await (await realFetch(`${base}/api/config`)).json()) as Record<string, any>;
+
+  test('Uhrzeiten, Wertung, Joker, Standard-Einstellungen: speichern, prüfen, im Spiel wirksam, zurücksetzen, Versionen', async () => {
+    const slots = (await boss.b.call('GET', '/api/admin/config')).body.config.slots;
+    slots.wd17 = { ...slots.wd17, short: 'Mo–Fr 8 Uhr', label: 'Wochentag 08:00', time: '08:00' };
+    let r = await boss.b.call('PUT', '/api/admin/config/slots', { value: slots });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal((await cfg()).slots.wd17.time, '08:00');
+    assert.equal((await boss.b.call('PUT', '/api/admin/config/slots', { value: { ...slots, wd17: { ...slots.wd17, time: '25:00' } } })).status, 400);
+    // Joker teurer, Standard-Runden 3
+    const tips = r.body.config.tips;
+    tips.kinds.transfers.share = 0.6;
+    assert.equal((await boss.b.call('PUT', '/api/admin/config/tips', { value: tips })).status, 200);
+    const defaults = r.body.config.defaults;
+    defaults.route.rounds = 3;
+    assert.equal((await boss.b.call('PUT', '/api/admin/config/defaults', { value: defaults })).status, 200);
+    const lobby = await browser().call('POST', '/api/games', { mode: 'route', playerName: 'D', settings: {} });
+    assert.equal(lobby.body.state.settings.rounds, 3, 'neue Lobby mit neuem Standard');
+    // „Was zählt?“: mindestens eine Wertung bleibt
+    const scoring = r.body.config.scoring;
+    for (const m of Object.values(scoring.modes) as { enabled: boolean }[]) m.enabled = false;
+    assert.equal((await boss.b.call('PUT', '/api/admin/config/scoring', { value: scoring })).status, 400);
+    // zurück auf Standard
+    r = await boss.b.call('DELETE', '/api/admin/config/slots');
+    assert.equal((await cfg()).slots.wd17.time, '17:00');
+    assert.ok(!r.body.changed.includes('slots') && r.body.changed.includes('tips'));
+    // Version vor dem Zurücksetzen wiederherstellen
+    const versions = (await boss.b.call('GET', '/api/admin/config-versions')).body as { id: string; note: string }[];
+    const v = versions.find((x) => x.note === 'Uhrzeiten geändert')!;
+    await boss.b.call('POST', `/api/admin/config-versions/${v.id}/restore`);
+    assert.equal((await cfg()).slots.wd17.time, '08:00');
+    for (const k of ['slots', 'tips', 'defaults']) await boss.b.call('DELETE', `/api/admin/config/${k}`);
+    assert.equal((await cfg()).slots.wd17.time, '17:00');
+    assert.ok(!('chat' in (await cfg())), 'gesperrte Wörter gehen nicht an den Browser');
+  });
+
+  test('Chat-Moderation: Schimpfwörter werden ersetzt, Namen abgelehnt, Liste über die Admin-Seite', async () => {
+    const lobby = (await browser().call('POST', '/api/games', { mode: 'quiz', playerName: 'Hans', settings: {} })).body;
+    const say = async (text: string) => (await realFetch(`${base}/api/games/${lobby.state.id}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: lobby.token, text }) })).json();
+    assert.equal((await say('du Arschloch')).text, 'du *********');
+    assert.equal((await say('F.u.c.k you')).text, '******* you');
+    assert.equal((await say('Schurer und Hurensohnx')).text, 'Schurer und **********', 'kurze Wörter nur ganz, lange auch in Wörtern');
+    const join = await browser().call('POST', `/api/games/${lobby.state.id}/join`, { playerName: 'Wichser99' });
+    assert.equal(join.status, 400);
+    const reg = await browser().call('POST', '/api/auth/register', { name: 'Admin', password: 'passwort123' });
+    assert.equal(reg.status, 400, 'Name „Admin“ reserviert');
+    // eigenes Wort ergänzen
+    const words = ((await boss.b.call('GET', '/api/admin/config')).body.config.chat.words as string[]).concat('blödmann');
+    assert.equal((await boss.b.call('PUT', '/api/admin/config/chat', { value: { words } })).status, 200);
+    assert.equal((await say('so ein Blödmann!')).text, 'so ein *********');
+    await boss.b.call('DELETE', '/api/admin/config/chat');
+    assert.equal((await say('so ein Blödmann!')).text, 'so ein Blödmann!');
+  });
+});
+
+describe('Sicherheit', () => {
+  test('Anmelden: nach 5 Fehlversuchen 15 min Pause für diesen Namen – auch mit richtigem Passwort, auch für unbekannte Namen gleich', async () => {
+    const u = await newUser('Ziel');
+    for (let i = 0; i < 5; i++) assert.equal((await browser().call('POST', '/api/auth/login', { name: u.name, password: 'falsch' })).status, 401);
+    const r = await browser().call('POST', '/api/auth/login', { name: u.name, password: 'passwort1' });
+    assert.equal(r.status, 429);
+    assert.match(r.body.error, /Fehlversuche/);
+    for (let i = 0; i < 5; i++) await browser().call('POST', '/api/auth/login', { name: 'gibtsnicht999', password: 'x' });
+    assert.equal((await browser().call('POST', '/api/auth/login', { name: 'gibtsnicht999', password: 'x' })).status, 429, 'verrät nicht, ob es den Namen gibt');
+  });
+
+  test('Admin-Antworten enthalten nie Passwort-Hashes oder Sitzungs-Tokens; keine Route nimmt Dateipfade', async () => {
+    const det = JSON.stringify((await boss.b.call('GET', `/api/admin/users/${boss.name}`)).body);
+    assert.ok(!/argon2|\$argon|"pw"|hash/i.test(det));
+    for (const url of ['/api/admin/routing/timetable?plan=../../etc&line=U1', '/api/network?plan=../state']) {
+      const r = await boss.b.call('GET', url);
+      assert.ok(r.status === 404 || r.status === 400, `${url}: ${r.status}`);
+    }
+    const r = await boss.b.call('POST', '/api/admin/config-versions/..%2F..%2Faccounts/restore');
+    assert.ok(r.status >= 400);
+  });
+
+  test('Statistik: Zeitreihen und Tage', async () => {
+    const st = (await boss.b.call('GET', '/api/admin/stats?days=7')).body;
+    assert.ok(Array.isArray(st.samples) && Array.isArray(st.days) && st.days.length >= 7);
+    assert.ok(st.days.every((x: Record<string, unknown>) => 'route' in x && 'quiz' in x && 'newUsers' in x));
   });
 });

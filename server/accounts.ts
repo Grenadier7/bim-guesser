@@ -11,6 +11,8 @@ import type {
   AccountStats,
   AdminLogEntry,
   AdminOverview,
+  AdminStats,
+  AdminUserStats,
   AdminUserDetail,
   AdminUserRow,
   FavoriteLine,
@@ -35,6 +37,7 @@ import { GameError, type Lobby } from './lobby.ts';
 import type { Network } from './network.ts';
 import { STATE_DIR } from './paths.ts';
 import { maskEmail } from './mail.ts';
+import { isOffensive } from './moderation.ts';
 
 // ---------------------------------------------------------------- Regeln
 
@@ -48,6 +51,17 @@ const INVITE_MS = 2 * 3600_000;
 /** synchronisierter Spielstand: höchstens so groß (Lernstand, Einstellungen …) */
 const DATA_MAX = 200_000;
 const NAME_RE = /^[\p{L}\d_.-]{3,20}$/u;
+const LOGIN_FAILS = 5;
+const LOGIN_LOCK_MS = 15 * 60_000;
+const ADMIN_IDLE_MS = 30 * 60_000;
+const ADMIN_MAX_MS = 8 * 3600_000;
+export const ADMIN_PW_MIN = 10;
+
+/** Namen, mit denen man sich als Spielleitung ausgeben könnte – und gesperrte Wörter */
+function isReservedName(n: string): boolean {
+  const k = n.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return /^(admin|administrator|spielleitung|moderator|mod|system|bimguesser|support|team|staff|root)\d*$/.test(k) || isOffensive(n);
+}
 
 const COURSES_KEY = 'oeffi-courses-v1';
 const PROGRESS_KEY = 'oeffi-progress-v1';
@@ -152,6 +166,9 @@ CREATE TABLE IF NOT EXISTS usage (
 );
 CREATE TABLE IF NOT EXISTS medals (user_id INTEGER NOT NULL, medal TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (user_id, medal));
 CREATE TABLE IF NOT EXISTS admin_log (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, admin TEXT NOT NULL, action TEXT NOT NULL, target TEXT, detail TEXT);
+CREATE TABLE IF NOT EXISTS metrics (at INTEGER PRIMARY KEY, online INTEGER NOT NULL, lobbies INTEGER NOT NULL, playing INTEGER NOT NULL, players INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS game_log (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, mode TEXT NOT NULL, players INTEGER NOT NULL, accounts INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS game_log_at ON game_log(at);
 `;
 
 export interface AccountUser {
@@ -194,6 +211,10 @@ export class Accounts {
     // neuere Spalten in bestehenden Datenbanken nachrüsten
     const cols = new Set((this.db.prepare('PRAGMA table_info(users)').all() as { name: string }[]).map((c) => c.name));
     if (!cols.has('is_admin')) this.db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
+    // Admin-Bereich entsperrt (bis wann, seit wann) – je Sitzung, nur nach erneuter Passworteingabe
+    const scols = new Set((this.db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[]).map((c) => c.name));
+    if (!scols.has('admin_until')) this.db.exec('ALTER TABLE sessions ADD COLUMN admin_until INTEGER NOT NULL DEFAULT 0');
+    if (!scols.has('admin_since')) this.db.exec('ALTER TABLE sessions ADD COLUMN admin_since INTEGER NOT NULL DEFAULT 0');
     this.cleanup();
   }
 
@@ -233,6 +254,7 @@ export class Accounts {
     const pw = String(password ?? '');
     const mail = cleanEmail(email);
     if (!NAME_RE.test(n)) throw new GameError('Benutzername: 3–20 Zeichen, nur Buchstaben, Ziffern und _ . -');
+    if (isReservedName(n)) throw new GameError('Dieser Benutzername ist nicht erlaubt.');
     if (pw.length < 8 || pw.length > 200) throw new GameError('Passwort: mindestens 8 Zeichen.');
     if (mail === undefined) throw new GameError('Diese E-Mail-Adresse sieht nicht gültig aus.');
     if (this.db.prepare('SELECT 1 FROM users WHERE name = ?').get(n)) throw new GameError('Diesen Benutzernamen gibt es schon.', 409);
@@ -247,14 +269,36 @@ export class Accounts {
     return { user: { id, name: n }, token: this.createSession(id) };
   }
 
+  /** Fehlversuche je eingegebenem Namen (auch für Namen ohne Account – verrät also nichts) */
+  private fails = new Map<string, { n: number; until: number }>();
+
+  /** nach 5 Fehlversuchen 15 min Pause für diesen Namen – bremst gezieltes Raten (auch von vielen Adressen aus) */
+  private checkFails(key: string) {
+    const f = this.fails.get(key);
+    if (f && f.until > Date.now()) throw new GameError(`Zu viele Fehlversuche – bitte in ${Math.ceil((f.until - Date.now()) / 60000)} Minuten nochmal.`, 429);
+  }
+  private failed(key: string) {
+    const f = this.fails.get(key) ?? { n: 0, until: 0 };
+    f.n++;
+    if (f.n >= LOGIN_FAILS) ((f.until = Date.now() + LOGIN_LOCK_MS), (f.n = 0));
+    this.fails.set(key, f);
+    if (this.fails.size > 50_000) for (const [k, v] of this.fails) if (v.until < Date.now()) this.fails.delete(k);
+  }
+
   async login(name: unknown, password: unknown): Promise<{ user: AccountUser; token: string }> {
     const n = String(name ?? '').trim();
     const pw = String(password ?? '');
+    const key = n.toLowerCase();
+    this.checkFails(key);
     // Name oder E-Mail
     const u = (this.db.prepare('SELECT * FROM users WHERE name = ? OR (email = ? AND email IS NOT NULL) ORDER BY name = ? DESC LIMIT 1').get(n, n, n) ?? null) as UserRow | null;
     // auch ohne Account gleich lange rechnen – sonst verrät die Antwortzeit, ob es den Namen gibt
     const ok = u ? await verifyPassword(pw, u.pw) : (await hashPassword(pw), false);
-    if (!u || !ok) throw new GameError('Benutzername oder Passwort stimmt nicht.', 401);
+    if (!u || !ok) {
+      this.failed(key);
+      throw new GameError('Benutzername oder Passwort stimmt nicht.', 401);
+    }
+    this.fails.delete(key);
     return { user: { id: u.id, name: u.name }, token: this.createSession(u.id) };
   }
 
@@ -279,6 +323,42 @@ export class Accounts {
 
   logout(token: string) {
     this.db.prepare('DELETE FROM sessions WHERE hash = ?').run(sha(token));
+  }
+
+  // -------------------------------------------------------------- Admin-Bereich entsperren
+
+  /**
+   * Admin-Bereich für diese Sitzung entsperren – nur mit dem Passwort (das Login-Cookie allein reicht nicht: ein
+   * vergessenes angemeldetes Gerät oder ein gestohlenes Cookie gibt so keinen Admin-Zugriff). Gilt 30 min ab der
+   * letzten Admin-Aktion, höchstens 8 Stunden.
+   */
+  async adminUnlock(token: string, userId: number, password: unknown) {
+    const u = this.row(userId) as UserRow & { is_admin: number };
+    const key = `admin:${u.id}`;
+    this.checkFails(key);
+    if (!u.is_admin) throw new GameError('Nur für Admins.', 403);
+    const pw = String(password ?? '');
+    if (!(await verifyPassword(pw, u.pw))) {
+      this.failed(key);
+      throw new GameError('Das Passwort stimmt nicht.', 401);
+    }
+    this.fails.delete(key);
+    if (pw.length < ADMIN_PW_MIN) throw new GameError(`Für den Admin-Bereich braucht dein Passwort mindestens ${ADMIN_PW_MIN} Zeichen – bitte zuerst unter ⚙️ ändern.`, 403);
+    const now = Date.now();
+    this.db.prepare('UPDATE sessions SET admin_until = ?, admin_since = ? WHERE hash = ? AND user_id = ?').run(now + ADMIN_IDLE_MS, now, sha(token), u.id);
+  }
+
+  /** Admin-Bereich in dieser Sitzung entsperrt? Verlängert die Sperrzeit bei jeder Admin-Aktion. */
+  adminUnlocked(token: string): boolean {
+    const s = this.db.prepare('SELECT admin_until AS until, admin_since AS since FROM sessions WHERE hash = ?').get(sha(token)) as { until: number; since: number } | undefined;
+    const now = Date.now();
+    if (!s || s.until < now || now - s.since > ADMIN_MAX_MS) return false;
+    this.db.prepare('UPDATE sessions SET admin_until = ? WHERE hash = ?').run(now + ADMIN_IDLE_MS, sha(token));
+    return true;
+  }
+
+  adminLock(token: string) {
+    this.db.prepare('UPDATE sessions SET admin_until = 0 WHERE hash = ?').run(sha(token));
   }
 
   async changePassword(userId: number, oldPw: unknown, newPw: unknown, keepToken: string) {
@@ -783,6 +863,13 @@ export class AccountAdmin {
     return u;
   }
 
+  /** Account ändern dürfen: nie einen Admin (auch nicht sich selbst über die Admin-Seite) – das geht nur über die Kommandozeile */
+  private changeable(name: string): UserRow & { is_admin: number } {
+    const u = this.target(name);
+    if (u.is_admin) throw new GameError('Admin-Accounts lassen sich hier nicht ändern – nur über die Kommandozeile am Server.', 403);
+    return u;
+  }
+
   isAdmin(userId: number): boolean {
     return !!(this.db.prepare('SELECT is_admin FROM users WHERE id = ?').get(userId) as { is_admin: number } | undefined)?.is_admin;
   }
@@ -868,14 +955,13 @@ export class AccountAdmin {
 
   /** Account löschen – nicht bei Admins (zuerst über die Kommandozeile die Rechte nehmen) */
   remove(admin: string, name: string) {
-    const u = this.target(name);
-    if (u.is_admin) throw new GameError('Admins lassen sich hier nicht löschen – zuerst über die Kommandozeile die Admin-Rechte nehmen.', 403);
+    const u = this.changeable(name);
     this.acc.purge(u.id);
     this.log(admin, 'Account gelöscht', u.name, u.email ? `E-Mail ${u.email}` : null);
   }
 
   async setPassword(admin: string, name: string, pw: unknown) {
-    const u = this.target(name);
+    const u = this.changeable(name);
     const p = String(pw ?? '');
     if (p.length < 8 || p.length > 200) throw new GameError('Passwort: mindestens 8 Zeichen.');
     this.db.prepare('UPDATE users SET pw = ? WHERE id = ?').run(await hashPassword(p), u.id);
@@ -885,7 +971,7 @@ export class AccountAdmin {
 
   /** Link zum Zurücksetzen (1 Stunde) – zum Weitergeben, wenn keine Mail geht */
   resetLink(admin: string, name: string, base: string): string {
-    const u = this.target(name);
+    const u = this.changeable(name);
     const t = newToken();
     this.db.prepare('INSERT INTO resets (hash, user_id, expires) VALUES (?, ?, ?)').run(sha(t), u.id, Date.now() + RESET_MS);
     this.log(admin, 'Link zum Zurücksetzen erzeugt', u.name);
@@ -893,7 +979,7 @@ export class AccountAdmin {
   }
 
   logout(admin: string, name: string): number {
-    const u = this.target(name);
+    const u = this.changeable(name);
     const n = Number(this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(u.id).changes);
     this.log(admin, 'Auf allen Geräten abgemeldet', u.name, `${n} Sitzung(en)`);
     return n;
@@ -901,7 +987,7 @@ export class AccountAdmin {
 
   /** Statistik, Medaillen, Lieblinge und Spiel-XP auf null (Lernstand bleibt – den hat auch der Browser) */
   resetStats(admin: string, name: string) {
-    const u = this.target(name);
+    const u = this.changeable(name);
     this.db.exec('BEGIN');
     try {
       for (const sql of ['DELETE FROM results WHERE user_id = ?', 'DELETE FROM usage WHERE user_id = ?', 'DELETE FROM medals WHERE user_id = ?', 'UPDATE users SET game_xp = 0 WHERE id = ?'])
@@ -915,9 +1001,10 @@ export class AccountAdmin {
   }
 
   rename(admin: string, name: string, newName: unknown): string {
-    const u = this.target(name);
+    const u = this.changeable(name);
     const n = String(newName ?? '').trim();
     if (!NAME_RE.test(n)) throw new GameError('Benutzername: 3–20 Zeichen, nur Buchstaben, Ziffern und _ . -');
+    if (isReservedName(n)) throw new GameError('Dieser Benutzername ist nicht erlaubt.');
     const other = this.db.prepare('SELECT id FROM users WHERE name = ?').get(n) as { id: number } | undefined;
     if (other && other.id !== u.id) throw new GameError('Diesen Benutzernamen gibt es schon.', 409);
     this.db.prepare('UPDATE users SET name = ? WHERE id = ?').run(n, u.id);
@@ -926,12 +1013,87 @@ export class AccountAdmin {
   }
 
   setEmail(admin: string, name: string, email: unknown) {
-    const u = this.target(name);
+    const u = this.changeable(name);
     const mail = cleanEmail(email);
     if (mail === undefined) throw new GameError('Diese E-Mail-Adresse sieht nicht gültig aus.');
     this.db.prepare('UPDATE users SET email = ? WHERE id = ?').run(mail, u.id);
     this.log(admin, mail ? 'E-Mail geändert' : 'E-Mail entfernt', u.name);
   }
+
+  // -------------------------------------------------------------- Statistik
+
+  /** Momentaufnahme (alle 5 min): Accounts online, Lobbys, laufende Spiele, verbundene Spieler – 90 Tage aufheben */
+  sample(lobbies: number, playing: number, players: number) {
+    const now = Date.now();
+    const online = (this.db.prepare('SELECT COUNT(*) AS n FROM users WHERE last_seen > ?').get(now - ONLINE_MS) as { n: number }).n;
+    this.db.prepare('INSERT OR REPLACE INTO metrics (at, online, lobbies, playing, players) VALUES (?, ?, ?, ?, ?)').run(now, online, lobbies, playing, players);
+    this.db.prepare('DELETE FROM metrics WHERE at < ?').run(now - 90 * DAY);
+  }
+
+  /** fertig gespieltes Spiel (alle, auch ohne Account) */
+  recordGame(mode: GameMode, players: number, accounts: number) {
+    this.db.prepare('INSERT INTO game_log (at, mode, players, accounts) VALUES (?, ?, ?, ?)').run(Date.now(), mode, players, accounts);
+  }
+
+  stats(days: number): AdminStats {
+    const since = Date.now() - days * DAY;
+    const raw = this.db.prepare('SELECT at, online, lobbies, playing, players FROM metrics WHERE at >= ? ORDER BY at').all(since) as unknown as AdminStats['samples'];
+    // über 2 Tage: je Stunde der höchste Wert (sonst zu viele Punkte für die Grafik)
+    const samples = days <= 2 ? raw : bucketMax(raw, 3600_000);
+    const empty = (k: string): AdminStats['days'][number] => ({ day: k, route: 0, quiz: 0, players: 0, newUsers: 0, activeUsers: 0 });
+    const rows = new Map<string, AdminStats['days'][number]>();
+    for (let t = since; t <= Date.now() + DAY / 2; t += DAY) rows.set(dayOf(t), empty(dayOf(t)));
+    const row = (t: number) => rows.get(dayOf(t)) ?? rows.set(dayOf(t), empty(dayOf(t))).get(dayOf(t))!;
+    for (const g of this.db.prepare('SELECT at, mode, players FROM game_log WHERE at >= ?').all(since) as { at: number; mode: string; players: number }[]) {
+      const r = row(g.at);
+      if (g.mode === 'quiz') r.quiz++;
+      else r.route++;
+      r.players += g.players;
+    }
+    for (const u of this.db.prepare('SELECT created FROM users WHERE created >= ?').all(since) as { created: number }[]) row(u.created).newUsers++;
+    const active = new Map<string, Set<number>>();
+    for (const x of this.db.prepare('SELECT user_id, at FROM results WHERE at >= ?').all(since) as { user_id: number; at: number }[])
+      (active.get(dayOf(x.at)) ?? active.set(dayOf(x.at), new Set()).get(dayOf(x.at))!).add(x.user_id);
+    for (const [k, set] of active) (rows.get(k) ?? rows.set(k, empty(k)).get(k)!).activeUsers = set.size;
+    return { samples, days: [...rows.values()].sort((a, b) => a.day.localeCompare(b.day)) };
+  }
+
+  /** Spiele eines Accounts je Tag */
+  userStats(name: string, days: number): AdminUserStats {
+    const u = this.target(name);
+    const since = Date.now() - days * DAY;
+    const rows = new Map<string, AdminUserStats['days'][number]>();
+    for (let t = since; t <= Date.now() + DAY / 2; t += DAY) rows.set(dayOf(t), { day: dayOf(t), route: 0, quiz: 0, training: 0, points: 0 });
+    const list = this.db.prepare("SELECT kind, at, points FROM results WHERE user_id = ? AND at >= ? AND kind IN ('game', 'quiz', 'training')").all(u.id, since) as {
+      kind: string;
+      at: number;
+      points: number;
+    }[];
+    for (const r of list) {
+      const x = rows.get(dayOf(r.at));
+      if (!x) continue;
+      if (r.kind === 'game') x.route++;
+      else if (r.kind === 'quiz') x.quiz++;
+      else x.training++;
+      x.points += r.points;
+    }
+    return { days: [...rows.values()].sort((a, b) => a.day.localeCompare(b.day)) };
+  }
+}
+
+/** Tag in Wien (YYYY-MM-DD) */
+const dayOf = (t: number) => new Date(t).toLocaleDateString('sv-SE', { timeZone: 'Europe/Vienna' });
+
+/** Zeitreihe verdichten: je Zeitfenster der höchste Wert jeder Größe */
+function bucketMax(rows: AdminStats['samples'], ms: number): AdminStats['samples'] {
+  const out = new Map<number, AdminStats['samples'][number]>();
+  for (const r of rows) {
+    const k = Math.floor(r.at / ms) * ms;
+    const b = out.get(k);
+    if (!b) out.set(k, { ...r, at: k });
+    else for (const f of ['online', 'lobbies', 'playing', 'players'] as const) b[f] = Math.max(b[f], r[f]);
+  }
+  return [...out.values()];
 }
 
 /** Anzahl der Kurse im Lernpfad (für „alle Kurse“) – muss zu client/src/learn/courses/index.ts passen */

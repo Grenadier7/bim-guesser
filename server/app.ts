@@ -7,13 +7,14 @@ import { errorHandler, MIN, stripDangerousKeys } from './http.ts';
 import { smtpMailer, type SendMail } from './mail.ts';
 import { GameManager } from './manager.ts';
 import type { Network } from './network.ts';
-import { overrides } from './overrides.ts';
+import { GameConfigStore } from './gameconfig.ts';
+import { PlanRuntime } from './planruntime.ts';
+import { planStore } from './plans.ts';
 import { adminRoutes } from './routes/admin.ts';
 import { accountRoutes } from './routes/accounts.ts';
 import { gameRoutes } from './routes/games.ts';
 import { trainingRoutes } from './routes/training.ts';
 import { rateLimit, securityHeaders } from './security.ts';
-import { configureTimetable, reloadTimetable } from './timetable.ts';
 import { TrainingService } from './training.ts';
 
 const DIST = path.resolve(import.meta.dirname, '../dist');
@@ -29,27 +30,49 @@ export interface AppOptions {
 
 export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer() }: AppOptions) {
   const started = Date.now();
-  const games = new GameManager(net);
+  // Netzpläne und Spiel-Konfiguration der Admin-Seite (Standard = Werte im Code)
+  const plans = planStore();
+  let config: GameConfigStore | null = null;
+  const runtime = new PlanRuntime(net, plans, () => config!.effective().addresses);
+  config = new GameConfigStore(net, () => plans.menu());
+  config.apply();
+  const cfg = config;
+  if (plans.get('regular')?.edits.length || cfg.stored().addresses) runtime.apply('regular');
+  const games = new GameManager(net, (mode) => runtime.net(mode));
+  // Änderungen: Quiz-Netz neu, Netz-Auswahl (Namen der Netzpläne) neu, Adressen in alle Netze
+  runtime.onChange = () => {
+    games.refreshNet();
+    cfg.apply();
+  };
+  cfg.onChange = (section) => {
+    if (section === 'addresses' || section === null) runtime.refreshAddresses();
+    if (section === 'pools' || section === null) games.refreshNet();
+  };
   const accounts = new Accounts(net, { file: accountsDb, mail });
-  games.onCreate = (g) => accounts.watch(g);
+  const adminAcc = new AccountAdmin(accounts);
+  games.onCreate = (g) => {
+    accounts.watch(g);
+    // Statistik der Admin-Seite: jedes fertige Spiel (auch ohne Accounts)
+    g.on('finished', () => {
+      try {
+        const info = g.adminInfo();
+        adminAcc.recordGame(g.mode, info.players.length, info.players.filter((p) => p.account).length);
+      } catch (e) {
+        console.warn('Statistik:', (e as Error).message);
+      }
+    });
+  };
+  // Momentaufnahme für die Grafiken: alle 5 min
+  setInterval(() => {
+    try {
+      const all = games.list();
+      adminAcc.sample(all.length, games.activeGames(), all.reduce((n, g) => n + g.adminInfo().players.filter((p) => p.connected).length, 0));
+    } catch (e) {
+      console.warn('Statistik:', (e as Error).message);
+    }
+  }, 5 * 60_000).unref();
   setInterval(() => accounts.cleanup(), 3600_000).unref();
   const training = new TrainingService(net);
-  // Routenberechnung (Admin-Seite): Fahrplan-Halte ↔ Netz-Stationen, Linien-Änderungen auf Netz und Fahrplan
-  configureTimetable({
-    stationOf: (efaId) => net.stationOfEfa(efaId),
-    station: (id) => {
-      const st = net.stations.get(id);
-      return st ? { name: st.name, lat: st.lat, lon: st.lon, efaId: net.mainEfaId(id) } : null;
-    },
-  });
-  let networkJson = '';
-  const applyRouting = () => {
-    net.applyLineEdits(overrides().edits);
-    networkJson = JSON.stringify(net.publicData());
-    return reloadTimetable();
-  };
-  if (overrides().edits.length) applyRouting();
-  else networkJson = JSON.stringify(net.publicData());
 
   const app = express();
   app.disable('x-powered-by');
@@ -66,14 +89,22 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
     res.json({ ok: true, version, uptimeSec: Math.round((Date.now() - started) / 1000), lobbies: games.lobbyCount, activeGames: games.activeGames(), warnings: net.referenceWarnings() });
   });
 
-  app.get('/api/network', (_req, res) => {
-    // no-cache + ETag: Browser fragen jedes Mal kurz nach (304) – Linien-Änderungen der Admin-Seite sind sofort sichtbar
-    res.type('json').set('Cache-Control', 'no-cache').send(networkJson);
+  // Netz (Standard oder ?plan=… für einen Netzplan). no-cache + ETag: Browser fragen jedes Mal kurz nach (304) –
+  // Änderungen der Admin-Seite sind sofort sichtbar
+  app.get('/api/network', (req, res) => {
+    const plan = req.query.plan === undefined ? 'regular' : String(req.query.plan);
+    const json = /^[a-z0-9-]{1,24}$/.test(plan) ? runtime.networkJson(plan) : null;
+    if (!json) return void res.status(404).json({ error: 'Diesen Netzplan gibt es nicht.' });
+    res.type('json').set('Cache-Control', 'no-cache').send(json);
+  });
+  // Spiel-Konfiguration (Uhrzeiten, Wertungen, Standard-Einstellungen …) – der Browser wendet sie vor dem Start an
+  app.get('/api/config', (_req, res) => {
+    res.set('Cache-Control', 'no-cache').json(cfg.public());
   });
 
   const { optionalUser } = accountRoutes(app, accounts, (code) => games.has(code));
   gameRoutes(app, games, { accounts, optionalUser });
-  adminRoutes(app, { accounts, admin: new AccountAdmin(accounts), games, net, version, started, applyRouting });
+  adminRoutes(app, { accounts, admin: adminAcc, games, net, version, started, plans, runtime, config: cfg });
   trainingRoutes(app, training, { accounts, optionalUser });
 
   app.use('/api', (_req, res) => {

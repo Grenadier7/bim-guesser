@@ -29,12 +29,18 @@ export const TIME_SLOTS: TimeSlot[] = [
   { id: 'su12', label: 'Sonntag 12:00', short: 'So 12 Uhr' },
 ];
 
+/** Netz-Auswahl in der Lobby – Netzpläne der Admin-Seite kommen über applyGameConfig dazu */
 export const NET_MODES: { id: NetMode; label: string; hint: string }[] = [
   { id: 'regular', label: 'Regulär', hint: 'Normaler Fahrplan ohne Baustellen' },
   { id: 'current', label: 'Aktuell', hint: 'Nächster echter Tag – inkl. Sperren & Ersatzverkehr' },
 ];
 
 export const SLOT_DAYTYPE: Record<SlotId, DayType> = { wd12: 'wd', wd17: 'wd', sa02: 'sa', su12: 'su' };
+/** Uhrzeit je Zeitfenster [Stunde, Minute] – sa02: Nacht Fr → Sa (U-Bahn fährt durch) */
+export const SLOT_TIME: Record<SlotId, [number, number]> = { wd12: [12, 0], wd17: [17, 0], sa02: [2, 0], su12: [12, 0] };
+
+/** Netz wie das reguläre (Referenztag, eigener Fahrplan) – alles außer „Aktuell“ */
+export const isRegularNet = (n: NetMode) => n !== 'current';
 
 // ---------------------------------------------------------------- Schwierigkeit
 // Drei Regler (Haltestellen, Entfernung, Umstieg); die Stufen Leicht…Profi sind nur Schnellwahlen.
@@ -245,7 +251,7 @@ export function isSlotId(v: unknown): v is SlotId {
  */
 export type ScoringMode = 'realistic' | 'info' | 'ride';
 
-export const SCORING_MODES: { id: ScoringMode; icon: string; label: string; hint: string; settings: Pick<GameSettings, 'countWait' | 'avgWait' | 'goal'> }[] = [
+export const SCORING_MODES: { id: ScoringMode; icon: string; label: string; hint: string; enabled?: boolean; settings: Pick<GameSettings, 'countWait' | 'avgWait' | 'goal'> }[] = [
   {
     id: 'realistic',
     icon: '🧭',
@@ -289,14 +295,14 @@ export const ROUTE_GOALS: { id: RouteGoal; label: string; hint: string }[] = [
  * Aufschlag je Umstieg bei "beste Route". Mit Ø-Wartezeiten ist das Warten schon eingerechnet –
  * dann steht der Aufschlag nur noch für Aufwand/Risiko (2 min). Mit echtem Fahrplan 4 min.
  */
-export const TRANSFER_PENALTY_AVG_MIN = 2;
-export const TRANSFER_PENALTY_FIXED_MIN = 4;
+/** Aufschlag je Umstieg bei „Umstiege vermeiden“ (min): mit Ø-Wartezeiten bzw. mit echten Abfahrten */
+export const TRANSFER_PENALTY = { avg: 2, fixed: 4 };
 
 export type RouteScoring = Pick<GameSettings, 'goal' | 'avgWait'>;
 
 export function transferPenalty(s: RouteScoring): number {
   if (s.goal !== 'best') return 0;
-  return s.avgWait ? TRANSFER_PENALTY_AVG_MIN : TRANSFER_PENALTY_FIXED_MIN;
+  return s.avgWait ? TRANSFER_PENALTY.avg : TRANSFER_PENALTY.fixed;
 }
 
 export function transfersOf(route: Pick<RouteOption, 'legs'>): number {

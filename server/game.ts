@@ -4,6 +4,7 @@ import type {
   Evaluation,
   GameSettings,
   GameState,
+  NetMode,
   Guesses,
   Restriction,
   RoundPublic,
@@ -74,11 +75,14 @@ export class Game extends Lobby {
   private pastPairs: PastPair[] = [];
   private generation = 0;
   private net: Network;
+  /** Netz zur Netz-Auswahl (Netzpläne der Admin-Seite) – gewählt beim Spielstart */
+  private netFor: (mode: NetMode) => Network;
 
-  constructor(id: string, net: Network, settings: Partial<GameSettings> | undefined) {
+  constructor(id: string, net: Network | ((mode: NetMode) => Network), settings: Partial<GameSettings> | undefined) {
     super(id);
-    this.net = net;
+    this.netFor = typeof net === 'function' ? net : () => net;
     this.settings = sanitizeSettings(settings);
+    this.net = this.netFor(this.settings.network);
   }
 
   protected onPresenceChange() {
@@ -115,6 +119,7 @@ export class Game extends Lobby {
   async start(token: string): Promise<void> {
     this.requireHost(token);
     if (this.phase !== 'lobby') return;
+    this.net = this.netFor(this.settings.network);
     this.phase = 'playing';
     for (const p of this.players.values()) p.score = 0;
     const gen = ++this.generation;

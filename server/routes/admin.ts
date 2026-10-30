@@ -1,17 +1,29 @@
-// Admin-Seite: Accounts verwalten, Lobbys sehen/beenden, Routenberechnung einstellen, Protokoll.
-// Nur für Accounts mit Admin-Recht (vergeben über server/admin-cli.ts); geprüft bei jeder Anfrage in der Datenbank –
-// wer die Rechte verliert, verliert sie sofort. Jede Änderung steht im Protokoll.
-import type { Express, Request } from 'express';
-import type { AdminOverview, RoutingAdminState, RoutingOverrides, RoutingParams } from '../../shared/types.ts';
+// Admin-Seite: Übersicht und Statistik, Lobbys steuern, Accounts verwalten, Netzpläne und Routenberechnung,
+// Spiel-Konfiguration, Protokoll.
+//
+// Zugang: Admin-Recht nur über die Kommandozeile (server/admin-cli.ts), geprüft bei jeder Anfrage in der Datenbank.
+// Zusätzlich muss der Admin-Bereich je Sitzung mit dem Passwort entsperrt werden (30 min ab der letzten Aktion,
+// höchstens 8 h) – ein Login-Cookie allein reicht nie. Ändernde Anfragen nur als JSON (CSRF), eigenes Rate-Limit.
+// Admin-Accounts selbst ändert nur die Kommandozeile. Dateien (Backups, State) sind von hier aus nie erreichbar:
+// keine Route nimmt einen Pfad an.
+import type { Express, NextFunction, Request, Response } from 'express';
+import type { GameConfigSection } from '../../shared/config.ts';
+import { defaultGameConfig } from '../../shared/config.ts';
+import type { AdminOverview, LineEdit, NetworkPlan, RoutingAdminState, RoutingParams, SlotId } from '../../shared/types.ts';
+import { isSlotId } from '../../shared/rules.ts';
 import type { AccountAdmin, AccountUser, Accounts } from '../accounts.ts';
-import { h, param } from '../http.ts';
+import type { GameConfigStore } from '../gameconfig.ts';
+import { SECTION_LABEL } from '../gameconfig.ts';
+import { h, MIN, param } from '../http.ts';
 import { GameError } from '../lobby.ts';
 import type { GameManager } from '../manager.ts';
-import type { Network } from '../network.ts';
-import { DEFAULT_PARAMS, overrides, sanitizeOverrides, saveOverrides } from '../overrides.ts';
+import { Network } from '../network.ts';
+import type { PlanRuntime } from '../planruntime.ts';
+import { DEFAULT_PARAMS, sanitizeEdits, sanitizeParams, type PlanStore } from '../plans.ts';
 import { topRoutes } from '../routing.ts';
+import { rateLimit } from '../security.ts';
 import { slotTime } from '../timeslots.ts';
-import { timetableInfo } from '../timetable.ts';
+import { timetableInfo, timetableView } from '../timetable.ts';
 import { jsonOnly, resetBase, sessionToken } from './accounts.ts';
 
 export interface AdminDeps {
@@ -21,8 +33,9 @@ export interface AdminDeps {
   net: Network;
   version: string;
   started: number;
-  /** Linien-Änderungen und Parameter neu anwenden (Fahrplan + Netz); liefert den Bericht */
-  applyRouting: () => string[];
+  plans: PlanStore;
+  runtime: PlanRuntime;
+  config: GameConfigStore;
 }
 
 const PARAM_NAMES: Record<keyof RoutingParams, string> = {
@@ -34,32 +47,103 @@ const PARAM_NAMES: Record<keyof RoutingParams, string> = {
   firstWaitFactor: 'erste Wartezeit',
 };
 
-export function adminRoutes(app: Express, d: AdminDeps) {
-  let lastReport: string[] = [];
-  const st = (id: string) => d.net.stations.get(id)?.name ?? id;
-  /** fürs Protokoll in Worten statt JSON */
-  const describeOverrides = (o: RoutingOverrides): string => {
-    const params = (Object.entries(o.params) as [keyof RoutingParams, number][]).map(([k, v]) => `${PARAM_NAMES[k]} ${v} (Standard ${DEFAULT_PARAMS[k]})`);
-    const edits = o.edits.map((e) =>
-      e.kind === 'extend'
-        ? `${e.line} über ${st(e.at)} hinaus: ${e.stops.map((s) => `${st(s.station)} +${s.min}`).join(', ')}`
-        : e.kind === 'cut'
-          ? `${e.line} endet bei ${st(e.at)} (ohne Richtung ${st(e.beyond)})`
-          : `${e.line} ${st(e.from)} ↔ ${st(e.to)}: ${e.min} min`,
-    );
-    return [...params, ...edits].join(' · ') || 'alles auf Standard';
+/**
+ * Verweise der Änderungen prüfen, der Reihe nach wie beim Anwenden: Linien und Stationen müssen zum Zeitpunkt der
+ * Änderung existieren (neue Stationen/Linien zählen ab ihrer eigenen Änderung). Tippfehler → klare Meldung.
+ */
+function checkRefs(edits: LineEdit[], base: Network) {
+  const stations = new Set(base.stations.keys());
+  const lines = new Set(base.lines.keys());
+  const st = (id: string) => {
+    if (!stations.has(id)) throw new GameError(`Station ${id} gibt es (an dieser Stelle) nicht.`);
   };
+  const ln = (id: string) => {
+    if (!lines.has(id)) throw new GameError(`Linie ${id} gibt es (an dieser Stelle) nicht.`);
+  };
+  for (const e of edits) {
+    switch (e.kind) {
+      case 'extend':
+        ln(e.line);
+        [e.at, ...e.stops.map((s) => s.station)].forEach(st);
+        break;
+      case 'cut':
+        ln(e.line);
+        [e.at, e.beyond].forEach(st);
+        if (e.at === e.beyond) throw new GameError(`${e.line}: neue Endstation und wegfallendes Ende sind gleich.`);
+        break;
+      case 'time':
+        ln(e.line);
+        [e.from, e.to].forEach(st);
+        break;
+      case 'addStation':
+        if (stations.has(e.station) || !/^n\d+$/.test(e.station)) throw new GameError('Neue Station: ungültige Kennung.');
+        stations.add(e.station);
+        break;
+      case 'renameStation':
+      case 'moveStation':
+        st(e.station);
+        break;
+      case 'removeStation':
+        st(e.station);
+        stations.delete(e.station);
+        break;
+      case 'addLine':
+        if (lines.has(e.line)) throw new GameError(`Linie ${e.line} gibt es schon – anderer Name oder vorher „Linie entfernen“.`);
+        e.stops.forEach((s) => st(s.station));
+        if (new Set(e.stops.map((s) => s.station)).size !== e.stops.length) throw new GameError(`${e.line}: jede Station nur einmal.`);
+        lines.add(e.line);
+        break;
+      case 'removeLine':
+        ln(e.line);
+        lines.delete(e.line);
+        break;
+    }
+  }
+}
 
-  const admin = (req: Request): AccountUser => {
+export function adminRoutes(app: Express, d: AdminDeps) {
+  let lastReport: Record<string, string[]> = {};
+  const limitUnlock = rateLimit('admin-unlock', 10, 10 * MIN, 'Zu viele Versuche – bitte {wait} nochmal.');
+  const limitWrite = rateLimit('admin-write', 300, 10 * MIN, 'Sehr viele Änderungen in kurzer Zeit – bitte {wait} nochmal.');
+  const stName = (id: string) => d.net.stations.get(id)?.name ?? id;
+
+  /** angemeldet und Admin (ohne Entsperren – für Status und Entsperren selbst) */
+  const adminUser = (req: Request): AccountUser => {
     const u = d.accounts.userFor(sessionToken(req));
     if (!u) throw new GameError('Bitte zuerst anmelden.', 401);
     if (!d.admin.isAdmin(u.id)) throw new GameError('Nur für Admins.', 403);
     return u;
   };
+  /** Admin mit entsperrtem Admin-Bereich – jede weitere Admin-Route */
+  const admin = (req: Request): AccountUser => {
+    const u = adminUser(req);
+    if (!d.accounts.adminUnlocked(sessionToken(req)!)) throw new GameError('Admin-Bereich gesperrt – bitte mit dem Passwort entsperren.', 423);
+    return u;
+  };
   const name = (req: Request) => param(req, 'name');
 
   app.use('/api/admin', jsonOnly);
+  app.use('/api/admin', (req: Request, res: Response, next: NextFunction) => (req.method === 'GET' ? next() : limitWrite(req, res, next)));
 
+  // ---------------------------------------------------------------- Zugang
+  app.get('/api/admin/status', h((req) => {
+    const u = d.accounts.userFor(sessionToken(req));
+    const isAdmin = !!u && d.admin.isAdmin(u.id);
+    return { admin: isAdmin, unlocked: isAdmin && d.accounts.adminUnlocked(sessionToken(req)!) };
+  }));
+  app.post(
+    '/api/admin/unlock',
+    limitUnlock,
+    h(async (req) => {
+      const u = adminUser(req);
+      await d.accounts.adminUnlock(sessionToken(req)!, u.id, req.body?.password);
+      d.admin.log(u.name, 'Admin-Bereich entsperrt');
+      return { ok: true };
+    }),
+  );
+  app.post('/api/admin/lock', h((req) => (adminUser(req), d.accounts.adminLock(sessionToken(req)!), { ok: true })));
+
+  // ---------------------------------------------------------------- Übersicht, Statistik
   app.get(
     '/api/admin/overview',
     h((req): AdminOverview => {
@@ -80,7 +164,9 @@ export function adminRoutes(app: Express, d: AdminDeps) {
       };
     }),
   );
-  // alles, was ein Host kann – im Auftrag des Admins (Schlüssel bleibt im Server)
+  app.get('/api/admin/stats', h((req) => (admin(req), d.admin.stats(Math.min(365, Math.max(1, Number(req.query.days) || 30))))));
+
+  // ---------------------------------------------------------------- Lobbys: alles, was ein Host kann (Schlüssel bleibt im Server)
   const lobbyAction = (path: string, label: string, act: (g: ReturnType<GameManager['get']>, req: Request) => unknown) =>
     app.post(
       `/api/admin/lobbies/:code/${path}`,
@@ -117,15 +203,16 @@ export function adminRoutes(app: Express, d: AdminDeps) {
     h((req) => {
       const u = admin(req);
       const g = d.games.get(param(req, 'code'));
-      g.close('Vom Admin beendet');
+      g.close('Von der Spielleitung beendet');
       d.admin.log(u.name, 'Lobby beendet', g.id, `${g.mode}, ${g.playerCount} Spieler`);
       return { ok: true };
     }),
   );
 
-  // ---------------------------------------------------------------- Accounts
+  // ---------------------------------------------------------------- Accounts (Admin-Accounts nur über die Kommandozeile)
   app.get('/api/admin/users', h((req) => (admin(req), d.admin.users(req.query.q, Number(req.query.offset) || 0))));
   app.get('/api/admin/users/:name', h((req) => (admin(req), d.admin.user(name(req)))));
+  app.get('/api/admin/users/:name/stats', h((req) => (admin(req), d.admin.userStats(name(req), Math.min(365, Math.max(7, Number(req.query.days) || 90))))));
   app.delete('/api/admin/users/:name', h((req) => (d.admin.remove(admin(req).name, name(req)), { ok: true })));
   app.post('/api/admin/users/:name/password', h(async (req) => (await d.admin.setPassword(admin(req).name, name(req), req.body?.password), { ok: true })));
   app.post(
@@ -144,39 +231,161 @@ export function adminRoutes(app: Express, d: AdminDeps) {
 
   app.get('/api/admin/log', h((req) => (admin(req), d.admin.logEntries())));
 
-  // ---------------------------------------------------------------- Routenberechnung
-  const routingState = (): RoutingAdminState => ({ overrides: overrides(), defaults: DEFAULT_PARAMS, report: lastReport });
-  app.get('/api/admin/routing', h((req) => (admin(req), routingState())));
+  // ---------------------------------------------------------------- Spiel-Konfiguration
+  const isSection = (k: string): k is GameConfigSection => k in SECTION_LABEL;
+  const section = (req: Request): GameConfigSection => {
+    const k = param(req, 'section');
+    if (!isSection(k)) throw new GameError('Unbekannter Bereich.', 404);
+    return k;
+  };
+  const configState = () => ({ config: d.config.effective(), changed: Object.keys(d.config.stored()), defaults: defaultGameConfig(), labels: SECTION_LABEL });
+  app.get('/api/admin/config', h((req) => (admin(req), configState())));
   app.put(
-    '/api/admin/routing',
+    '/api/admin/config/:section',
     h((req) => {
       const u = admin(req);
-      const next: RoutingOverrides = sanitizeOverrides({ params: req.body?.params, edits: req.body?.edits });
-      // Linien und Stationen müssen im Netz existieren – Tippfehler sofort melden statt still zu ignorieren
-      for (const e of next.edits) {
-        if (!d.net.lines.has(e.line)) throw new GameError(`Linie ${e.line} gibt es nicht.`);
-        const ids = e.kind === 'extend' ? [e.at, ...e.stops.map((s) => s.station)] : e.kind === 'cut' ? [e.at, e.beyond] : [e.from, e.to];
-        for (const id of ids) if (!d.net.stations.has(id)) throw new GameError(`Station ${id} gibt es nicht.`);
+      const k = section(req);
+      d.config.save(k, req.body?.value, u.name);
+      d.admin.log(u.name, `Einstellungen: ${SECTION_LABEL[k]} geändert`);
+      return configState();
+    }),
+  );
+  app.delete(
+    '/api/admin/config/:section',
+    h((req) => {
+      const u = admin(req);
+      const k = section(req);
+      d.config.reset(k, u.name);
+      d.admin.log(u.name, `Einstellungen: ${SECTION_LABEL[k]} auf Standard`);
+      return configState();
+    }),
+  );
+  app.get('/api/admin/config-versions', h((req) => (admin(req), d.config.versions())));
+  app.post(
+    '/api/admin/config-versions/:id/restore',
+    h((req) => {
+      const u = admin(req);
+      d.config.rollback(param(req, 'id'), u.name);
+      d.admin.log(u.name, 'Einstellungen: frühere Version wiederhergestellt', null, param(req, 'id'));
+      return configState();
+    }),
+  );
+  app.get('/api/admin/addresses', h((req) => (admin(req), d.net.searchAddresses(String(req.query.q ?? '')))));
+
+  // ---------------------------------------------------------------- Netzpläne und Routenberechnung
+  const routingState = (): RoutingAdminState => ({ plans: d.plans.list(), defaults: DEFAULT_PARAMS, report: lastReport });
+  /** fürs Protokoll in Worten statt JSON */
+  const describe = (p: NetworkPlan): string => {
+    const params = (Object.entries(p.params) as [keyof RoutingParams, number][]).map(([k, v]) => `${PARAM_NAMES[k]} ${v} (Standard ${DEFAULT_PARAMS[k]})`);
+    const edits = p.edits.map((e) => {
+      switch (e.kind) {
+        case 'extend':
+          return `${e.line} über ${stName(e.at)} hinaus: ${e.stops.map((s) => `${stName(s.station)} +${s.min}`).join(', ')}`;
+        case 'cut':
+          return `${e.line} endet bei ${stName(e.at)} (ohne Richtung ${stName(e.beyond)})`;
+        case 'time':
+          return `${e.line} ${stName(e.from)} ↔ ${stName(e.to)}: ${e.min} min`;
+        case 'addStation':
+          return `neue Station ${e.name}`;
+        case 'renameStation':
+          return `${stName(e.station)} heißt ${e.name}`;
+        case 'moveStation':
+          return `${stName(e.station)} verschoben`;
+        case 'removeStation':
+          return `${stName(e.station)} aufgelassen`;
+        case 'addLine':
+          return `neue Linie ${e.line} (${e.stops.length} Halte)`;
+        case 'removeLine':
+          return `Linie ${e.line} entfernt`;
       }
-      next.updatedAt = Date.now();
-      next.updatedBy = u.name;
-      saveOverrides(next);
-      lastReport = d.applyRouting();
-      d.admin.log(u.name, 'Routenberechnung geändert', null, describeOverrides(next).slice(0, 2000));
+    });
+    return [...params, ...edits].join(' · ') || 'keine Änderungen';
+  };
+
+  app.get('/api/admin/routing', h((req) => (admin(req), routingState())));
+  app.put(
+    '/api/admin/routing/plans/:id',
+    h((req) => {
+      const u = admin(req);
+      const id = param(req, 'id');
+      if (!/^[a-z0-9-]{1,24}$/.test(id)) throw new GameError('Kennung: 1–24 Kleinbuchstaben, Ziffern oder „-“.');
+      const edits = sanitizeEdits(req.body?.edits);
+      checkRefs(edits, Network.load());
+      const plan: NetworkPlan = {
+        id,
+        label: String(req.body?.label ?? (id === 'regular' ? 'Regulär' : id)),
+        hint: String(req.body?.hint ?? ''),
+        inMenu: id !== 'regular' && req.body?.inMenu === true,
+        params: sanitizeParams(req.body?.params),
+        edits,
+        updatedAt: Date.now(),
+        updatedBy: u.name,
+      };
+      const list = d.plans.list().filter((p) => p.id !== id);
+      const isNew = list.length === d.plans.list().length;
+      const saved = d.plans.save([...list, plan], u.name, `${isNew ? 'Netzplan angelegt' : 'Netzplan geändert'}: ${plan.label}`);
+      lastReport = { ...lastReport, ...d.runtime.apply(id) };
+      d.admin.log(u.name, isNew ? 'Netzplan angelegt' : 'Netzplan geändert', saved.find((p) => p.id === id)!.label, describe(saved.find((p) => p.id === id)!).slice(0, 2000));
       return routingState();
     }),
   );
-  // Probe: schnellste Verbindungen für ein Paar mit den aktuellen Einstellungen (wie im Spiel, regulärer Werktag)
+  app.delete(
+    '/api/admin/routing/plans/:id',
+    h((req) => {
+      const u = admin(req);
+      const id = param(req, 'id');
+      if (id === 'regular') throw new GameError('Den Standard-Netzplan kann man nicht löschen – nur seine Änderungen.');
+      const plan = d.plans.get(id);
+      if (!plan) throw new GameError('Diesen Netzplan gibt es nicht.', 404);
+      d.plans.save(
+        d.plans.list().filter((p) => p.id !== id),
+        u.name,
+        `Netzplan gelöscht: ${plan.label}`,
+      );
+      delete lastReport[id];
+      d.runtime.apply(id);
+      d.admin.log(u.name, 'Netzplan gelöscht', plan.label);
+      return routingState();
+    }),
+  );
+  app.get('/api/admin/routing/versions', h((req) => (admin(req), d.plans.versions())));
+  app.post(
+    '/api/admin/routing/versions/:id/restore',
+    h((req) => {
+      const u = admin(req);
+      d.plans.rollback(param(req, 'id'), u.name);
+      lastReport = d.runtime.apply();
+      d.admin.log(u.name, 'Netzpläne: frühere Version wiederhergestellt', null, param(req, 'id'));
+      return routingState();
+    }),
+  );
+  // Fahrplan einer Linie ansehen (Haltefolgen, Fahrzeiten, Fahrten je Stunde)
+  app.get(
+    '/api/admin/routing/timetable',
+    h((req) => {
+      admin(req);
+      const plan = String(req.query.plan ?? 'regular');
+      const n = d.runtime.planNet(plan);
+      if (!n) throw new GameError('Diesen Netzplan gibt es nicht.', 404);
+      const v = timetableView(plan, String(req.query.line ?? ''), (efa) => n.stationOfEfa(efa));
+      if (!v) throw new GameError('Diese Linie gibt es im Fahrplan nicht (oder der Fahrplan ist aus).', 404);
+      return v;
+    }),
+  );
+  // Probe: beste Verbindungen für ein Paar mit den gespeicherten Einstellungen eines Plans (wie im Spiel, „Realistisch“)
   app.post(
     '/api/admin/routing/test',
     h(async (req) => {
       admin(req);
+      const plan = String(req.body?.plan ?? 'regular');
+      const n = d.runtime.planNet(plan);
+      if (!n) throw new GameError('Diesen Netzplan gibt es nicht.', 404);
       const from = String(req.body?.from ?? '');
       const to = String(req.body?.to ?? '');
-      if (!d.net.stations.has(from) || !d.net.stations.has(to) || from === to) throw new GameError('Start und Ziel wählen (zwei verschiedene Stationen).');
-      const slot = ['wd12', 'wd17', 'sa02', 'su12'].includes(req.body?.slot) ? req.body.slot : 'wd12';
-      const time = slotTime(slot, 'regular', d.net.data.regularDays);
-      return topRoutes(d.net, from, to, time, { countWait: true, avgWait: true, restriction: null });
+      if (!n.stations.has(from) || !n.stations.has(to) || from === to) throw new GameError('Start und Ziel wählen (zwei verschiedene Stationen).');
+      const slot: SlotId = isSlotId(req.body?.slot) ? req.body.slot : 'wd12';
+      const time = slotTime(slot, 'regular', n.data.regularDays);
+      return topRoutes(n, from, to, time, { countWait: true, avgWait: true, restriction: null });
     }),
   );
 }
