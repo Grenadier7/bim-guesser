@@ -274,6 +274,31 @@ export class Accounts {
     this.db.prepare('DELETE FROM sessions WHERE user_id = ? AND hash != ?').run(userId, sha(keepToken));
   }
 
+  /** Account endgültig löschen (mit Passwort bestätigt): alles, was an ihm hängt, in einem Rutsch */
+  async deleteAccount(userId: number, password: unknown) {
+    const u = this.row(userId);
+    if (!(await verifyPassword(String(password ?? ''), u.pw))) throw new GameError('Das Passwort stimmt nicht.', 401);
+    this.db.exec('BEGIN');
+    try {
+      for (const sql of [
+        'DELETE FROM sessions WHERE user_id = ?',
+        'DELETE FROM resets WHERE user_id = ?',
+        'DELETE FROM friends WHERE a = ?1 OR b = ?1',
+        'DELETE FROM invites WHERE from_id = ?1 OR to_id = ?1',
+        'DELETE FROM results WHERE user_id = ?',
+        'DELETE FROM usage WHERE user_id = ?',
+        'DELETE FROM medals WHERE user_id = ?',
+        'DELETE FROM users WHERE id = ?',
+      ])
+        this.db.prepare(sql).run(userId);
+      this.db.exec('COMMIT');
+    } catch (e) {
+      this.db.exec('ROLLBACK');
+      throw e;
+    }
+    for (const k of this.trainingSeen.keys()) if (k.startsWith(`${userId}:`)) this.trainingSeen.delete(k);
+  }
+
   setEmail(userId: number, email: unknown) {
     const mail = cleanEmail(email);
     if (mail === undefined) throw new GameError('Diese E-Mail-Adresse sieht nicht gültig aus.');
@@ -633,7 +658,8 @@ export class Accounts {
       name: u.name,
       created: u.created,
       level: this.level(u.id),
-      online: Date.now() - u.last_seen < ONLINE_MS,
+      // online nur für Freunde sichtbar (Datenschutz-Hinweis)
+      online: (relation === 'self' || relation === 'friend') && Date.now() - u.last_seen < ONLINE_MS,
       relation,
       medals: this.medals(u.id),
       stats: relation === 'self' || relation === 'friend' ? this.stats(u.id) : null,

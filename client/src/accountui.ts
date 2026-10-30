@@ -2,13 +2,13 @@
 // Level, Medaillen und Statistik, Leute, Freunde, Einstellungen), Einladungs-Banner und „Freunde einladen“.
 // Das Fenster liegt über allem – so geht es auch mitten in einer Lobby auf, ohne sie zu verlassen.
 import type { AccountStats, FavoriteLine, LevelInfo, MedalPublic, Profile, UserListItem } from '../../shared/types.ts';
-import { account, accountApi, newMedals, signedIn, signOut } from './account.ts';
+import { account, accountApi, deleteAccount, newMedals, signedIn, signOut } from './account.ts';
 import { api } from './api.ts';
 import { app, endSession, savePrefs, startSession } from './store.ts';
 import { esc, h, lineChip, toast } from './ui.ts';
 import { icon } from './icons.ts';
 
-type Tab = 'login' | 'register' | 'forgot' | 'reset' | 'profile' | 'people' | 'friends' | 'settings';
+type Tab = 'login' | 'register' | 'forgot' | 'reset' | 'profile' | 'people' | 'friends' | 'settings' | 'privacy';
 
 const sheet = h('div', { class: 'acct-sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Account' });
 sheet.hidden = true;
@@ -101,8 +101,36 @@ const userRow = (u: UserListItem) =>
 
 // ---------------------------------------------------------------- Inhalt
 
+/** Datenschutz-Hinweis – kurz und in normaler Sprache */
+async function privacyHtml(): Promise<string> {
+  const p = await accountApi.privacy().catch(() => ({ contact: null, mail: false }));
+  return `<div class="privacy">
+    <h4>Ohne Account</h4>
+    <p>Einstellungen, Lernstand und Tutorial bleiben nur in deinem Browser. Am Server gibt es dazu nichts. Dein Spielname ist nur in der Lobby sichtbar, solange sie besteht.
+      Kein Tracking, keine Werbung, keine Analyse-Dienste.</p>
+    <h4>Mit Account wird gespeichert</h4>
+    <ul>
+      <li><b>Benutzername</b> und <b>Passwort</b> – das Passwort nur verschlüsselt (Argon2), niemand kann es lesen.</li>
+      <li><b>E-Mail</b> (freiwillig) – nur für „Passwort vergessen“, nie sichtbar für andere.</li>
+      <li>Dein <b>Spielstand</b>: Lernfortschritt, Einstellungen, Tutorial – damit er auf allen Geräten gleich ist.</li>
+      <li><b>Statistik</b>: Spiele, Punkte, Medaillen, Lieblingslinien, Freundschaften und Einladungen, wann du zuletzt online warst.</li>
+    </ul>
+    <h4>Wer sieht was?</h4>
+    <p>Alle: Name, Level, Medaillen und seit wann du dabei bist. Nur Freunde: Statistik, Lieblingslinien und ob du gerade online bist.</p>
+    <h4>Cookie</h4>
+    <p>Ein einziges Cookie (<code>bg_sid</code>) hält dich angemeldet – technisch nötig, kein Tracking. Es verschwindet beim Abmelden.</p>
+    <h4>Wo liegen die Daten?</h4>
+    <p>Auf dem Server des Betreibers von BimGuesser. Die Verbindung läuft verschlüsselt über den Tunnel-Dienst ngrok.${p.mail ? ' E-Mails zum Zurücksetzen des Passworts werden über einen E-Mail-Anbieter verschickt.' : ''}
+      Die Kartenbilder kommen von Esri bzw. OpenStreetMap – dein Browser lädt sie direkt von dort.</p>
+    <h4>Löschen</h4>
+    <p>Unter ⚙️ kannst du deinen Account jederzeit selbst löschen – alles oben Genannte ist dann sofort weg.</p>
+    ${p.contact ? `<h4>Fragen?</h4><p>Schreib an <a href="mailto:${esc(p.contact)}">${esc(p.contact)}</a>.</p>` : ''}
+  </div>`;
+}
+
 async function body(): Promise<string> {
   const me = account.me;
+  if (tab === 'privacy') return `<button class="link" data-tab="${me ? 'settings' : 'register'}">← zurück</button>${await privacyHtml()}`;
   if (viewing) {
     const p: Profile = await accountApi.profile(viewing);
     return `<button class="link" data-back>← zurück</button>
@@ -118,7 +146,7 @@ async function body(): Promise<string> {
         <label class="field"><span>E-Mail <small class="muted">(optional – nur für „Passwort vergessen“)</small></span><input name="email" type="email" maxlength="120" autocomplete="email"></label>
         <label class="field"><span>Passwort <small class="muted">(mind. 8 Zeichen)</small></span><input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
         <button class="btn btn-primary btn-big">Account erstellen</button>
-        <p class="muted">Dein Lernstand, Tutorial und Einstellungen aus diesem Browser werden übernommen.</p></form>`;
+        <p class="muted">Dein Lernstand, Tutorial und Einstellungen aus diesem Browser werden übernommen. <button type="button" class="link" data-tab="privacy">Datenschutz</button></p></form>`;
     if (tab === 'forgot')
       return `<form class="acct-form" data-form="forgot">
         <p>Wir schicken dir einen Link zum Zurücksetzen – an die E-Mail-Adresse deines Accounts.</p>
@@ -153,7 +181,13 @@ async function body(): Promise<string> {
         <label class="field"><span>Bisheriges Passwort</span><input name="old" type="password" required autocomplete="current-password"></label>
         <label class="field"><span>Neues Passwort</span><input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
         <button class="btn btn-ghost">Passwort ändern</button><small class="muted">Andere Geräte werden dabei abgemeldet.</small></form>
-      <button class="btn btn-ghost" id="logout">Abmelden</button>`;
+      <button class="btn btn-ghost" id="logout">Abmelden</button>
+      <details class="danger-zone"><summary>Account löschen</summary>
+        <form class="acct-form" data-form="delete"><input class="vh" type="text" name="username" autocomplete="username" value="${esc(me.name)}" tabindex="-1" aria-hidden="true">
+          <p>Löscht deinen Account <b>sofort und endgültig</b>: Spielstand auf dem Server, Statistik, Medaillen, Freundschaften. Das lässt sich nicht rückgängig machen.</p>
+          <label class="field"><span>Passwort zur Bestätigung</span><input name="password" type="password" required autocomplete="current-password"></label>
+          <button class="btn btn-danger">Account endgültig löschen</button></form></details>
+      <p class="muted"><button type="button" class="link" data-tab="privacy">Datenschutz – was gespeichert wird</button></p>`;
   const p = await accountApi.profile(me.name);
   return `<div class="profile-head"><h3>${esc(me.name)}</h3></div>${levelBar(p.level)}${medalsHtml(p.medals)}${p.stats ? statsHtml(p.stats) : ''}`;
 }
@@ -267,6 +301,10 @@ function bind() {
           case 'email':
             account.me = await accountApi.setEmail(v('email'));
             toast('E-Mail gespeichert', 'info');
+            break;
+          case 'delete':
+            if (!confirm(`Account „${account.me?.name}“ wirklich endgültig löschen?`)) break;
+            await deleteAccount(v('password'));
             break;
           case 'password':
             await accountApi.password(v('old'), v('password'));

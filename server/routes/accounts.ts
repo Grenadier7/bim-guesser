@@ -9,6 +9,13 @@ import { rateLimit } from '../security.ts';
 
 export const COOKIE = 'bg_sid';
 
+/** Kontakt für Datenschutz-Fragen: CONTACT_EMAIL oder die Adresse aus MAIL_FROM („Name <adresse>“) */
+export function contactEmail(): string | null {
+  const raw = process.env.CONTACT_EMAIL || process.env.MAIL_FROM || '';
+  const m = /<([^>]+)>/.exec(raw)?.[1] ?? raw;
+  return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(m.trim()) && !/\.local$|example\.(org|com)$/.test(m.trim()) ? m.trim() : null;
+}
+
 /** Sitzungs-Token aus dem Cookie */
 export function sessionToken(req: Request): string | null {
   const m = new RegExp(`(?:^|;\\s*)${COOKIE}=([A-Za-z0-9_-]{20,100})`).exec(req.headers.cookie ?? '');
@@ -118,6 +125,18 @@ export function accountRoutes(app: Express, accounts: Accounts, alive: (code: st
       return { ok: true };
     }),
   );
+  // Account löschen: mit Passwort bestätigen, danach ist die Sitzung weg
+  app.post(
+    '/api/me/delete',
+    limitAuth,
+    h(async (req, res) => {
+      await accounts.deleteAccount(user(req).id, req.body?.password);
+      setCookie(req, res, null);
+      return { ok: true };
+    }),
+  );
+  // für den Datenschutz-Hinweis: Kontaktadresse (CONTACT_EMAIL, sonst Absender der Mails) und ob Mails verschickt werden
+  app.get('/api/privacy', h(() => ({ contact: contactEmail(), mail: !!accounts.mail })));
   app.delete('/api/me/invites/:id', h((req) => (accounts.dropInvite(user(req).id, Number(param(req, 'id'))), { ok: true })));
 
   // Leute, Profile, Freunde

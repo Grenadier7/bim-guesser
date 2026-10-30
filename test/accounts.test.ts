@@ -660,3 +660,45 @@ describe('Mehrere Accounts', () => {
     assert.equal((await b.b.call('GET', '/api/me')).body.user.invites.length, 0, 'nach 2 h weg');
   });
 });
+
+describe('Account löschen', () => {
+  test('nur mit Passwort; danach alles weg: Sitzung, Freundschaften, Einladungen, Statistik – Name wieder frei', async () => {
+    const a = await newUser('Weg');
+    const b = await newUser('Bleibt');
+    await a.b.call('POST', `/api/friends/${b.name}`, {});
+    await b.b.call('POST', `/api/friends/${a.name}`, {});
+    const lobby = (await b.b.call('POST', '/api/games', { mode: 'quiz', playerName: 'B', settings: {} })).body;
+    await b.b.call('POST', `/api/games/${lobby.state.id}/invite`, { token: lobby.token, to: 'all' });
+    assert.equal((await a.b.call('GET', '/api/me')).body.user.invites.length, 1);
+
+    assert.equal((await a.b.call('POST', '/api/me/delete', { password: 'falsch123' })).status, 401, 'falsches Passwort');
+    assert.ok((await a.b.call('GET', '/api/me')).body.user, 'noch da');
+    const del = await a.b.call('POST', '/api/me/delete', { password: 'passwort1' });
+    assert.equal(del.status, 200);
+    assert.equal((await a.b.call('GET', '/api/me')).body.user, null, 'abgemeldet');
+
+    for (const [t, col] of [['users', 'id'], ['sessions', 'user_id'], ['results', 'user_id'], ['usage', 'user_id'], ['medals', 'user_id'], ['invites', 'to_id'], ['friends', 'a'], ['friends', 'b']])
+      assert.equal((db().prepare(`SELECT COUNT(*) AS n FROM ${t} WHERE ${col} = ?`).get(a.id) as { n: number }).n, 0, `${t}.${col}`);
+    assert.equal((await b.b.call('GET', '/api/friends')).body.friends.length, 0, 'beim Freund verschwunden');
+    assert.equal((await b.b.call('GET', `/api/users/${a.name}`)).status, 404);
+    // Name ist wieder frei
+    assert.equal((await browser().call('POST', '/api/auth/register', { name: a.name, password: 'passwort2' })).status, 200);
+  });
+
+  test('online sehen nur Freunde (wie im Datenschutz-Hinweis)', async () => {
+    const a = await newUser('Sichtbar');
+    const b = await newUser('Fremd');
+    assert.equal((await b.b.call('GET', `/api/users/${a.name}`)).body.online, false, 'Fremde sehen nicht, dass A online ist');
+    assert.equal((await browser().call('GET', `/api/users/${a.name}`)).body.online, false, 'Abgemeldete auch nicht');
+    await a.b.call('POST', `/api/friends/${b.name}`, {});
+    await b.b.call('POST', `/api/friends/${a.name}`, {});
+    assert.equal((await b.b.call('GET', `/api/users/${a.name}`)).body.online, true, 'Freunde schon');
+  });
+
+  test('ohne Anmeldung nicht möglich; Datenschutz-Angaben abrufbar', async () => {
+    assert.equal((await browser().call('POST', '/api/me/delete', { password: 'x' })).status, 401);
+    const p = await browser().call('GET', '/api/privacy');
+    assert.equal(p.status, 200);
+    assert.ok('contact' in p.body && 'mail' in p.body);
+  });
+});

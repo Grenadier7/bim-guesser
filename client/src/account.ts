@@ -51,6 +51,8 @@ export const accountApi = {
   saveData: (data: Record<string, unknown>) => call<{ ok: boolean }>('PUT', '/api/me/data', { data }),
   setEmail: (email: string) => call<Me>('PUT', '/api/me/email', { email }),
   password: (old: string, password: string) => call<{ ok: boolean }>('POST', '/api/me/password', { old, password }),
+  deleteAccount: (password: string) => call<{ ok: boolean }>('POST', '/api/me/delete', { password }),
+  privacy: () => call<{ contact: string | null; mail: boolean }>('GET', '/api/privacy'),
   dropInvite: (id: number) => call<{ ok: boolean }>('DELETE', `/api/me/invites/${id}`),
   users: (q: string) => call<UserListItem[]>('GET', `/api/users?q=${encodeURIComponent(q)}`),
   profile: (name: string) => call<Profile>('GET', `/api/users/${encodeURIComponent(name)}`),
@@ -150,6 +152,16 @@ export async function signedIn(me: Me) {
 export async function signOut() {
   await flush();
   await accountApi.logout().catch(() => {});
+  account.me = null;
+  writing = true;
+  for (const k of Object.keys(SYNC)) if (k !== 'oeffi-guesser-prefs-v2') saveJson(k, null);
+  writing = false;
+  location.reload();
+}
+
+/** Account endgültig löschen; danach wie abgemeldet (Daten in diesem Browser bleiben nicht als Account-Stand stehen) */
+export async function deleteAccount(password: string) {
+  await accountApi.deleteAccount(password);
   account.me = null;
   writing = true;
   for (const k of Object.keys(SYNC)) if (k !== 'oeffi-guesser-prefs-v2') saveJson(k, null);

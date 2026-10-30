@@ -4,6 +4,7 @@
 #   NGROK_DOMAIN=…ngrok-free.dev (ngrok-Dashboard → Domains, ohne https://)
 #   SMTP_URL=smtps://benutzer:passwort@mail.example.org:465   (für „Passwort vergessen“, optional)
 #   MAIL_FROM=BimGuesser <noreply@deine-domain.at>
+#   CONTACT_EMAIL=…              (Kontakt im Datenschutz-Hinweis; optional – sonst die Adresse aus MAIL_FROM)
 
   # --- ÖFFI-GUESSER ---
   oeffi-guesser:
@@ -16,6 +17,7 @@
       - PUBLIC_URL=https://${NGROK_DOMAIN}
       - SMTP_URL=${SMTP_URL:-}
       - MAIL_FROM=${MAIL_FROM:-BimGuesser <noreply@example.org>}
+      - CONTACT_EMAIL=${CONTACT_EMAIL:-}
     volumes:
       - ./services/oeffi-guesser/state:/app/state # Auskunfts-Cache, Statistik, Accounts (accounts.db – mitsichern!)
     networks:

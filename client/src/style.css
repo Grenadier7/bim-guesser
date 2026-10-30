@@ -4846,3 +4846,48 @@ details.train-how .facts li {
 .train-stats b {
   color: var(--ink);
 }
+
+/* ---------------------------------------------------------------- Datenschutz, Account löschen */
+.home-foot {
+  text-align: center;
+  font-size: 13px;
+  margin: 18px 0 4px;
+}
+.privacy {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.privacy h4 {
+  margin: 14px 0 4px;
+}
+.privacy p,
+.privacy ul {
+  margin: 0;
+}
+.privacy ul {
+  padding-left: 18px;
+  display: grid;
+  gap: 3px;
+}
+details.danger-zone {
+  margin-top: 18px;
+  border: 1px solid color-mix(in srgb, var(--err) 35%, var(--line));
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+details.danger-zone > summary {
+  cursor: pointer;
+  color: var(--err);
+  font-weight: 600;
+  font-size: 14px;
+}
+details.danger-zone p {
+  font-size: 14px;
+}
+.btn.btn-danger {
+  background: var(--err);
+  color: #fff;
+}
+.btn.btn-danger:disabled {
+  opacity: 0.6;
+}

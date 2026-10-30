@@ -108,14 +108,18 @@ Oben rechts **👤 Anmelden** – ohne Account geht alles wie bisher. Mit Accoun
   Bim/Bus und Lieblingsstation. Gezählt wird die *bewusste Wahl*: Gab es an der Einstiegsstation keine andere Linie
   (92B ab Frachtenbahnhof Lobau), zählt die Fahrt nur 0,15 – mit Alternativen (95A statt 93A am Großen Biberhaufen)
   voll. Für die Lieblingsstation zählen nur Umstiege (Start und Ziel sind vorgegeben).
-- **👥 Leute** (alle Accounts, Suche) mit **Freundschaftsanfragen**; Profile zeigen Level und Medaillen, Statistik
-  und Lieblinge nur Freunden.
+- **👥 Leute** (alle Accounts, Suche) mit **Freundschaftsanfragen**; Profile zeigen Level und Medaillen, Statistik,
+  Lieblinge und Online-Status nur Freunden.
 - **📨 Freunde einladen** in der Lobby (einzelne oder alle): Die Eingeladenen sehen oben ein Banner mit „Beitreten“,
   sobald sie die Seite offen haben bzw. öffnen (Abfrage alle 20 s).
 - **Passwort vergessen** per E-Mail (Link 1 Stunde gültig, meldet alle Geräte ab). Braucht `SMTP_URL` (+ `MAIL_FROM`)
   und die öffentliche Adresse `PUBLIC_URL` (oder `NGROK_URL`/`NGROK_DOMAIN`); Links werden nie aus dem Host-Header
   gebaut. Lokal mit `docker compose up` fängt **Mailpit** alle Mails ab: http://localhost:8025. Ohne Mailserver zum
   Testen: `MAIL_FILE=data/mails.jsonl`.
+- **Datenschutz** (Link auf der Startseite und im Account-Fenster): was gespeichert wird, wer was sieht, Cookie,
+  Löschen. Kontaktadresse dort: `CONTACT_EMAIL`, sonst die Adresse aus `MAIL_FROM`.
+- **Account löschen** (⚙️, mit Passwort bestätigt): löscht sofort alles – Spielstand, Statistik, Medaillen,
+  Freundschaften, Einladungen, Sitzungen; der Name ist danach wieder frei.
 
 Technik: `server/accounts.ts` (SQLite über `node:sqlite` in `STATE_DIR/accounts.db` – im Container im State-Volume,
 also mitsichern), Passwörter mit Argon2id (`node:crypto`, braucht Node ≥ 24.7), Sitzungs- und Reset-Tokens nur als
