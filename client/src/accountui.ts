@@ -146,7 +146,8 @@ async function body(): Promise<string> {
         <label class="field"><span>E-Mail <small class="muted">(optional – nur für „Passwort vergessen“)</small></span><input name="email" type="email" maxlength="120" autocomplete="email"></label>
         <label class="field"><span>Passwort <small class="muted">(mind. 8 Zeichen)</small></span><input name="password" type="password" required minlength="8" autocomplete="new-password"></label>
         <button class="btn btn-primary btn-big">Account erstellen</button>
-        <p class="muted">Dein Lernstand, Tutorial und Einstellungen aus diesem Browser werden übernommen. <button type="button" class="link" data-tab="privacy">Datenschutz</button></p></form>`;
+        <p class="muted">Dein Lernstand, Tutorial und Einstellungen aus diesem Browser werden übernommen.</p></form>
+        <p class="muted"><button type="button" class="link" data-tab="privacy">Datenschutz – was gespeichert wird</button></p>`;
     if (tab === 'forgot')
       return `<form class="acct-form" data-form="forgot">
         <p>Wir schicken dir einen Link zum Zurücksetzen – an die E-Mail-Adresse deines Accounts.</p>
