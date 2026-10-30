@@ -6,6 +6,8 @@ import { accountButton, announceMedals, openAccount, renderInvites, takeResetLin
 import { isMine, setMine } from './learn/model.ts';
 import { GameMap } from './map.ts';
 import { NetIndex } from './net.ts';
+import { resetNetLayer } from './netmap.ts';
+import { applyGameConfig } from '../../shared/config.ts';
 import { finalScreen } from './screens/final.ts';
 import { homeScreen } from './screens/home.ts';
 import { hostActions, hostBar } from './screens/host.ts';
@@ -32,6 +34,57 @@ document.querySelector('.topbar')!.append(acctSlot);
 const inviteHost = document.createElement('div');
 inviteHost.className = 'invite-host';
 document.body.append(inviteHost);
+// Hinweis der Spielleitung für alle (Admin-Seite) – wegklickbar, bis sich der Text ändert
+const notice = document.createElement('div');
+notice.className = 'notice-bar';
+notice.hidden = true;
+document.body.prepend(notice);
+
+function renderNotice() {
+  const text = app.config?.announcement.text ?? '';
+  let closed = '';
+  try {
+    closed = localStorage.getItem('oeffi-notice-closed') ?? '';
+  } catch {
+    /* ohne Speicher immer zeigen */
+  }
+  notice.hidden = !text || closed === text;
+  if (notice.hidden) return;
+  notice.innerHTML = `<span>📢 ${esc(text)}</span><button class="icon-btn" aria-label="Hinweis schließen">✕</button>`;
+  notice.querySelector('button')!.addEventListener('click', () => {
+    try {
+      localStorage.setItem('oeffi-notice-closed', text);
+    } catch {
+      /* egal */
+    }
+    notice.hidden = true;
+  });
+}
+
+/** Lobby mit eigenem Netzplan: dessen Netz laden (Karte, Routen-Baukasten), sonst das Standard-Netz */
+let netLoading: string | null = null;
+function ensurePlanNet() {
+  const s = app.state;
+  const want = app.session && s?.mode === 'route' && s.settings.network.startsWith('plan:') ? s.settings.network.slice(5) : 'regular';
+  if (want === app.netPlan || want === netLoading) return;
+  netLoading = want;
+  api
+    .network(want)
+    .then((data) => {
+      if (netLoading !== want) return;
+      app.net = new NetIndex(data);
+      app.netPlan = want;
+      resetNetLayer();
+      // Bildschirm mit dem neuen Netz neu aufbauen
+      screen?.destroy?.();
+      screenKey = '';
+      render();
+    })
+    .catch((e) => toast((e as Error).message))
+    .finally(() => {
+      if (netLoading === want) netLoading = null;
+    });
+}
 
 function renderAccount() {
   acctSlot.innerHTML = accountButton();
@@ -106,6 +159,7 @@ function mount(key: string): Screen {
 let chatSync = () => {};
 
 function render() {
+  ensurePlanNet();
   chatSync();
   renderInvites(inviteHost);
   const key = keyFor();
@@ -187,7 +241,12 @@ async function init() {
   takeResetLink();
   panel.innerHTML = loadingHtml('Wird geladen …');
   try {
-    app.net = new NetIndex(await api.network());
+    // erst die Spiel-Konfiguration (Uhrzeiten, Wertungen, Standard-Einstellungen …), dann das Netz
+    const [config, network] = await Promise.all([api.config(), api.network()]);
+    app.config = config;
+    applyGameConfig(config);
+    renderNotice();
+    app.net = new NetIndex(network);
   } catch (e) {
     panel.innerHTML = `<div class="loading"><p class="err">Server nicht erreichbar: ${esc((e as Error).message)}</p></div>`;
     return;

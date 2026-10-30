@@ -74,7 +74,10 @@ function stationsText(kinds: StationKind[]): string {
 }
 
 /** Erklärung zu „Was zählt?“ */
-const scoringInfo = () => SCORING_MODES.map((m) => `<b>${m.icon} ${m.label}:</b> ${esc(m.hint)}`).join('<br><br>');
+const scoringInfo = () =>
+  SCORING_MODES.filter((m) => m.enabled !== false)
+    .map((m) => `<b>${m.icon} ${esc(m.label)}:</b> ${esc(m.hint)}`)
+    .join('<br><br>');
 
 type AdvTab = 'diff' | 'rules' | 'world';
 const ADV_TABS: { id: AdvTab; label: string }[] = [
@@ -84,7 +87,7 @@ const ADV_TABS: { id: AdvTab; label: string }[] = [
 ];
 
 function regularHint(s: GameSettings): string {
-  if (s.network === 'current') return 'Nächster echter Tag – mit allen aktuellen Sperren und Ersatzverkehren.';
+  if (s.network !== 'regular') return esc(NET_MODES.find((n) => n.id === s.network)?.hint ?? '');
   const day = app.net.data.regularDays[SLOT_DAYTYPE[s.slot]];
   const d = new Date(`${day.date}T00:00:00Z`);
   const txt = d.toLocaleDateString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
@@ -172,8 +175,8 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         return `
           <div class="setting"><span>Uhrzeit</span>${seg('slot', TIME_SLOTS.map((t) => ({ value: t.id, label: t.short, title: t.label })), st.slot, ro)}</div>
           <div class="setting"><span>Netz ${infoTip(
-            `<b>Regulär:</b> ein Referenztag ohne Baustellen. ${regularHint({ ...st, network: 'regular' })}<br><b>Aktuell:</b> der nächste echte Tag – mit allen aktuellen Sperren und Ersatzverkehren.`,
-          )}</span>${seg('network', NET_MODES.map((n) => ({ value: n.id, label: n.label })), st.network, ro)}</div>
+            NET_MODES.map((n) => `<b>${esc(n.label)}:</b> ${n.id === 'regular' ? `${esc(n.hint)} ${regularHint({ ...st, network: 'regular' })}` : esc(n.hint)}`).join('<br>'),
+          )}</span>${seg('network', NET_MODES.map((n) => ({ value: n.id, label: esc(n.label), title: n.hint })), st.network, ro)}</div>
           <div class="toggles">
             ${toggleInfo(
               'focusOn',
@@ -201,7 +204,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         return `
           <div class="setting"><span>${icon('scale', 15)} Was zählt? ${infoTip(scoringInfo())}</span>${seg(
             'scoring',
-            SCORING_MODES.map((m) => ({ value: m.id, label: `${m.icon} ${m.label}`, title: m.hint })),
+            SCORING_MODES.filter((m) => m.enabled !== false).map((m) => ({ value: m.id, label: `${m.icon} ${esc(m.label)}`, title: m.hint })),
             mode ?? '',
             ro,
           )}

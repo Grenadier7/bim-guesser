@@ -391,6 +391,12 @@ export function smoothRoute<T extends { legs: RouteLeg[] }>(r: T): T {
   return { ...r, legs: r.legs.map((l) => (l.mode === 'W' ? l : { ...l, path: smoothPath(l.line, l.fromStation, l.toStation, l.path) })) };
 }
 
+/** anderes Netz (Netzplan der Lobby): Kartenebene beim nächsten Zugriff neu aufbauen */
+export function resetNetLayer() {
+  shared?.clear();
+  shared = null;
+}
+
 export function netLayer(): NetMapLayer {
   if (!shared) {
     const layer = new NetMapLayer(app.map.leaflet, new NetGraph(app.net));

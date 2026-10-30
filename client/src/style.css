@@ -5203,3 +5203,469 @@ details.danger-zone p {
 .adm-table td.adm-row {
   justify-content: flex-end;
 }
+
+/* viele Optionen (z.B. Netzpläne): auf mehrere Zeilen */
+.seg-wide:has(> button:nth-child(4)) {
+  flex-wrap: wrap;
+}
+.seg-wide:has(> button:nth-child(4)) > button {
+  flex: 1 1 calc(33% - 4px);
+}
+
+/* Hinweis der Spielleitung für alle */
+.notice-bar {
+  position: fixed;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  max-width: min(720px, calc(100vw - 24px));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff8e1;
+  border: 1px solid #f0c040;
+  color: #5b4100;
+  border-radius: 10px;
+  padding: 8px 10px 8px 14px;
+  box-shadow: var(--shadow);
+  font-size: 14px;
+}
+.notice-bar[hidden] {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- Admin: Rahmen, Entsperren */
+.adm-head {
+  display: flex;
+  justify-content: space-between;
+}
+.adm-unlock {
+  max-width: 420px;
+  display: grid;
+  gap: 10px;
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 20px auto;
+}
+label.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  margin: 4px 12px 4px 0;
+  cursor: pointer;
+}
+.adm-badge-mod {
+  background: #b45309;
+}
+
+/* ---------------------------------------------------------------- Admin: Grafiken */
+.adm-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+  margin: 4px 0 8px;
+}
+.adm-range button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 99px;
+  padding: 3px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.adm-range button.on {
+  border-color: var(--ink);
+  font-weight: 600;
+}
+.adm-charts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+figure.chart {
+  margin: 0;
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 10px 12px 6px;
+}
+figure.chart figcaption {
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+figure.chart figcaption b {
+  color: var(--ink);
+  font-size: 18px;
+  margin-left: 4px;
+}
+.ch-wrap {
+  position: relative;
+}
+.ch-wrap svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.ch-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.ch-axis {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.ch-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.ch-cross {
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.ch-dot {
+  stroke: var(--panel);
+  stroke-width: 2;
+}
+.ch-hit {
+  fill: transparent;
+}
+.ch-bar:hover rect:not(.ch-hit) {
+  opacity: 0.85;
+}
+.ch-tip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--ink);
+  color: #fff;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  z-index: 2;
+}
+.ch-sw,
+.ch-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+.ch-legend {
+  display: flex;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.ch-table summary {
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ch-table table {
+  font-size: 12px;
+  border-collapse: collapse;
+  margin: 4px 0;
+}
+.ch-table td,
+.ch-table th {
+  padding: 1px 10px 1px 0;
+  text-align: left;
+}
+
+/* ---------------------------------------------------------------- Admin: Auswahl (Linien, Stationen) */
+.picker {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.picker .picked {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+.picker .picked .chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.picker-input {
+  font-size: 15px !important;
+  padding: 7px 10px !important;
+}
+.picker-results {
+  display: grid;
+  gap: 4px;
+}
+.picker-results:empty {
+  display: none;
+}
+.picker-results .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ---------------------------------------------------------------- Admin: Netzpläne */
+.adm-plans {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.adm-plan {
+  display: grid;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+}
+.adm-plan small {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 12px;
+}
+.adm-plan.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.adm-plan-new {
+  border-style: dashed;
+  color: var(--muted);
+}
+.adm-box {
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 8px 0;
+  display: grid;
+  gap: 6px;
+}
+.adm-kinds,
+.adm-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.adm-kinds button,
+.adm-choice button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 99px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.adm-kinds button.on,
+.adm-choice button.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: #fff;
+}
+.adm-preview {
+  background: #eef6ee;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+}
+.adm-grid2,
+.adm-grid3 {
+  display: grid;
+  gap: 8px 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.adm-grid3 {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+.adm-grid2 input,
+.adm-grid2 select,
+.adm-grid3 input,
+.adm-grid3 select,
+.adm-box textarea,
+.adm-sec-body input,
+.adm-sec-body select,
+.adm-sec-body textarea {
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  min-width: 0;
+  max-width: 100%;
+}
+.adm-sec-body textarea,
+.adm-box textarea {
+  width: 100%;
+  resize: vertical;
+}
+.adm-inline {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.adm-inline input {
+  width: 80px;
+}
+.adm-day {
+  display: grid;
+  gap: 4px;
+  margin: 6px 0;
+}
+.adm-band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+.adm-band input {
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.adm-band input[type='number'],
+.adm-hhmm {
+  width: 64px;
+}
+.adm-map {
+  height: 300px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.adm-stop {
+  flex-wrap: wrap;
+}
+.adm-stop .picker {
+  flex: 1 1 260px;
+}
+.adm-tt {
+  max-width: 420px;
+}
+.adm-ttv {
+  display: grid;
+  gap: 10px;
+  margin: 8px 0 14px;
+}
+.adm-ttp {
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+.adm-ttp h4 {
+  margin: 0 0 6px;
+}
+.adm-ttdays {
+  display: grid;
+  gap: 2px;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.adm-ttdays span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.adm-ttdays b {
+  width: 110px;
+}
+.adm-strip {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 18px;
+}
+.adm-strip i {
+  width: 5px;
+  min-height: 1px;
+  background: #2a78d6;
+  border-radius: 1px 1px 0 0;
+}
+.adm-ttmin {
+  width: 60px;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+/* ---------------------------------------------------------------- Admin: Einstellungen */
+details.adm-sec {
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 8px 14px;
+  margin: 6px 0;
+}
+details.adm-sec > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 15px;
+}
+.adm-sec-body {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+.adm-sec-body .adm-box {
+  background: var(--bg);
+}
+.adm-sec-body .adm-table td {
+  vertical-align: middle;
+}
+.adm-kindbox {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+}
+.adm-kindbox label.check {
+  font-size: 12px;
+  margin: 2px 6px 2px 0;
+}
+.adm-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 24px;
+}
+.adm-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  padding: 2px 4px 2px 10px;
+  font-size: 13px;
+}
+.adm-tag button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+}
+@media (max-width: 600px) {
+  .adm-grid2 {
+    grid-template-columns: 1fr;
+  }
+  .adm-charts {
+    grid-template-columns: 1fr;
+  }
+}
