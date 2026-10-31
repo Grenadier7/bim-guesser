@@ -111,19 +111,29 @@ function placeTip(btn: HTMLElement) {
   const left = Math.max(8, Math.min(r.left - 8, window.innerWidth - w - 8));
   pop.style.left = `${left}px`;
   pop.style.top = `${r.bottom + 6}px`;
+  pop.classList.add('placed');
   // passt es unten nicht mehr hin → über dem ⓘ anzeigen
   requestAnimationFrame(() => {
     const h = pop.offsetHeight;
     if (r.bottom + 6 + h > window.innerHeight - 8) pop.style.top = `${Math.max(8, r.top - h - 6)}px`;
   });
 }
+/** Beim Scrollen stimmt die fixe Position nicht mehr → zurück auf „direkt unter dem ⓘ“ */
+function unplaceTips() {
+  for (const pop of document.querySelectorAll<HTMLElement>('.tip-pop.placed')) {
+    pop.classList.remove('placed');
+    pop.style.left = pop.style.top = pop.style.width = '';
+  }
+}
 // (ohne Browser – z.B. in Tests – gibt es kein document)
-if (typeof document !== 'undefined')
+if (typeof document !== 'undefined') {
   for (const ev of ['mouseover', 'focusin', 'click'] as const)
     document.addEventListener(ev, (e) => {
       const btn = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('.info-tip');
       if (btn) placeTip(btn);
     });
+  document.addEventListener('scroll', unplaceTips, { capture: true, passive: true });
+}
 
 /** Listeneinträge per Klick auf-/zuklappen */
 export function makeExpandable(list: HTMLElement) {

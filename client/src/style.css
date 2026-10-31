@@ -3152,11 +3152,9 @@ details.fine > summary {
   color: #fff;
 }
 
-/* ⓘ-Fenster: fix positioniert (per JS ins Bild geklemmt) */
-.tip-pop {
+/* ⓘ-Fenster: fix positioniert, sobald per JS ins Bild geklemmt – sonst direkt unter dem ⓘ */
+.tip-pop.placed {
   position: fixed;
-  top: 0;
-  left: 0;
   right: auto;
 }
 
@@ -5998,4 +5996,124 @@ details.adm-deps > summary {
   border-color: var(--err);
   color: var(--err);
   text-decoration: line-through;
+}
+
+/* ---------------------------------------------------------------- Admin: Fahrplan – Hilfe und Änderungen direkt im Fahrplan */
+details.adm-help {
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 8px 14px;
+  margin-bottom: 10px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+details.adm-help > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+details.adm-help ol {
+  margin: 8px 0 4px;
+  padding-left: 20px;
+}
+details.adm-help li {
+  margin: 3px 0;
+}
+details.adm-help ul {
+  margin: 2px 0;
+  padding-left: 18px;
+}
+.adm-tag {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.adm-tag.new {
+  background: #e3f4e8;
+  color: #0f6b3a;
+}
+.adm-tag.gone {
+  background: #fde8e8;
+  color: var(--err);
+}
+.adm-tag.chg {
+  background: #fdf0e1;
+  color: var(--warn);
+}
+.adm-ttline.gone > small:first-of-type,
+.adm-ttline.gone .chip {
+  opacity: 0.55;
+}
+.adm-ttline.gone .chip {
+  text-decoration: line-through;
+}
+.adm-stops tr.adm-st-gone td {
+  color: var(--muted);
+  background: #fdf4f4;
+}
+.adm-stops tr.adm-st-gone s {
+  color: var(--err);
+}
+.adm-stops tr.adm-st-new td {
+  background: #eef9f1;
+}
+.adm-ttmin.chg {
+  border-color: var(--warn);
+  background: #fdf0e1;
+  font-weight: 700;
+}
+.adm-was {
+  color: var(--warn);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.adm-undo {
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.adm-dep.pend {
+  outline: 1.5px dashed currentColor;
+  outline-offset: -1.5px;
+}
+details.adm-linechg {
+  background: #fdf8ef;
+  border: 1px solid #f3dfbf;
+  border-radius: 10px;
+  padding: 6px 12px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+details.adm-linechg > summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+details.adm-linechg ul {
+  list-style: none;
+  margin: 6px 0 2px;
+  padding: 0;
+}
+details.adm-linechg li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+  border-top: 1px solid #f3e6cf;
+}
+.adm-ttp-new {
+  border-left: 4px solid var(--good);
+}
+.adm-ttp-gone ul {
+  margin: 4px 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.adm-gonebox {
+  background: #fdf4f4;
+  border-radius: 10px;
+  padding: 10px 14px;
 }
