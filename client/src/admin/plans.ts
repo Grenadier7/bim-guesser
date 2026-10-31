@@ -1,0 +1,1366 @@
+// Admin-Seite, Reiter „Netzpläne“: Standard-Netzplan und weitere (in der Lobby wählbar), Stellschrauben der
+// Routenberechnung, Änderungen an Netz und Fahrplan (jede Änderung wird sofort gespeichert und angewendet – so kennen
+// die Auswahlfelder gleich neue Stationen und Linien), Fahrplan je Linie mit direkt änderbaren Fahrzeiten,
+// Probe-Abfrage mit allen Details, Versionen.
+import L from 'leaflet';
+import type { GameConfig } from '../../../shared/config.ts';
+import type { CurrentLine, CurrentNetInfo, DayType, LineEdit, Mode, NetworkPlan, RouteOption, RoutingAdminState, RoutingParams, ServiceBand, SlotId, TimetableLineInfo, TimetableLineView, TrafficInfo } from '../../../shared/types.ts';
+import { lineColor, MODE_LABEL, NET_MODES, TIME_SLOTS } from '../../../shared/rules.ts';
+import { NetGraph } from '../netgraph.ts';
+import { NetMapLayer, netView } from '../netmap.ts';
+import type { NetIndex } from '../net.ts';
+import { chain, esc, lineChip, makeExpandable, routeDetails, toast } from '../ui.ts';
+import { infoTip } from '../widgets.ts';
+import { adm, forgetPlanNet, LockedError, planNet } from './api.ts';
+import { miniMap } from './minimap.ts';
+import { mountPickers, pickerSlot } from './picker.ts';
+
+const PARAM_INFO: Record<keyof RoutingParams, { label: string; unit: string; hint: string; step?: number }> = {
+  changeMin: { label: 'Umsteigezeit', unit: 'min', hint: 'Umsteigen in ein anderes Fahrzeug an derselben Haltestelle.' },
+  transferWalkM: { label: 'Umsteige-Fußweg höchstens', unit: 'm', hint: 'Zu Fuß zu einer anderen Haltestelle umsteigen – bis zu dieser Entfernung (Luftlinie).' },
+  accessWalkM: { label: 'Fußweg von/zu Adressen höchstens', unit: 'm', hint: 'Bei Adressen als Start/Ziel: so weit wird höchstens zur ersten/von der letzten Haltestelle gegangen.' },
+  walkOnlyM: { label: 'Ganz zu Fuß bis', unit: 'm', hint: 'Bis zu dieser Entfernung wird auch „nur gehen“ als Verbindung angeboten.' },
+  maxRides: { label: 'Fahrten je Verbindung höchstens', unit: '', hint: 'Mehr Fahrten (= mehr Umstiege) werden nicht gesucht.' },
+  firstWaitFactor: { label: 'Anteil erste Wartezeit („Realistisch“)', unit: '×', hint: 'Am Start zählt nur dieser Anteil der Ø-Wartezeit.', step: 0.05 },
+};
+
+type Kind = LineEdit['kind'];
+const KINDS: [Kind, string][] = [
+  ['headway', 'Takt ändern'],
+  ['addVariant', 'Zusätzliche Fahrten'],
+  ['extend', 'Verlängern'],
+  ['cut', 'Kürzen'],
+  ['time', 'Fahrzeit'],
+  ['addLine', 'Neue Linie'],
+  ['removeLine', 'Linie entfernen'],
+  ['addStation', 'Neue Station'],
+  ['renameStation', 'Umbenennen'],
+  ['moveStation', 'Verschieben'],
+  ['removeStation', 'Station auflassen'],
+];
+const DAYS: [DayType, string][] = [
+  ['wd', 'Mo–Fr'],
+  ['sa', 'Samstag'],
+  ['su', 'Sonn-/Feiertag'],
+];
+const date = (t: number) => new Date(t).toLocaleString('de-AT', { dateStyle: 'short', timeStyle: 'short' });
+const slug = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/ß/g, 'ss')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 24) || 'plan';
+
+const toMin = (s: string) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+  return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+};
+
+/** Takt in einem Zeitraum aus den Abfahrten: meistens (Median), kürzester/längster Abstand (ohne Ausreißer) */
+export function taktIn(deps: number[], from: string, to: string): { n: number; main: number | null; lo: number | null; hi: number | null } {
+  const a = toMin(from);
+  const b = toMin(to);
+  const xs = deps.filter((t) => t >= a && t < b).sort((x, y) => x - y);
+  if (xs.length < 2) return { n: xs.length, main: null, lo: null, hi: null };
+  const gaps = xs
+    .slice(1)
+    .map((t, i) => t - xs[i])
+    .sort((x, y) => x - y);
+  const q = (f: number) => gaps[Math.min(gaps.length - 1, Math.floor(f * gaps.length))];
+  return { n: xs.length, main: q(0.5), lo: q(0.1), hi: q(0.9) };
+}
+
+/** „alle 5 min (24 Fahrten)“ bzw. „alle 4–8 min, meist 5“ */
+export function taktText(t: ReturnType<typeof taktIn>): string {
+  if (t.main == null) return t.n ? '1 Fahrt' : 'keine Fahrten';
+  const range = t.lo != null && t.hi != null && t.hi - t.lo > 1 ? `${t.lo}–${t.hi} min, meist ${t.main}` : `${t.main} min`;
+  return `alle ${range} (${t.n} Fahrten)`;
+}
+
+export interface Tab {
+  html(): Promise<string>;
+  bind(root: HTMLElement): void;
+}
+
+export function plansTab(rerender: () => void): Tab {
+  let state: RoutingAdminState | null = null;
+  let planId = 'regular';
+  let net: NetIndex | null = null;
+  /** Stellschrauben (erst „Speichern“ wendet an) */
+  let params: Partial<RoutingParams> = {};
+  let paramsFor = '';
+  const form = {
+    kind: 'extend' as Kind,
+    line: '',
+    at: '',
+    end: '' as '' | 'start' | 'end',
+    beyond: '',
+    pair: '',
+    min: 3,
+    current: null as number | null,
+    station: '',
+    name: '',
+    district: 0,
+    point: null as { lat: number; lon: number } | null,
+    mode: 'B' as Mode,
+    color: '#0a295d',
+    stops: [{ station: '', min: 0 }] as { station: string; min: number }[],
+    pattern: '',
+    day: 'wd' as DayType,
+    from: '06:00',
+    to: '20:00',
+    every: 10,
+    service: { wd: [{ from: '05:00', to: '24:00', every: 10 }], sa: [{ from: '05:30', to: '24:00', every: 15 }], su: [{ from: '06:00', to: '24:00', every: 15 }] } as Record<DayType, ServiceBand[]>,
+  };
+  /** Bereich des Reiters */
+  let section: 'fahrplan' | 'aenderungen' | 'karte' | 'probe' | 'plan' = 'fahrplan';
+  /** Fahrplan „wie gebaut“ (ohne Änderungen) ansehen */
+  let asBuilt = false;
+  let lines: TimetableLineInfo[] | null = null;
+  let linesFor = '';
+  let lineFilter = '';
+  let ttLine = '';
+  let ttDay: DayType = 'wd';
+  /** Haltefolgen der gewählten Linie (Fahrplan-Ansicht bzw. „Takt ändern“) */
+  let lineView: TimetableLineView | null = null;
+  let lineViewFor = '';
+  const lineInfo = (id: string) => lines?.find((l) => l.line === id);
+  /** „Halt einfügen“ offen: Haltefolge und Abschnitt */
+  let insertAt: { a: string; b: string; station: string; minA: number; minB: number } | null = null;
+  /** Abfahrten bearbeiten: je Haltefolge (key) gestrichene und neue Zeiten, bis „Speichern“ */
+  const depDraft = new Map<string, { remove: Set<number>; add: number[] }>();
+  /** „Takt“ je Haltefolge */
+  const hwDraft = new Map<string, { from: string; to: string; every: number }>();
+  const viewPlan = () => (asBuilt ? '__base' : planId);
+  /** dieselbe Linie „wie gebaut“ – zum Vergleich, damit Änderungen direkt im Fahrplan sichtbar sind */
+  let baseView: TimetableLineView | null = null;
+  let baseLines: TimetableLineInfo[] | null = null;
+  const endNames = new Map<string, string>();
+  const loadLineView = async (line: string) => {
+    // Linie gibt es (im Plan oder wie gebaut) nicht → null statt Fehler (entfernte bzw. neue Linie)
+    const get = (plan: string) =>
+      adm<TimetableLineView>('GET', `/api/admin/routing/timetable?plan=${encodeURIComponent(plan)}&line=${encodeURIComponent(line)}`).catch((e) => {
+        if (e instanceof LockedError) throw e;
+        return null;
+      });
+    [lineView, baseView] = line ? await Promise.all([get(viewPlan()), asBuilt ? null : get('__base')]) : [null, null];
+    lineViewFor = `${viewPlan()}:${line}`;
+    // Enden außerhalb Wiens stehen im Schlüssel als Halt-ID – Namen für die Änderungsliste merken
+    for (const p of [...(lineView?.patterns ?? []), ...(baseView?.patterns ?? [])]) {
+      const [a, b] = p.key.split('>');
+      endNames.set(a, p.stops[0].name);
+      endNames.set(b, p.stops[p.stops.length - 1].name);
+    }
+  };
+  const probe = { from: '', to: '', slot: 'wd12' as SlotId, routes: null as RouteOption[] | null, busy: false };
+  let newPlan: { label: string; copy: boolean } | null = null;
+  /** „Aktuell“ (kein bearbeitbarer Plan): echte Tage, Unterschiede zum regulären Netz, Name/Erklärung/an-aus */
+  const CURRENT = '__current';
+  let cur: CurrentNetInfo | null = null;
+  let curCfg: GameConfig['netModes'] | null = null;
+  let versions: { id: string; at: number; by: string; note: string }[] | null = null;
+
+  const plan = (): NetworkPlan => state!.plans.find((p) => p.id === planId) ?? state!.plans[0];
+  const stName = (id: string) => net?.stations.get(id)?.name ?? endNames.get(id) ?? (/^(at:|\d{6,})/.test(id) ? 'außerhalb Wiens' : id);
+  const line = () => (form.line ? net?.lines.get(form.line) : undefined);
+  /** längste Haltefolge der Linie (für Verlängern/Kürzen) */
+  const mainPattern = (): string[] => {
+    const l = line();
+    if (!l || !net) return [];
+    return [...net.patterns(l)].sort((a, b) => b.length - a.length)[0] ?? [];
+  };
+
+  function describe(e: LineEdit): string {
+    switch (e.kind) {
+      case 'extend':
+        return `<b>${esc(e.line)}</b> fährt über ${esc(stName(e.at))} hinaus: ${e.stops.map((s) => `${esc(stName(s.station))} <small>+${s.min} min</small>`).join(' → ')}`;
+      case 'cut':
+        return `<b>${esc(e.line)}</b> endet bei ${esc(stName(e.at))} <small>– Richtung ${esc(stName(e.beyond))} fällt weg</small>`;
+      case 'time':
+        return `<b>${esc(e.line)}</b> ${esc(stName(e.from))} ↔ ${esc(stName(e.to))}: <b>${e.min} min</b>`;
+      case 'addStation':
+        return `Neue Station <b>${esc(e.name)}</b> <small>(${e.lat.toFixed(5)}, ${e.lon.toFixed(5)})</small>`;
+      case 'renameStation':
+        return `Station <b>${esc(e.station)}</b> heißt <b>${esc(e.name)}</b>`;
+      case 'moveStation':
+        return `<b>${esc(stName(e.station))}</b> verschoben <small>(${e.lat.toFixed(5)}, ${e.lon.toFixed(5)})</small>`;
+      case 'removeStation':
+        return `<b>${esc(stName(e.station))}</b> aufgelassen <small>– Linien fahren ohne Halt durch</small>`;
+      case 'addLine':
+        return `Neue Linie ${lineChip(e.mode, e.line, e.color)} ${e.stops.map((s) => esc(stName(s.station))).join(' – ')}`;
+      case 'removeLine':
+        return `Linie <b>${esc(e.line)}</b> entfernt`;
+      case 'headway': {
+        const [a, b] = (e.pattern ?? '').split('>');
+        return `<b>${esc(e.line)}</b> ${DAYS.find((d) => d[0] === e.day)![1]} ${e.from}–${e.to}: <b>alle ${e.every} min</b>${e.pattern ? ` <small>(${esc(stName(a))} ↔ ${esc(stName(b))})</small>` : ''}`;
+      }
+      case 'addVariant':
+        return `<b>${esc(e.line)}</b> zusätzlich ${e.stops.map((x) => esc(stName(x.station))).join(' – ')} <small>(${serviceText(e.service)})</small>`;
+      case 'insertStop':
+        return `<b>${esc(e.line)}</b> hält zusätzlich in <b>${esc(stName(e.station))}</b> <small>(zwischen ${esc(stName(e.a))} und ${esc(stName(e.b))}, +${e.minA}/+${e.minB} min)</small>`;
+      case 'skipStop':
+        return `<b>${esc(e.line)}</b> hält nicht mehr in <b>${esc(stName(e.station))}</b>`;
+      case 'departures': {
+        const [a, b] = e.pattern.split('>');
+        return `<b>${esc(e.line)}</b> ${esc(stName(a))} → ${esc(stName(b))}, ${DAYS.find((d) => d[0] === e.day)![1]}: ${e.add.length ? `+${e.add.join(', ')}` : ''}${e.add.length && e.remove.length ? ' · ' : ''}${e.remove.length ? `<s>${e.remove.join(', ')}</s>` : ''}`;
+      }
+    }
+  }
+
+  function serviceText(sv: Record<DayType, ServiceBand[]>): string {
+    return DAYS.filter(([d]) => sv[d]?.length)
+      .map(([d, l]) => `${l} ${sv[d].map((b) => `${b.from}–${b.to} alle ${b.every}`).join(', ')}`)
+      .join(' · ');
+  }
+
+  // -------------------------------------------------------------- speichern
+
+  async function savePlan(p: Partial<NetworkPlan> & { id: string }, ok: string) {
+    const cur = state!.plans.find((x) => x.id === p.id);
+    const body = { label: cur?.label, hint: cur?.hint, inMenu: cur?.inMenu, params: cur?.params ?? {}, edits: cur?.edits ?? [], ...p };
+    state = await adm<RoutingAdminState>('PUT', `/api/admin/routing/plans/${encodeURIComponent(p.id)}`, body);
+    forgetPlanNet(p.id);
+    net = null;
+    versions = null;
+    if (ok) toast(ok, 'info');
+  }
+
+  /** Änderung hinzufügen = speichern und anwenden */
+  async function addEdit(e: LineEdit) {
+    await savePlan({ id: planId, edits: [...plan().edits, e] }, 'Gespeichert und angewendet');
+  }
+
+  // -------------------------------------------------------------- Ansicht
+
+  async function html(): Promise<string> {
+    state ??= await adm<RoutingAdminState>('GET', '/api/admin/routing');
+    const isCur = planId === CURRENT;
+    if (!isCur && !state.plans.some((p) => p.id === planId)) planId = 'regular';
+    net ??= await planNet(isCur ? 'regular' : planId);
+    // Kacheln: Standard, dann „Aktuell“ (live, hervorgehoben), dann die eigenen Netzpläne
+    const planTile = (x: NetworkPlan) =>
+      `<button class="adm-plan ${x.id === planId ? 'on' : ''}" data-plan="${esc(x.id)}">${esc(x.id === 'regular' ? 'Standard' : x.label)}${x.inMenu ? ' <small>im Menü</small>' : ''}<small>${x.edits.length} Änderung${x.edits.length === 1 ? '' : 'en'}</small></button>`;
+    const liveOn = NET_MODES.some((m) => m.id === 'current');
+    const liveTile = `<button class="adm-plan adm-plan-live ${isCur ? 'on' : ''}" data-plan="${CURRENT}"><span class="adm-live-badge"><i></i>LIVE</span> ${esc(NET_MODES.find((m) => m.id === 'current')?.label ?? 'Aktuell')}<small>${liveOn ? 'echte Tage · im Menü' : 'ausgeschaltet'}</small></button>`;
+    const tiles = `<div class="adm-plans">${state.plans.map((x) => (x.id === 'regular' ? planTile(x) + liveTile : planTile(x))).join('')}
+        <button class="adm-plan adm-plan-new" id="pl-new">+ Neuer Netzplan</button></div>
+      ${newPlan ? newPlanHtml() : ''}`;
+    if (isCur) {
+      cur ??= await adm<CurrentNetInfo>('GET', '/api/admin/routing/current');
+      curCfg ??= (await adm<{ config: GameConfig }>('GET', '/api/admin/config')).config.netModes;
+      return `${tiles}${currentHtml(cur, curCfg)}`;
+    }
+    const p = plan();
+    if (paramsFor !== p.id) ((params = { ...p.params }), (paramsFor = p.id));
+    const report = state.report[planId] ?? [];
+    if (section === 'fahrplan' && linesFor !== viewPlan()) {
+      lines = await adm<TimetableLineInfo[]>('GET', `/api/admin/routing/lines?plan=${encodeURIComponent(viewPlan())}`);
+      linesFor = viewPlan();
+    }
+    if (section === 'fahrplan' && !asBuilt) baseLines ??= await adm<TimetableLineInfo[]>('GET', '/api/admin/routing/lines?plan=__base');
+    if (ttLine && lineViewFor !== `${viewPlan()}:${ttLine}`) await loadLineView(ttLine);
+    const sections: [typeof section, string][] = [
+      ['fahrplan', '🗓 Fahrplan'],
+      ['aenderungen', `✏️ Änderungen (${p.edits.length})`],
+      ['karte', '🗺 Netzkarte'],
+      ['probe', '🔎 Probe-Abfrage'],
+      ['plan', '⚙️ Plan & Routenberechnung'],
+    ];
+    let content = '';
+    if (section === 'fahrplan') content = timetableSection();
+    else if (section === 'aenderungen')
+      content = `${p.edits.length ? `<ol class="adm-list adm-edits">${p.edits.map((e, i) => `<li><span>${describe(e)}</span><button class="icon-btn" data-rmedit="${i}" aria-label="Änderung entfernen">✕</button></li>`).join('')}</ol>` : '<p class="muted">Keine – Netz und Fahrplan wie gebaut.</p>'}
+        ${report.length ? `<ul class="adm-report">${report.map((r) => `<li class="${r.startsWith('✔') ? 'good' : 'err'}">${esc(r)}</li>`).join('')}</ul>` : ''}
+        <div class="adm-new"><h4>Änderung hinzufügen</h4><p class="muted">Halte, Fahrzeiten, Abfahrten und Takt änderst du am einfachsten direkt im Reiter „Fahrplan“ – dort siehst du auch gleich, was sich ändert.</p>${formHtml()}</div>
+        ${versionsHtml()}`;
+    else if (section === 'karte')
+      content = `<p class="muted">So sieht das Netz dieses Plans aus – genau diese Karte bekommen alle, die mit ${p.id === 'regular' ? 'dem Standard-Netz' : `„${esc(p.label)}“`} spielen. Neue Linien werden als Verbindung zwischen ihren Halten gezeichnet.</p>
+        <div class="adm-netmap" id="pl-netmap"></div>`;
+    else if (section === 'probe')
+      content = `<p class="muted">Beste Verbindungen wie im Spiel („Realistisch“) mit diesem Netzplan – zum Ausprobieren von Änderungen.</p>
+        <div class="adm-probe">${pickerSlot('station', 'from', probe.from, 'Start')}${pickerSlot('station', 'to', probe.to, 'Ziel')}
+        <select id="pr-slot">${TIME_SLOTS.map((t) => `<option value="${t.id}" ${t.id === probe.slot ? 'selected' : ''}>${esc(t.short)}</option>`).join('')}</select>
+        <button class="btn btn-ghost" id="pr-go" ${probe.busy ? 'disabled' : ''}>${probe.busy ? 'Rechnet …' : 'Berechnen'}</button></div>
+        ${probe.routes ? probeHtml(probe.routes) : ''}`;
+    else
+      content = `${p.id === 'regular' ? '<p class="muted">Der Standard-Netzplan gilt für „Regulär“ – und damit für Quiz, Training, Lernen und alle Karten.</p>' : metaHtml(p)}
+        <h3>Routenberechnung</h3>${paramsHtml(p)}`;
+    return `${tiles}
+      <div class="adm-subnav">${sections.map(([k, l]) => `<button data-section="${k}" class="${section === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      ${content}`;
+  }
+
+  /** „Aktuell“: kein Plan zum Bearbeiten, sondern das echte Netz der nächsten Tage – eigene Ansicht */
+  function currentHtml(c: CurrentNetInfo, cfg: GameConfig['netModes']): string {
+    const fmt = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+    const age = Math.floor((Date.now() - Date.parse(c.generatedAt)) / 864e5);
+    const stat = (n: number, label: string, cls: string) => `<div class="adm-live-stat ${cls}"><b>${n}</b><span>${label}</span></div>`;
+    return `<div class="adm-live">
+      <div class="adm-live-head"><span class="adm-live-badge big"><i></i>LIVE</span><div><h3>${esc(cfg.current.label)}</h3>
+        <p>Gespielt wird am <b>nächsten echten Tag</b> – mit Baustellen, Sperren und Ersatzverkehr. Die Verbindungen kommen live aus der Fahrplanauskunft. Anders als die Netzpläne lässt sich dieses Netz nicht bearbeiten: Es fährt immer so, wie es gerade wirklich fährt.</p></div></div>
+      <div class="adm-live-days">${DAYS.map(([d, l]) => `<div><small>${l}</small><b>${fmt(c.days[d])}</b><small class="muted">Regulär: ${fmt(c.regularDays[d].date)}</small></div>`).join('')}</div>
+      <div class="adm-live-stats">${stat(c.onlyCurrent.length, 'nur aktuell – z.B. Ersatzverkehr', 'new')}${stat(c.changed.length, 'fahren anders', 'chg')}${stat(c.missing.length, 'fahren nicht', 'gone')}${stat(c.lobbies, `offene Lobby${c.lobbies === 1 ? '' : 's'} damit`, '')}</div>
+      ${currentLinesHtml(c)}
+      <p class="muted">Wie die Linien fahren: laut Fahrplandaten, Stand ${new Date(c.generatedAt).toLocaleDateString('de-AT')}${age > 14 ? ` <b class="adm-was">– ${age} Tage alt, beim nächsten Update der Netzdaten neu</b>` : ''}. Meldungen und Zeiträume: live von den Wiener Linien${c.infoAt ? `, Stand ${new Date(c.infoAt).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' })}` : ''}${c.infoError ? ' <b class="adm-was">– gerade nicht erreichbar</b>' : ''}.</p>
+      <div class="adm-box adm-meta"><h4>In der Lobby</h4>
+        <label class="check"><input type="checkbox" id="cu-on" ${cfg.current.enabled ? 'checked' : ''}> in der Lobby unter „Netz“ wählbar</label>
+        <label class="field"><span>Name</span><input id="cu-label" maxlength="20" value="${esc(cfg.current.label)}"></label>
+        <label class="field"><span>Erklärung (Tooltip)</span><input id="cu-hint" maxlength="200" value="${esc(cfg.current.hint)}"></label>
+        <div class="adm-row"><button class="btn btn-primary" id="cu-save">Speichern</button></div></div>
+    </div>`;
+  }
+
+  /** Zeitraum einer Meldung: „28.09. – 07.11.2026 · noch 7 Tage“, „ab 23.11.“, „seit 28.09., Ende offen“ */
+  function periodText(start: number | null, end: number | null): string {
+    const now = Date.now();
+    const d = (t: number, year = false) => new Date(t).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', ...(year ? { year: 'numeric' } : {}) });
+    const hm = (t: number) => new Date(t).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' });
+    const days = (t: number) => Math.max(1, Math.ceil((t - now) / 864e5));
+    // höchstens einen Tag lang: Datum mit Uhrzeiten
+    if (start && end && end - start <= 864e5) return `${new Date(start).toDateString() === new Date(now).toDateString() ? 'heute' : d(start)} ${hm(start)}–${hm(end)}`;
+    if (start && start > now) return `ab ${d(start)}${end ? ` bis ${d(end, true)} (${days(end) - days(start) + 1} Tage)` : ''}`;
+    if (end) return `${start ? `${d(start)} – ` : 'bis '}${d(end, true)} · <b>noch ${days(end) === 1 ? '1 Tag' : `${days(end)} Tage`}</b>`;
+    return start ? `seit ${d(start)}, Ende offen` : 'Zeitraum unbekannt';
+  }
+
+  /** wie eine Linie anders fährt – in Worten */
+  function howText(l: CurrentLine, kind: 'only' | 'missing' | 'changed'): string {
+    const list = (xs: string[]) => `${xs.slice(0, 8).map(esc).join(', ')}${xs.length > 8 ? ` <small>+${xs.length - 8}</small>` : ''}`;
+    const ends = (t: [string, string] | null) => (t ? `${esc(t[0])} – ${esc(t[1])}` : '');
+    if (kind === 'missing') return `<b>fährt nicht</b>${l.wasTermini ? ` <small class="muted">(sonst ${ends(l.wasTermini)})</small>` : ''}`;
+    if (kind === 'only') return `<b>fährt nur aktuell</b>: ${ends(l.termini)} <small class="muted">– z.B. Ersatzverkehr</small>`;
+    const parts: string[] = [];
+    if (l.termini && l.wasTermini && (l.termini[0] !== l.wasTermini[0] || l.termini[1] !== l.wasTermini[1])) parts.push(`fährt <b>${ends(l.termini)}</b> statt ${ends(l.wasTermini)}`);
+    if (l.without.length) parts.push(`<span class="adm-tag gone">hält nicht</span> ${list(l.without)}`);
+    if (l.extra.length) parts.push(`<span class="adm-tag new">zusätzlich</span> ${list(l.extra)}`);
+    return parts.length ? parts.join('<br>') : 'gleiche Halte, aber andere Fahrten (z.B. mehr oder weniger Kurzführungen)';
+  }
+
+  /** alle Linien, die aktuell anders fahren: wie (Fahrplandaten) und wie lange (Meldungen der Wiener Linien) */
+  function currentLinesHtml(c: CurrentNetInfo): string {
+    const all: (readonly [CurrentLine, 'only' | 'missing' | 'changed'])[] = [...c.missing.map((l) => [l, 'missing'] as const), ...c.onlyCurrent.map((l) => [l, 'only'] as const), ...c.changed.map((l) => [l, 'changed'] as const)];
+    const infosFor = (id: string) => c.infos.filter((i) => i.lines.includes(id));
+    const real = (l: CurrentLine, k: string) => k !== 'changed' || l.without.length || l.extra.length || (l.termini?.join() !== l.wasTermini?.join());
+    // zuerst Linien mit Meldung, dann mit anderen Halten; „nur andere Fahrten“ gesammelt am Ende
+    const main = all.filter(([l, k]) => infosFor(l.id).length || real(l, k)).sort(([a, ka], [b, kb]) => Number(!infosFor(a.id).length) - Number(!infosFor(b.id).length) || Number(!real(a, ka)) - Number(!real(b, kb)));
+    const minor = all.filter(([l, k]) => !infosFor(l.id).length && !real(l, k));
+    const shown = new Set(all.map(([l]) => l.id));
+    const other = c.infos.filter((i) => !i.lines.some((x) => shown.has(x)));
+    const chip = (l: { id: string; mode: Mode; color: string }) => lineChip(l.mode, l.id, l.color);
+    const info = (i: TrafficInfo) => `<div class="adm-info ${i.kind}"><b>${esc(i.title)}</b> <small>${periodText(i.start, i.end)}</small>${i.text && i.text !== i.title ? `<p>${esc(i.text)}</p>` : ''}</div>`;
+    /** Meldungen einer Linie: längere ausführlich, kurzfristige (oft nur „Busse halten …“) gesammelt und eingeklappt */
+    const infosHtml = (list: TrafficInfo[]) => {
+      const seen = new Set<string>();
+      const uniq = list.filter((i) => !seen.has(i.title + i.text) && seen.add(i.title + i.text));
+      const long = uniq.filter((i) => i.kind === 'long');
+      const short = uniq.filter((i) => i.kind === 'short');
+      return `${long.map(info).join('')}${
+        short.length
+          ? `<details class="adm-info-short"><summary>${short.length} kurzfristige${short.length === 1 ? 'r' : ''} Hinweis${short.length === 1 ? '' : 'e'}</summary><ul>${short
+              .map((i) => `<li>${esc(i.title)}${i.text && i.text !== i.title ? ` – ${esc(i.text)}` : ''} <small class="muted">${periodText(i.start, i.end)}</small></li>`)
+              .join('')}</ul></details>`
+          : ''
+      }`;
+    };
+    return `<div class="adm-live-table">
+        <h4>Wie und wie lange sie anders fahren <small class="muted">${main.length} Linien</small></h4>
+        ${main
+          .map(([l, k]) => `<div class="adm-cl"><div class="adm-cl-line">${chip(l)}</div><div class="adm-cl-how">${howText(l, k)}${infosHtml(infosFor(l.id)) || '<br><small class="muted">keine aktuelle Meldung der Wiener Linien</small>'}</div></div>`)
+          .join('')}
+        ${minor.length ? `<details class="adm-cl-minor"><summary>${minor.length} Linien mit gleichen Halten, aber anderen Fahrten</summary><div>${minor.map(([l]) => chip(l)).join(' ')}</div></details>` : ''}
+        ${other.length ? `<h4>Weitere Meldungen der Wiener Linien <small class="muted">${other.length}</small></h4>${[...Map.groupBy(other, (i) => i.lines.join(' ')).entries()]
+          .map(([ls, is]) => `<div class="adm-cl"><div class="adm-cl-line">${ls.split(' ').filter(Boolean).map((x) => lineChip(net?.lines.get(x)?.mode ?? 'B', x, net?.lines.get(x)?.color ?? lineColor(net?.lines.get(x)?.mode ?? 'B', x))).join(' ')}</div><div class="adm-cl-how">${infosHtml(is)}</div></div>`)
+          .join('')}` : ''}
+      </div>`;
+  }
+
+  function versionsHtml(): string {
+    return `<details class="adm-versions" ${versions ? 'open' : ''}><summary>Frühere Versionen aller Netzpläne</summary>${
+      versions
+        ? versions.length
+          ? `<ul class="adm-list">${versions.map((v) => `<li><span>${date(v.at)} · ${esc(v.by)} · ${esc(v.note)}</span><button class="btn btn-ghost btn-small" data-restore="${v.id}">Wiederherstellen</button></li>`).join('')}</ul>`
+          : '<p class="muted">Noch keine.</p>'
+        : '<p class="muted">Lädt …</p>'
+    }</details>`;
+  }
+
+  // -------------------------------------------------------------- Fahrplan: alle Linien, je Linie alle Halte und Abfahrten
+
+  /** Uhrzeit des Betriebstags: nach Mitternacht als 24:30 usw. (so steht es auch im Fahrplan) */
+  const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+  type Pat = TimetableLineView['patterns'][number];
+  type Stop = Pat['stops'][number];
+  type Row = { st: Stop; at: 'same' | 'new' | 'gone'; wasMin?: number | null };
+
+  /** erste Änderung des Plans, auf die das zutrifft (Index zum Rückgängigmachen) */
+  const editIdx = (pred: (e: LineEdit) => boolean) => plan().edits.findIndex(pred);
+  const undoBtn = (i: number) => (i < 0 ? '' : `<button class="link adm-undo" data-rmedit="${i}" title="Diese Änderung rückgängig machen">↺ rückgängig</button>`);
+  /** Abfahrten einer Haltefolge am gewählten Tag (Plan bzw. Original) */
+  const depsOf = (v: TimetableLineView | null, key: string, day: DayType = ttDay) => v?.patterns.find((p) => p.key === key)?.deps[day].filter((t) => t >= 0) ?? [];
+  /** Takt-Felder einer Haltefolge: Entwurf, sonst die gespeicherte Takt-Änderung, sonst der Takt, der jetzt fährt */
+  const hwOf = (key: string) => {
+    const draft = hwDraft.get(key);
+    if (draft) return draft;
+    const back = key.split('>').reverse().join('>');
+    const e = plan().edits.find((x) => x.kind === 'headway' && x.line === ttLine && x.day === ttDay && (x.pattern === key || x.pattern === back)) as Extract<LineEdit, { kind: 'headway' }> | undefined;
+    if (e) return { from: e.from, to: e.to, every: e.every };
+    const now = taktIn(depsOf(lineView, key), '06:00', '20:00');
+    return { from: '06:00', to: '20:00', every: now.main ?? lineInfo(ttLine)?.every ?? 10 };
+  };
+
+  const sid = (s: Stop) => s.station ?? `?${s.name}`;
+  /** Halte im Plan gegen „wie gebaut“: gemeinsame bleiben in Reihenfolge, dazwischen neue und weggefallene */
+  function diffStops(now: Stop[], was: Stop[]): Row[] {
+    const n = now.length;
+    const m = was.length;
+    const lcs = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) lcs[i][j] = sid(now[i]) === sid(was[j]) ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+    const out: Row[] = [];
+    let i = 0;
+    let j = 0;
+    let lastI = -2;
+    let lastJ = -2;
+    while (i < n || j < m) {
+      if (i < n && j < m && sid(now[i]) === sid(was[j])) {
+        // Fahrzeit nur vergleichbar, wenn der vorige Halt in beiden derselbe ist
+        out.push({ st: now[i], at: 'same', wasMin: lastI === i - 1 && lastJ === j - 1 ? was[j].min : undefined });
+        lastI = i++;
+        lastJ = j++;
+      } else if (j < m && (i >= n || lcs[i][j + 1] >= lcs[i + 1][j])) out.push({ st: was[j++], at: 'gone' });
+      else out.push({ st: now[i++], at: 'new' });
+    }
+    return out;
+  }
+
+  /** zu jeder Haltefolge im Plan die passende „wie gebaut“: gleiche Enden, sonst die mit den meisten gemeinsamen Halten in derselben Richtung */
+  function matchBase(pats: Pat[], base: Pat[]): { match: (Pat | null)[]; gone: Pat[] } {
+    const used = new Set<Pat>();
+    const match = pats.map((p) => {
+      const b = base.find((x) => !used.has(x) && x.key === p.key) ?? null;
+      if (b) used.add(b);
+      return b;
+    });
+    match.forEach((r, k) => {
+      if (r) return;
+      const ids = pats[k].stops.map(sid);
+      let best: Pat | null = null;
+      let score = 1;
+      for (const b of base) {
+        if (used.has(b)) continue;
+        const bi = b.stops.map(sid);
+        const shared = ids.map((x) => bi.indexOf(x)).filter((x) => x >= 0);
+        if (shared.length > score && shared[0] < shared[shared.length - 1]) ((best = b), (score = shared.length));
+      }
+      if (best) (used.add(best), (match[k] = best));
+    });
+    return { match, gone: base.filter((b) => !used.has(b)) };
+  }
+
+  const HELP_KEY = 'adm-tt-help';
+  const helpOpen = () => {
+    try {
+      return localStorage.getItem(HELP_KEY) !== 'zu';
+    } catch {
+      return true;
+    }
+  };
+
+  function helpHtml(): string {
+    return `<details class="adm-help" id="tt-help" ${helpOpen() ? 'open' : ''}><summary>So funktioniert der Fahrplan</summary>
+      <ol>
+        <li><b>Netzplan wählen</b> (ganz oben): „Standard“ gilt für alle normalen Spiele, Quiz und Training. Eigene Pläne (z.B. „Mit U5“) lassen sich in der Lobby unter „Netz“ auswählen.</li>
+        <li><b>Linie wählen</b> (links): rechts stehen dann alle Fahrtrichtungen mit Halten, Fahrzeiten, Fahrten je Stunde und Abfahrten.</li>
+        <li><b>Direkt ändern</b> – jede Änderung gilt sofort für diesen Netzplan:
+          <ul>
+            <li><b>Fahrzeit</b>: Zahl im Feld ändern</li>
+            <li><b>Halt auslassen</b>: „auslassen“ in der Zeile · <b>Halt einfügen</b>: „+“ vor dem Halt</li>
+            <li><b>Abfahrten</b>: aufklappen, mit ✕ streichen oder Uhrzeit hinzufügen, dann „Speichern“</li>
+            <li><b>Takt</b>: Zeitraum und Minuten eintragen, „Übernehmen“ – ersetzt die Fahrten in diesem Zeitraum</li>
+            <li><b>Zusätzliche Fahrten</b> (z.B. jede 2. S1 nach Hütteldorf), <b>Verlängern</b>, <b>Kürzen</b>, <b>Linie entfernen</b>: Knöpfe oben neben dem Liniennamen</li>
+          </ul></li>
+        <li><b>Was geändert ist, siehst du hier direkt</b>: <span class="adm-tag new">neu</span> <span class="adm-tag gone">fällt weg</span> <span class="adm-tag chg">geändert</span> – mit „↺ rückgängig“ machst du eine Änderung wieder weg.</li>
+        <li>Neue Linien und Stationen: Reiter „Änderungen“ · Karte des Plans: „Netzkarte“ · Ausprobieren: „Probe-Abfrage“ · „Original anzeigen“ zeigt den Fahrplan ohne Änderungen.</li>
+      </ol></details>`;
+  }
+
+  function timetableSection(): string {
+    const groups: [string, (l: TimetableLineInfo) => boolean][] = [
+      ['🚇 U-Bahn', (l) => l.mode === 'U'],
+      ['🚆 S-Bahn', (l) => l.mode === 'S' && !l.regional],
+      ['🚆 Regionalzüge (auf S-Bahn-Strecken)', (l) => l.regional],
+      ['🚋 Straßenbahn', (l) => l.mode === 'T'],
+      ['🚌 Bus', (l) => l.mode === 'B'],
+      ['🌙 Nachtbus', (l) => l.mode === 'N'],
+    ];
+    // im Plan entfernte Linien bleiben (durchgestrichen) in der Liste
+    const base = asBuilt ? null : baseLines;
+    const now = new Set((lines ?? []).map((l) => l.line));
+    const baseIds = new Set((base ?? []).map((l) => l.line));
+    const removed = (base ?? []).filter((l) => !now.has(l.line));
+    const changed = new Set(asBuilt ? [] : plan().edits.flatMap((e) => ('line' in e ? [e.line] : [])));
+    const f = lineFilter.trim().toLowerCase();
+    const shown = [...(lines ?? []), ...removed].filter((l) => !f || l.line.toLowerCase().startsWith(f) || l.termini.some((t) => t.toLowerCase().includes(f)));
+    const chipOf = (l: TimetableLineInfo) => {
+      const nl = net?.lines.get(l.line);
+      return lineChip(l.mode, l.line, nl?.color ?? lineColor(l.mode, l.line));
+    };
+    const tag = (l: TimetableLineInfo) =>
+      !base ? '' : !now.has(l.line) ? '<b class="adm-tag gone">entfernt</b> ' : !baseIds.has(l.line) ? '<b class="adm-tag new">neu</b> ' : changed.has(l.line) ? '<b class="adm-tag chg">geändert</b> ' : '';
+    return `${helpHtml()}<div class="adm-row adm-ttbar">
+        <label class="check"><input type="checkbox" id="tt-built" ${asBuilt ? 'checked' : ''}> Original anzeigen (ohne Änderungen)</label>
+        <input class="line-input" id="tt-filter" placeholder="Linie oder Endstation filtern …" value="${esc(lineFilter)}" autocomplete="off"></div>
+      ${asBuilt ? '<p class="muted">Der Fahrplan, wie er ohne Änderungen gilt – nur zum Ansehen. Ändern geht, wenn das Häkchen aus ist.</p>' : ''}
+      <div class="adm-ttlayout">
+        <div class="adm-ttlines">${groups
+          .map(([title, pick]) => {
+            const ls = shown.filter(pick);
+            if (!ls.length) return '';
+            return `<h4>${title} <small class="muted">${ls.length}</small></h4><div class="adm-ttgrid">${ls
+              .map(
+                (l) => `<button class="adm-ttline ${l.line === ttLine ? 'on' : ''} ${now.has(l.line) ? '' : 'gone'}" data-ttline="${esc(l.line)}">${chipOf(l)}<small>${tag(l)}${esc(l.termini.join(' – '))}</small><small class="muted">${
+                  now.has(l.line) ? `${l.every ? `alle ${l.every} min · ` : ''}${l.trips.wd} Fahrten Mo–Fr` : 'fährt in diesem Plan nicht'
+                }</small></button>`,
+              )
+              .join('')}</div>`;
+          })
+          .join('')}</div>
+        <div class="adm-ttdetail">${ttLine ? lineDetailHtml(lineView) : '<p class="muted">Linie wählen – dann siehst du jede Fahrtrichtung mit allen Halten, Fahrzeiten und Abfahrten.</p>'}</div>
+      </div>`;
+  }
+
+  function lineDetailHtml(v: TimetableLineView | null): string {
+    const id = ttLine;
+    const info = lineInfo(id) ?? baseLines?.find((l) => l.line === id);
+    const mode = v?.mode ?? baseView?.mode ?? info?.mode ?? 'B';
+    const chip = lineChip(mode, id, net?.lines.get(id)?.color ?? lineColor(mode, id));
+    const ro = asBuilt;
+    if (!v?.patterns.length) {
+      const i = ro ? -1 : editIdx((e) => e.kind === 'removeLine' && e.line === id);
+      return `<div class="adm-ttdhead"><h3><s>${chip}</s> ${info ? esc(info.termini.join(' – ')) : ''}</h3></div>
+        <p class="adm-gonebox">${i >= 0 ? `Die ${esc(id)} fährt in diesem Netzplan nicht. ${undoBtn(i)}` : 'Für diese Linie gibt es keinen Fahrplan.'}</p>`;
+    }
+    const base = ro ? null : baseView;
+    const allStops = [...v.patterns, ...(base?.patterns ?? [])].flatMap((p) => p.stops.map((s) => s.station));
+    const mine = ro ? [] : plan().edits.map((e, i) => [e, i] as const).filter(([e]) => ('line' in e && e.line === id) || (e.kind === 'removeStation' && allStops.includes(e.station)));
+    const dayName = DAYS.find((x) => x[0] === ttDay)![1];
+    const strip = (hours: number[]) => {
+      const max = Math.max(1, ...hours);
+      return `<span class="adm-strip" aria-hidden="true">${hours
+        .slice(4, 25)
+        .map((n, i) => `<i style="height:${Math.round((n / max) * 100)}%" title="${i + 4}–${i + 5} Uhr: ${n} Fahrten"></i>`)
+        .join('')}</span>`;
+    };
+    const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+    const { match, gone } = base ? matchBase(v.patterns, base.patterns) : { match: v.patterns.map(() => null), gone: [] as Pat[] };
+    const changes = mine.length
+      ? `<details class="adm-linechg" open><summary>${mine.length} Änderung${mine.length === 1 ? '' : 'en'} an der ${esc(id)}</summary><ul>${mine.map(([e, i]) => `<li><span>${describe(e)}</span>${undoBtn(i)}</li>`).join('')}</ul></details>`
+      : '';
+    return `<div class="adm-ttdhead"><h3>${chip} ${info ? esc(info.termini.join(' – ')) : ''} ${base === null && !ro ? '<b class="adm-tag new">neue Linie</b>' : ''}</h3>
+        ${ro ? '' : `<div class="adm-row adm-more"><button class="link" data-quick="addVariant">+ Zusätzliche Fahrten</button><button class="link" data-quick="extend">Verlängern</button><button class="link" data-quick="cut">Kürzen</button><button class="link danger" data-quick="removeLine">Linie entfernen</button></div>`}</div>
+      ${changes}
+      <div class="adm-range">Tag ${DAYS.map(([d, l]) => `<button class="${d === ttDay ? 'on' : ''}" data-ttday="${d}">${l}</button>`).join('')}</div>
+      ${v.patterns.map((p, k) => patternHtml(v, p, match[k], !!base, dayName, strip, sum)).join('')}
+      ${
+        gone.length
+          ? `<div class="adm-ttp adm-ttp-gone"><h4><span class="adm-tag gone">fällt weg</span> im Original zusätzlich</h4><ul>${gone
+              .map((g) => `<li><s>→ ${esc(g.stops[g.stops.length - 1].name)} ab ${esc(g.stops[0].name)}</s> <small class="muted">${sum(g.trips.wd)} Fahrten Mo–Fr</small></li>`)
+              .join('')}</ul></div>`
+          : ''
+      }`;
+  }
+
+  /** „jetzt: alle 5 min (24 Fahrten) · Original: alle 10 min“ für eine Haltefolge und einen Zeitraum */
+  function hwNowText(key: string, b: Pat | null, from: string, to: string): string {
+    const now = taktIn(depsOf(lineView, key), from, to);
+    const orig = b ? taktIn(b.deps[ttDay].filter((t) => t >= 0), from, to) : null;
+    const changed = orig && (orig.main !== now.main || orig.n !== now.n);
+    return `jetzt: <b>${taktText(now)}</b>${changed ? ` · Original: ${taktText(orig)}` : ''}`;
+  }
+
+  function patternHtml(v: TimetableLineView, p: Pat, b: Pat | null, compare: boolean, dayName: string, strip: (h: number[]) => string, sum: (xs: number[]) => number): string {
+    const id = v.line;
+    const ro = asBuilt;
+    const dd = depDraft.get(p.key);
+    const hw = hwOf(p.key);
+    // ohne Gegenstück im Original: ganze Haltefolge ist neu (z.B. zusätzliche Fahrten)
+    const extra = compare && !b;
+    const rows: Row[] = b ? diffStops(p.stops, b.stops) : p.stops.map((st) => ({ st, at: 'same' }));
+    const lastNow = rows.reduce((a, r, i) => (r.at === 'gone' ? a : i), 0);
+    let cum = 0;
+    let prev: Stop | null = null;
+    const body = rows
+      .map((r, i) => {
+        const st = r.st;
+        if (r.at === 'gone') {
+          const skip = editIdx((e) => (e.kind === 'skipStop' && e.line === id && e.station === st.station) || (e.kind === 'removeStation' && e.station === st.station));
+          const cut = skip < 0 ? editIdx((e) => e.kind === 'cut' && e.line === id) : -1;
+          return `<tr class="adm-st-gone"><td><s>${esc(st.name)}</s></td><td colspan="2"><span class="adm-tag gone">${skip >= 0 ? 'hält nicht mehr' : 'fällt weg'}</span></td><td>${undoBtn(skip >= 0 ? skip : cut)}</td></tr>`;
+        }
+        const first = !prev;
+        cum += first ? 0 : (st.min ?? 0);
+        const canEdit = !ro && st.station;
+        const pv: Stop | null = prev;
+        prev = st;
+        const ins =
+          !ro && pv?.station && st.station && insertAt && insertAt.a === pv.station && insertAt.b === st.station
+            ? `<tr class="adm-insrow"><td colspan="4"><div class="adm-ins">${pickerSlot('station', 'ins', insertAt.station, 'Neuer Halt …')}
+                <label>${esc(pv.name)} → neu <input type="number" min="0" max="60" data-ins="minA" value="${insertAt.minA}"> min</label>
+                <label>neu → ${esc(st.name)} <input type="number" min="0" max="60" data-ins="minB" value="${insertAt.minB}"> min</label>
+                <button class="btn btn-primary btn-small" id="ins-ok">Einfügen</button><button class="link" id="ins-cancel">Abbrechen</button></div></td></tr>`
+            : '';
+        // neuer Halt / geänderte Fahrzeit: welche Änderung war es (zum Rückgängigmachen)
+        const newIdx = r.at === 'new' ? editIdx((e) => (e.kind === 'insertStop' && e.line === id && e.station === st.station) || (e.kind === 'extend' && e.line === id && e.stops.some((s) => s.station === st.station))) : -1;
+        const chg = !first && r.at === 'same' && r.wasMin !== undefined && r.wasMin !== st.min;
+        const timeIdx = chg && pv?.station ? editIdx((e) => e.kind === 'time' && e.line === id && ((e.from === pv.station && e.to === st.station) || (e.from === st.station && e.to === pv.station))) : -1;
+        const time = first
+          ? ''
+          : `${canEdit && pv?.station ? `<input type="number" min="0" max="60" class="adm-ttmin ${chg ? 'chg' : ''}" data-tt="${esc(pv.station)}|${esc(st.station!)}" value="${st.min ?? ''}"> min` : `${st.min ?? '–'} min`}${
+              chg ? ` <small class="adm-was" title="im Original">vorher ${r.wasMin ?? '–'}</small>` : ''
+            }`;
+        const action = r.at === 'new' ? `<span class="adm-tag new">neu</span> ${undoBtn(newIdx)}` : chg && timeIdx >= 0 ? undoBtn(timeIdx) : canEdit && !first && i !== lastNow ? `<button class="link" data-skip="${esc(st.station!)}" title="${esc(id)} hält hier nicht mehr">auslassen</button>` : '';
+        return `${ins}<tr class="${r.at === 'new' ? 'adm-st-new' : ''}"><td>${
+          !ro && pv?.station && st.station ? `<button class="adm-plus" data-insert="${esc(pv.station)}|${esc(st.station)}" title="Halt zwischen ${esc(pv.name)} und ${esc(st.name)} einfügen" aria-label="Halt einfügen">+</button>` : ''
+        }${esc(st.name)}</td><td>${time}</td><td class="muted">${first ? 'Start' : `${cum} min`}</td><td>${action}</td></tr>`;
+      })
+      .join('');
+    // Abfahrten: im Plan und im Original – neue grün, weggefallene durchgestrichen
+    const deps = p.deps[ttDay].filter((t) => t >= 0);
+    const was = b ? b.deps[ttDay].filter((t) => t >= 0) : null;
+    const inNow = new Set(deps);
+    const inWas = new Set(was ?? deps);
+    const all = [...new Set([...deps, ...(was ?? []), ...(dd?.add ?? [])])].sort((x, y) => x - y);
+    const chips = all
+      .map((t) => {
+        const label = hhmm(t);
+        if (!inNow.has(t) && dd?.add.includes(t)) return `<span class="adm-dep new pend" title="noch nicht gespeichert">${label}<button data-depnew="${esc(p.key)}|${t}" aria-label="nicht hinzufügen">✕</button></span>`;
+        if (!inNow.has(t)) return `<span class="adm-dep gone" title="im Original, fällt im Plan weg">${label}${ro ? '' : `<button data-deprestore="${esc(p.key)}|${t}" aria-label="Abfahrt ${label} wieder fahren lassen">↺</button>`}</span>`;
+        const pend = dd?.remove.has(t);
+        const cls = pend ? 'gone pend' : !inWas.has(t) ? 'new' : '';
+        return `<span class="adm-dep ${cls}" ${pend ? 'title="noch nicht gespeichert"' : !inWas.has(t) ? 'title="neu im Plan"' : ''}>${label}${ro ? '' : `<button data-dep="${esc(p.key)}|${t}" aria-label="Abfahrt ${label} ${pend ? 'behalten' : 'streichen'}">${pend ? '↺' : '✕'}</button>`}</span>`;
+      })
+      .join('');
+    const plus = deps.filter((t) => !inWas.has(t)).length;
+    const minus = was ? was.filter((t) => !inNow.has(t)).length : 0;
+    const tripsTxt = (d: DayType) => {
+      const n = sum(p.trips[d]);
+      const o = b ? sum(b.trips[d]) : n;
+      return `${n} Fahrten${o !== n ? ` <small class="adm-was">vorher ${o}</small>` : ''}`;
+    };
+    return `<div class="adm-ttp ${extra ? 'adm-ttp-new' : ''}"><h4>${extra ? '<span class="adm-tag new">zusätzlich</span> ' : ''}→ ${esc(p.stops[p.stops.length - 1].name)} <small class="muted">ab ${esc(p.stops[0].name)}${p.through ? ` · durchgebunden mit ${esc(p.through)}` : ''}</small></h4>
+      <div class="adm-ttdays">${DAYS.map(([d, l]) => `<span><b>${l}</b> ${tripsTxt(d)} ${strip(p.trips[d])}</span>`).join('')}</div>
+      <table class="adm-table adm-stops"><thead><tr><th>Halt</th><th>Fahrzeit</th><th>ab Start</th><th></th></tr></thead><tbody>${body}</tbody></table>
+      <details class="adm-deps" ${dd ? 'open' : ''}><summary>Abfahrten ${dayName} ab ${esc(p.stops[0].name)}: ${deps.length}${plus || minus ? ` <small class="adm-was">${plus ? `+${plus} neu` : ''}${plus && minus ? ' · ' : ''}${minus ? `−${minus} weggefallen` : ''}</small>` : ''}</summary>
+        <div class="adm-deplist">${chips || '<small class="muted">keine</small>'}</div>
+        ${ro ? '' : `<div class="adm-row"><input class="adm-hhmm" data-depadd="${esc(p.key)}" placeholder="HH:MM" maxlength="5"><button class="btn btn-ghost btn-small" data-depaddbtn="${esc(p.key)}">Abfahrt hinzufügen</button>
+          ${dd ? `<button class="btn btn-primary btn-small" data-depsave="${esc(p.key)}">Speichern</button><button class="link" data-depcancel="${esc(p.key)}">Verwerfen</button>` : ''}</div>`}
+      </details>
+      ${ro ? '' : `<div class="adm-hw"><b>Takt ${dayName}</b> von <input class="adm-hhmm" data-hw="${esc(p.key)}|from" value="${hw.from}" maxlength="5"> bis <input class="adm-hhmm" data-hw="${esc(p.key)}|to" value="${hw.to}" maxlength="5"> alle <input type="number" min="2" max="120" data-hw="${esc(p.key)}|every" value="${hw.every}"> min <button class="btn btn-ghost btn-small" data-hwsave="${esc(p.key)}">Übernehmen</button><small class="muted">gilt für beide Richtungen</small>
+        <small class="adm-hwnow" data-hwnow="${esc(p.key)}">${hwNowText(p.key, b, hw.from, hw.to)}</small></div>`}
+    </div>`;
+  }
+
+  function newPlanHtml(): string {
+    return `<div class="adm-box"><label class="field"><span>Name des neuen Netzplans</span><input id="np-label" maxlength="24" value="${esc(newPlan!.label)}" placeholder="z.B. Mit U5"></label>
+      <label class="check"><input type="checkbox" id="np-copy" ${newPlan!.copy ? 'checked' : ''}> Änderungen von „${esc(planId === 'regular' ? 'Standard' : plan().label)}“ übernehmen</label>
+      <div class="adm-row"><button class="btn btn-primary" id="np-ok">Anlegen</button><button class="btn btn-ghost" id="np-cancel">Abbrechen</button></div></div>`;
+  }
+
+  function metaHtml(p: NetworkPlan): string {
+    return `<div class="adm-box adm-meta">
+      <label class="field"><span>Name im Menü</span><input id="pm-label" maxlength="24" value="${esc(p.label)}"></label>
+      <label class="field"><span>Erklärung (Tooltip in der Lobby)</span><input id="pm-hint" maxlength="200" value="${esc(p.hint)}" placeholder="z.B. Mit der geplanten U5 bis Hernals"></label>
+      <label class="check"><input type="checkbox" id="pm-menu" ${p.inMenu ? 'checked' : ''}> In der Lobby unter „Netz“ wählbar</label>
+      <div class="adm-row"><button class="btn btn-ghost" id="pm-save">Speichern</button><button class="btn btn-danger btn-small" id="pm-del">Netzplan löschen</button></div></div>`;
+  }
+
+  function paramsHtml(p: NetworkPlan): string {
+    const rows = (Object.keys(PARAM_INFO) as (keyof RoutingParams)[])
+      .map((k) => {
+        const info = PARAM_INFO[k];
+        return `<label class="adm-param ${params[k] != null ? 'changed' : ''}"><span>${info.label} ${infoTip(esc(info.hint))}</span>
+          <input type="number" data-param="${k}" step="${info.step ?? 1}" placeholder="${state!.defaults[k]}" value="${params[k] ?? ''}"> <small>${info.unit} <span class="muted">Standard ${state!.defaults[k]}</span></small></label>`;
+      })
+      .join('');
+    const dirty = JSON.stringify(params) !== JSON.stringify(p.params);
+    return `<div class="adm-params">${rows}</div>
+      <div class="adm-row adm-save"><button class="btn btn-primary" id="pa-save" ${dirty ? '' : 'disabled'}>${dirty ? 'Speichern und anwenden' : 'Gespeichert'}</button>
+      ${Object.keys(p.params).length ? '<button class="btn btn-ghost" id="pa-default">Auf Standard</button>' : ''}</div>`;
+  }
+
+  // -------------------------------------------------------------- Formular „Änderung hinzufügen“
+
+  function formHtml(): string {
+    const kinds = `<div class="adm-kinds">${KINDS.map(([k, l]) => `<button type="button" data-kind="${k}" class="${form.kind === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+    const needsLine = ['extend', 'cut', 'time', 'removeLine', 'headway', 'addVariant'].includes(form.kind);
+    const lineField = needsLine ? `<div class="field"><span>Linie</span>${pickerSlot('line', 'line', form.line)}</div>` : '';
+    let body = '';
+    const l = line();
+    if (needsLine && !l) body = form.line ? '<p class="err">Diese Linie gibt es nicht.</p>' : '';
+    else if (form.kind === 'extend') body = extendHtml();
+    else if (form.kind === 'cut') body = cutHtml();
+    else if (form.kind === 'time') body = timeHtml();
+    else if (form.kind === 'removeLine') body = `<p>Die Linie <b>${esc(form.line)}</b> fährt in diesem Netzplan nicht mehr.</p>${addBtn('Linie entfernen')}`;
+    else if (form.kind === 'headway') body = headwayHtml();
+    else if (form.kind === 'addVariant') body = variantHtml();
+    else if (form.kind === 'addLine') body = addLineHtml();
+    else if (form.kind === 'addStation') body = addStationHtml();
+    else body = stationEditHtml();
+    return `${kinds}${lineField}${body}`;
+  }
+
+  const addBtn = (label = 'Hinzufügen und anwenden') => `<button type="button" class="btn btn-primary" id="ed-add">${label}</button>`;
+
+  function extendHtml(): string {
+    const p = mainPattern();
+    const ends = [...new Set([p[0], p[p.length - 1]].filter(Boolean))];
+    return `<div class="field"><span>Ab welcher Endstation geht es weiter?</span><div class="adm-choice">${ends
+      .map((id) => `<button type="button" data-at="${esc(id)}" class="${form.at === id ? 'on' : ''}">${esc(stName(id))}</button>`)
+      .join('')}</div></div>
+      ${form.at ? `<div class="field"><span>Neue Halte ab ${esc(stName(form.at))} – der Reihe nach, Fahrzeit ab dem vorigen Halt</span>${stopsHtml(false)}</div>${addBtn()}` : ''}`;
+  }
+
+  function stopsHtml(first: boolean): string {
+    return `${form.stops
+      .map(
+        (s, i) => `<div class="adm-stop">${pickerSlot('station', `stop:${i}`, s.station)}
+          ${first && i === 0 ? '<small class="muted">Start</small>' : `<input type="number" min="0" max="60" data-stopmin="${i}" value="${s.min}"> min`}
+          ${form.stops.length > 1 ? `<button type="button" class="icon-btn" data-rmstop="${i}" aria-label="Halt entfernen">✕</button>` : ''}</div>`,
+      )
+      .join('')}<button type="button" class="link" id="ed-addstop">+ weiterer Halt</button>`;
+  }
+
+  function cutHtml(): string {
+    const p = mainPattern();
+    if (p.length < 3) return '<p class="muted">Diese Linie ist zu kurz zum Kürzen.</p>';
+    const first = p[0];
+    const last = p[p.length - 1];
+    // 1. welches Ende fällt weg  2. wo endet sie künftig – mit Vorschau
+    const keep = form.end === 'start' ? p.slice(1) : form.end === 'end' ? p.slice(0, -1) : [];
+    const gone = form.at && form.end ? (form.end === 'start' ? p.slice(0, p.indexOf(form.at)) : p.slice(p.indexOf(form.at) + 1)) : [];
+    const rest = form.at && form.end ? (form.end === 'start' ? p.slice(p.indexOf(form.at)) : p.slice(0, p.indexOf(form.at) + 1)) : [];
+    return `<p class="muted">Verlauf: ${p.map((id) => esc(stName(id))).join(' – ')}</p>
+      <div class="field"><span>1. Welches Ende fällt weg?</span><div class="adm-choice">
+        <button type="button" data-end="start" class="${form.end === 'start' ? 'on' : ''}">Anfang bei ${esc(stName(first))}</button>
+        <button type="button" data-end="end" class="${form.end === 'end' ? 'on' : ''}">Ende bei ${esc(stName(last))}</button></div></div>
+      ${
+        form.end
+          ? `<div class="field"><span>2. Wo ${form.end === 'start' ? 'beginnt' : 'endet'} die Linie künftig?</span><div class="adm-choice">${keep
+              .slice(form.end === 'start' ? 0 : 1)
+              .slice(0, form.end === 'start' ? -1 : undefined)
+              .map((id) => `<button type="button" data-at="${esc(id)}" class="${form.at === id ? 'on' : ''}">${esc(stName(id))}</button>`)
+              .join('')}</div></div>`
+          : ''
+      }
+      ${form.at && form.end ? `<p class="adm-preview">Künftig: <b>${rest.map((id) => esc(stName(id))).join(' – ')}</b><br><small>Fällt weg: ${gone.map((id) => esc(stName(id))).join(', ')}</small></p>${addBtn()}` : ''}`;
+  }
+
+  function pairs(): [string, string][] {
+    const l = line();
+    if (!l || !net) return [];
+    const seen = new Set<string>();
+    const out: [string, string][] = [];
+    for (const p of net.patterns(l))
+      for (let i = 1; i < p.length; i++) {
+        const k = [p[i - 1], p[i]].sort().join('|');
+        if (!seen.has(k)) (seen.add(k), out.push([p[i - 1], p[i]]));
+      }
+    return out;
+  }
+
+  function timeHtml(): string {
+    return `<label class="field"><span>Abschnitt</span><select data-f="pair"><option value="">wählen …</option>${pairs()
+      .map(([a, b]) => `<option value="${a}|${b}" ${form.pair === `${a}|${b}` ? 'selected' : ''}>${esc(stName(a))} ↔ ${esc(stName(b))}</option>`)
+      .join('')}</select></label>
+      ${form.pair ? `<label class="field"><span>Fahrzeit ${form.current != null ? `<small class="muted">(bisher ${form.current} min)</small>` : ''}</span><input type="number" min="0" max="60" data-f="min" value="${form.min}"> min</label>${addBtn()}` : ''}`;
+  }
+
+  /** Takt ändern: Haltefolge (beide Richtungen), Tag, Zeitraum, alle X Minuten */
+  function headwayHtml(): string {
+    const keys = [...new Map(lineView?.patterns.map((p) => [p.key.split('>').sort().join('>'), p]) ?? []).values()];
+    // ohne Auswahl: die meistbefahrene Haltefolge als Anhaltspunkt
+    const main = form.pattern || [...(lineView?.patterns ?? [])].sort((a, b) => b.deps[form.day].length - a.deps[form.day].length)[0]?.key || '';
+    const now = main ? taktIn(depsOf(lineView, main, form.day), form.from, form.to) : null;
+    return `${now ? `<p class="adm-hwnow">Jetzt ${DAYS.find((d) => d[0] === form.day)![1]} ${esc(form.from)}–${esc(form.to)}: <b>${taktText(now)}</b>${form.pattern ? '' : ' <small class="muted">(meistbefahrene Haltefolge)</small>'}</p>` : ''}
+      <label class="field"><span>Haltefolge</span><select data-f="pattern"><option value="">alle der Linie</option>${keys
+        .map((p) => `<option value="${esc(p.key)}" ${form.pattern === p.key ? 'selected' : ''}>${esc(p.stops[0].name)} ↔ ${esc(p.stops[p.stops.length - 1].name)}</option>`)
+        .join('')}</select></label>
+      <div class="adm-grid3"><label class="field"><span>Tag</span><select data-f="day">${DAYS.map(([d, l]) => `<option value="${d}" ${form.day === d ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="field"><span>von</span><input data-f="from" value="${form.from}" maxlength="5" placeholder="06:00"></label>
+        <label class="field"><span>bis</span><input data-f="to" value="${form.to}" maxlength="5" placeholder="20:00"></label>
+        <label class="field"><span>alle … Minuten</span><input type="number" min="2" max="120" data-f="every" value="${form.every}"></label></div>
+      <p class="muted">Die Fahrten in diesem Zeitraum werden durch neue im gewählten Takt ersetzt – mit den üblichen Fahrzeiten der Linie.</p>${addBtn()}`;
+  }
+
+  /** zusätzliche Fahrten einer Linie auf eigener Haltefolge – z.B. jede 2. S1 nach Hütteldorf */
+  function variantHtml(): string {
+    return `<p class="muted">Eigene Haltefolge der ${esc(form.line)} mit eigenem Takt – z.B. „jede 2. S1 nach Hütteldorf“: hier die Halte bis Hütteldorf und alle 30 min, dazu bei „Takt ändern“ die bisherige S1 auf alle 30 min.</p>
+      <div class="field"><span>Halte der Reihe nach (Fahrzeit ab dem vorigen Halt) – fährt in beide Richtungen</span>${stopsHtml(true)}</div>
+      ${bandsHtml()}${addBtn('Fahrten hinzufügen')}`;
+  }
+
+  function bandsHtml(): string {
+    const bands = (d: DayType) =>
+      form.service[d]
+        .map(
+          (b, i) => `<div class="adm-band"><input type="text" class="adm-hhmm" data-band="${d}:${i}:from" value="${b.from}" maxlength="5"> bis <input type="text" class="adm-hhmm" data-band="${d}:${i}:to" value="${b.to}" maxlength="5"> alle
+            <input type="number" min="2" max="120" data-band="${d}:${i}:every" value="${b.every}"> min <button type="button" class="icon-btn" data-rmband="${d}:${i}" aria-label="Zeitraum entfernen">✕</button></div>`,
+        )
+        .join('') || '<small class="muted">fährt nicht</small>';
+    return `<div class="field"><span>Betriebszeiten und Takt</span>${DAYS.map(([d, l]) => `<div class="adm-day"><b>${l}</b>${bands(d)}<button type="button" class="link" data-addband="${d}">+ Zeitraum</button></div>`).join('')}
+      <small class="muted">Nach Mitternacht als 24:30, 25:00 … eintragen.</small></div>`;
+  }
+
+  function addLineHtml(): string {
+    return `<div class="adm-grid2">
+        <label class="field"><span>Name</span><input data-f="line" value="${esc(form.line)}" maxlength="8" placeholder="z.B. U5"></label>
+        <label class="field"><span>Verkehrsmittel</span><select data-f="mode">${(['U', 'S', 'T', 'B', 'N'] as Mode[]).map((m) => `<option value="${m}" ${form.mode === m ? 'selected' : ''}>${MODE_LABEL[m]}</option>`).join('')}</select></label>
+        <label class="field"><span>Farbe</span><input type="color" data-f="color" value="${form.color}"></label></div>
+      <div class="field"><span>Halte der Reihe nach (Fahrzeit ab dem vorigen Halt) – fährt in beide Richtungen</span>${stopsHtml(true)}</div>
+      ${bandsHtml()}
+      ${addBtn('Linie anlegen')}`;
+  }
+
+  function addStationHtml(): string {
+    return `<div class="adm-grid2"><label class="field"><span>Name</span><input data-f="name" value="${esc(form.name)}" maxlength="60" placeholder="z.B. Neustadt"></label>
+      <label class="field"><span>Bezirk</span><input type="number" min="1" max="23" data-f="district" value="${form.district || ''}" placeholder="1–23"></label></div>
+      <div class="field"><span>Ort – auf die Karte klicken ${form.point ? `<small class="muted">(${form.point.lat.toFixed(5)}, ${form.point.lon.toFixed(5)})</small>` : ''}</span><div class="adm-map" id="ed-map"></div></div>
+      <p class="muted">Danach mit „Neue Linie“ oder „Verlängern“ anbinden.</p>${addBtn('Station anlegen')}`;
+  }
+
+  function stationEditHtml(): string {
+    const st = form.station ? net?.stations.get(form.station) : undefined;
+    return `<div class="field"><span>Station</span>${pickerSlot('station', 'station', form.station)}</div>
+      ${
+        !st
+          ? ''
+          : form.kind === 'renameStation'
+            ? `<label class="field"><span>Neuer Name</span><input data-f="name" value="${esc(form.name || st.name)}" maxlength="60"></label>${addBtn()}`
+            : form.kind === 'moveStation'
+              ? `<div class="field"><span>Neuer Ort – auf die Karte klicken</span><div class="adm-map" id="ed-map"></div></div>${addBtn()}`
+              : `<p>An <b>${esc(st.name)}</b> hält dann keine Linie mehr (sie fahren durch, die Fahrzeiten bleiben). Linien: ${st.lines.map((id) => net!.lines.get(id)).filter(Boolean).map((l) => lineChip(l!.mode, l!.id, l!.color)).join(' ')}</p>${addBtn('Station auflassen')}`
+      }`;
+  }
+
+  /** Formular → Änderung (oder Meldung, was fehlt) */
+  function editFromForm(): LineEdit | string {
+    const L = form.line;
+    switch (form.kind) {
+      case 'extend': {
+        if (!form.at) return 'Endstation wählen.';
+        if (form.stops.some((s) => !s.station)) return 'Für jeden neuen Halt eine Station wählen.';
+        return { kind: 'extend', line: L, at: form.at, stops: form.stops.map((s) => ({ station: s.station, min: Math.max(0, Math.round(s.min)) })) };
+      }
+      case 'cut': {
+        const p = mainPattern();
+        if (!form.at || !form.end) return 'Ende und neue Endstation wählen.';
+        return { kind: 'cut', line: L, at: form.at, beyond: form.end === 'start' ? p[0] : p[p.length - 1] };
+      }
+      case 'time': {
+        if (!form.pair) return 'Abschnitt wählen.';
+        const [from, to] = form.pair.split('|');
+        return { kind: 'time', line: L, from, to, min: Math.max(0, Math.round(form.min)) };
+      }
+      case 'removeLine':
+        return { kind: 'removeLine', line: L };
+      case 'addLine': {
+        if (!L.trim()) return 'Namen der Linie eingeben.';
+        if (form.stops.length < 2 || form.stops.some((s) => !s.station)) return 'Mindestens zwei Halte wählen.';
+        return { kind: 'addLine', line: L.trim(), mode: form.mode, color: form.color, stops: form.stops.map((s, i) => ({ station: s.station, min: i ? Math.max(0, Math.round(s.min)) : 0 })), service: form.service };
+      }
+      case 'addStation': {
+        if (!form.name.trim()) return 'Namen eingeben.';
+        if (!form.point) return 'Ort auf der Karte wählen.';
+        return { kind: 'addStation', station: `n${Date.now()}`, name: form.name.trim(), lat: form.point.lat, lon: form.point.lon, district: form.district || 0 };
+      }
+      case 'renameStation':
+        if (!form.station || !form.name.trim()) return 'Station und neuen Namen wählen.';
+        return { kind: 'renameStation', station: form.station, name: form.name.trim() };
+      case 'moveStation':
+        if (!form.station || !form.point) return 'Station und neuen Ort wählen.';
+        return { kind: 'moveStation', station: form.station, lat: form.point.lat, lon: form.point.lon };
+      case 'removeStation':
+        if (!form.station) return 'Station wählen.';
+        return { kind: 'removeStation', station: form.station };
+      case 'headway': {
+        const t = /^([01]?\d|2[0-7]):[0-5]\d$/;
+        if (!t.test(form.from) || !t.test(form.to)) return 'Uhrzeiten im Format HH:MM.';
+        const pad = (x: string) => x.padStart(5, '0');
+        return { kind: 'headway', line: L, day: form.day, from: pad(form.from), to: pad(form.to), every: Math.round(form.every), ...(form.pattern ? { pattern: form.pattern } : {}) };
+      }
+      case 'addVariant':
+        if (form.stops.length < 2 || form.stops.some((x) => !x.station)) return 'Mindestens zwei Halte wählen.';
+        return { kind: 'addVariant', line: L, stops: form.stops.map((x, i) => ({ station: x.station, min: i ? Math.max(0, Math.round(x.min)) : 0 })), service: form.service };
+      // diese Änderungen entstehen direkt in der Fahrplan-Ansicht
+      case 'insertStop':
+      case 'skipStop':
+      case 'departures':
+        return 'Bitte direkt im Fahrplan der Linie ändern.';
+    }
+  }
+
+  function resetForm(kind = form.kind) {
+    Object.assign(form, { kind, line: '', at: '', end: '', beyond: '', pair: '', min: 3, current: null, station: '', name: '', district: 0, point: null, pattern: '', stops: [{ station: '', min: kind === 'addLine' || kind === 'addVariant' ? 0 : 3 }] });
+  }
+
+  // -------------------------------------------------------------- Fahrplan-Ansicht
+
+  function probeHtml(routes: RouteOption[]): string {
+    if (!routes.length) return '<p class="muted">Keine Verbindung gefunden.</p>';
+    return `<ol class="route-list adm-probe-res">${routes
+      .slice(0, 6)
+      .map(
+        (r, i) => `<li class="expandable ${i === 0 ? 'open' : ''}"><div class="rrow"><span class="rank">${i + 1}</span><div class="rmain"><div class="chainline">${chain(r.legs)}</div></div><div class="rtime"><b>${r.medianMin} min</b></div><span class="chev">▾</span></div>
+          <div class="rdetail">${routeDetails(r)}</div></li>`,
+      )
+      .join('')}</ol>`;
+  }
+
+  // -------------------------------------------------------------- Aktionen
+
+  const run = async (fn: () => Promise<unknown>) => {
+    try {
+      await fn();
+    } catch (e) {
+      toast((e as Error).message);
+    }
+    rerender();
+  };
+
+  function bind(root: HTMLElement) {
+    const n = net!;
+    // Auswahlfelder: Linie/Station gewählt
+    mountPickers(root, n, (key, id) => {
+      if (key === 'line') {
+        Object.assign(form, { line: id, at: '', end: '', pair: '', current: null, pattern: '' });
+        if (form.kind === 'headway')
+          return void run(async () => {
+            ttLine = id;
+            await loadLineView(id);
+            const main = [...(lineView?.patterns ?? [])].sort((a, b) => b.deps[form.day].length - a.deps[form.day].length)[0];
+            form.every = (main && taktIn(depsOf(lineView, main.key, form.day), form.from, form.to).main) || form.every;
+          });
+      } else if (key === 'station') {
+        form.station = id;
+        form.name = '';
+        form.point = null;
+      } else if (key.startsWith('stop:')) form.stops[Number(key.slice(5))].station = id;
+      else if (key === 'ins') {
+        if (insertAt) insertAt.station = id;
+      } else if (key === 'from') probe.from = id;
+      else if (key === 'to') probe.to = id;
+      rerender();
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-plan]').forEach((b) =>
+      b.addEventListener('click', () => {
+        planId = b.dataset.plan!;
+        net = null;
+        cur = null;
+        curCfg = null;
+        lineView = null;
+        lineViewFor = '';
+        linesFor = '';
+        ttLine = '';
+        probe.routes = null;
+        resetForm();
+        rerender();
+      }),
+    );
+    root.querySelector('#cu-save')?.addEventListener('click', () =>
+      run(async () => {
+        const current = {
+          enabled: root.querySelector<HTMLInputElement>('#cu-on')!.checked,
+          label: root.querySelector<HTMLInputElement>('#cu-label')!.value,
+          hint: root.querySelector<HTMLInputElement>('#cu-hint')!.value,
+        };
+        const st = await adm<{ config: GameConfig }>('PUT', '/api/admin/config/netModes', { value: { ...curCfg!, current } });
+        curCfg = st.config.netModes;
+        // Menü im Browser gleich mitziehen (Text der Kachel)
+        const i = NET_MODES.findIndex((m) => m.id === 'current');
+        if (i >= 0) NET_MODES.splice(i, 1);
+        if (curCfg.current.enabled) NET_MODES.splice(1, 0, { id: 'current', label: curCfg.current.label, hint: curCfg.current.hint });
+        toast('Gespeichert – gilt ab sofort', 'info');
+      }),
+    );
+    root.querySelector('#pl-new')?.addEventListener('click', () => ((newPlan = { label: '', copy: true }), rerender()));
+    root.querySelector('#np-cancel')?.addEventListener('click', () => ((newPlan = null), rerender()));
+    root.querySelector<HTMLInputElement>('#np-label')?.addEventListener('input', (e) => (newPlan!.label = (e.target as HTMLInputElement).value));
+    root.querySelector<HTMLInputElement>('#np-copy')?.addEventListener('change', (e) => (newPlan!.copy = (e.target as HTMLInputElement).checked));
+    root.querySelector('#np-ok')?.addEventListener('click', () =>
+      run(async () => {
+        const label = newPlan!.label.trim();
+        if (!label) throw new Error('Bitte einen Namen eingeben.');
+        let id = slug(label);
+        while (state!.plans.some((p) => p.id === id) || id === 'regular') id = `${id.slice(0, 20)}-${Math.floor(Math.random() * 90 + 10)}`;
+        const src = plan();
+        await savePlan({ id, label, hint: '', inMenu: false, params: newPlan!.copy ? src.params : {}, edits: newPlan!.copy ? src.edits : [] }, `Netzplan „${label}“ angelegt`);
+        newPlan = null;
+        planId = id;
+        paramsFor = '';
+      }),
+    );
+    root.querySelector('#pm-save')?.addEventListener('click', () =>
+      run(() =>
+        savePlan(
+          {
+            id: planId,
+            label: root.querySelector<HTMLInputElement>('#pm-label')!.value,
+            hint: root.querySelector<HTMLInputElement>('#pm-hint')!.value,
+            inMenu: root.querySelector<HTMLInputElement>('#pm-menu')!.checked,
+          },
+          'Gespeichert',
+        ),
+      ),
+    );
+    root.querySelector('#pm-del')?.addEventListener('click', () => {
+      if (!confirm(`Netzplan „${plan().label}“ löschen? Lobbys, die ihn gewählt haben, spielen dann mit dem Standard-Netz.`)) return;
+      void run(async () => {
+        state = await adm<RoutingAdminState>('DELETE', `/api/admin/routing/plans/${encodeURIComponent(planId)}`);
+        forgetPlanNet(planId);
+        planId = 'regular';
+        net = null;
+        versions = null;
+      });
+    });
+    // Stellschrauben
+    root.querySelectorAll<HTMLInputElement>('[data-param]').forEach((inp) =>
+      inp.addEventListener('change', () => {
+        const k = inp.dataset.param as keyof RoutingParams;
+        if (inp.value === '' || Number(inp.value) === state!.defaults[k]) delete params[k];
+        else params[k] = Number(inp.value);
+        rerender();
+      }),
+    );
+    root.querySelector('#pa-save')?.addEventListener('click', () => run(() => savePlan({ id: planId, params }, 'Gespeichert und angewendet')));
+    root.querySelector('#pa-default')?.addEventListener('click', () => run(() => savePlan({ id: planId, params: {} }, 'Auf Standard')));
+    root.querySelectorAll<HTMLButtonElement>('[data-rmedit]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const edits = plan().edits.filter((_, i) => i !== Number(b.dataset.rmedit));
+        void run(async () => {
+          await savePlan({ id: planId, edits }, 'Rückgängig gemacht');
+          linesFor = '';
+          lineViewFor = '';
+        });
+      }),
+    );
+    // Formular
+    root.querySelectorAll<HTMLButtonElement>('[data-kind]').forEach((b) =>
+      b.addEventListener('click', () => {
+        resetForm(b.dataset.kind as Kind);
+        rerender();
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-at]').forEach((b) => b.addEventListener('click', () => ((form.at = b.dataset.at!), rerender())));
+    root.querySelectorAll<HTMLButtonElement>('[data-end]').forEach((b) => b.addEventListener('click', () => ((form.end = b.dataset.end as 'start' | 'end'), (form.at = ''), rerender())));
+    root.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-f]').forEach((el) =>
+      el.addEventListener('change', async () => {
+        const k = el.dataset.f!;
+        if (k === 'pair') {
+          form.pair = el.value;
+          form.current = null;
+          // bisherige Fahrzeit aus dem Fahrplan eintragen
+          if (form.pair) {
+            const [a, b] = form.pair.split('|');
+            try {
+              const v = await adm<TimetableLineView>('GET', `/api/admin/routing/timetable?plan=${encodeURIComponent(planId)}&line=${encodeURIComponent(form.line)}`);
+              const mins = v.patterns.flatMap((p) => p.stops.map((s, i) => (i && ((p.stops[i - 1].station === a && s.station === b) || (p.stops[i - 1].station === b && s.station === a)) ? s.min : null))).filter((x): x is number => x != null);
+              if (mins.length) form.current = form.min = mins[0];
+            } catch {
+              /* ohne Fahrplan: Feld bleibt */
+            }
+          }
+          return rerender();
+        }
+        if (k === 'min' || k === 'district' || k === 'every') form[k] = Number(el.value);
+        else if (k === 'day') form.day = el.value as DayType;
+        else if (k === 'pattern' || k === 'from' || k === 'to') form[k] = el.value;
+        else if (k === 'mode') form.mode = el.value as Mode;
+        else if (k === 'line' || k === 'name' || k === 'color') form[k] = el.value;
+        if (k !== 'name' && k !== 'line') rerender();
+      }),
+    );
+    root.querySelectorAll<HTMLInputElement>('[data-stopmin]').forEach((el) => el.addEventListener('change', () => (form.stops[Number(el.dataset.stopmin)].min = Number(el.value))));
+    root.querySelectorAll<HTMLButtonElement>('[data-rmstop]').forEach((b) => b.addEventListener('click', () => (form.stops.splice(Number(b.dataset.rmstop), 1), rerender())));
+    root.querySelector('#ed-addstop')?.addEventListener('click', () => (form.stops.push({ station: '', min: 3 }), rerender()));
+    root.querySelectorAll<HTMLInputElement>('[data-band]').forEach((el) =>
+      el.addEventListener('change', () => {
+        const [d, i, f] = el.dataset.band!.split(':') as [DayType, string, keyof ServiceBand];
+        const b = form.service[d][Number(i)];
+        if (f === 'every') b.every = Number(el.value);
+        else b[f] = el.value;
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-rmband]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const [d, i] = b.dataset.rmband!.split(':') as [DayType, string];
+        form.service[d].splice(Number(i), 1);
+        rerender();
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-addband]').forEach((b) =>
+      b.addEventListener('click', () => (form.service[b.dataset.addband as DayType].push({ from: '06:00', to: '20:00', every: 10 }), rerender())),
+    );
+    const mapEl = root.querySelector<HTMLElement>('#ed-map');
+    if (mapEl) {
+      const st = form.station ? n.stations.get(form.station) : undefined;
+      miniMap(mapEl, n, form.point ?? (st ? { lat: st.lat, lon: st.lon } : null), (p) => {
+        form.point = p;
+        // Bezirk der nächsten Station übernehmen
+        if (form.kind === 'addStation' && !form.district) {
+          const near = [...n.stations.values()].sort((a, b) => Math.hypot(a.lat - p.lat, a.lon - p.lon) - Math.hypot(b.lat - p.lat, b.lon - p.lon))[0];
+          if (near) form.district = near.district;
+        }
+        const small = mapEl.previousElementSibling?.querySelector('small');
+        if (small) small.textContent = `(${p.lat.toFixed(5)}, ${p.lon.toFixed(5)})`;
+      });
+    }
+    // Bereiche, Fahrplan-Ansicht
+    root.querySelectorAll<HTMLButtonElement>('[data-section]').forEach((b) => b.addEventListener('click', () => ((section = b.dataset.section as typeof section), rerender())));
+    const help = root.querySelector<HTMLDetailsElement>('#tt-help');
+    help?.addEventListener('toggle', () => {
+      try {
+        localStorage.setItem(HELP_KEY, help.open ? 'auf' : 'zu');
+      } catch {
+        /* ohne Speicher: bleibt offen */
+      }
+    });
+    root.querySelector<HTMLInputElement>('#tt-built')?.addEventListener('change', (e) => {
+      asBuilt = (e.target as HTMLInputElement).checked;
+      rerender();
+    });
+    const filter = root.querySelector<HTMLInputElement>('#tt-filter');
+    filter?.addEventListener('input', () => {
+      lineFilter = filter.value;
+      rerender();
+      setTimeout(() => {
+        const n = document.querySelector<HTMLInputElement>('#tt-filter');
+        n?.focus();
+        n?.setSelectionRange(n.value.length, n.value.length);
+      }, 0);
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-ttline]').forEach((b) =>
+      b.addEventListener('click', () =>
+        run(async () => {
+          ttLine = b.dataset.ttline!;
+          await loadLineView(ttLine);
+        }),
+      ),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-ttday]').forEach((b) => b.addEventListener('click', () => ((ttDay = b.dataset.ttday as DayType), depDraft.clear(), rerender())));
+    const reloadView = async () => {
+      linesFor = '';
+      lineViewFor = '';
+    };
+    root.querySelectorAll<HTMLButtonElement>('[data-skip]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const station = b.dataset.skip!;
+        if (!confirm(`${ttLine} soll in ${n.stations.get(station)?.name ?? station} nicht mehr halten?`)) return;
+        void run(async () => {
+          await addEdit({ kind: 'skipStop', line: ttLine, station });
+          await reloadView();
+        });
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-insert]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const [a, c] = b.dataset.insert!.split('|');
+        insertAt = { a, b: c, station: '', minA: 2, minB: 2 };
+        rerender();
+      }),
+    );
+    root.querySelectorAll<HTMLInputElement>('[data-ins]').forEach((el) => el.addEventListener('change', () => insertAt && (insertAt[el.dataset.ins as 'minA' | 'minB'] = Number(el.value))));
+    root.querySelector('#ins-cancel')?.addEventListener('click', () => ((insertAt = null), rerender()));
+    root.querySelector('#ins-ok')?.addEventListener('click', () => {
+      const x = insertAt!;
+      if (!x.station) return toast('Neuen Halt wählen.');
+      void run(async () => {
+        await addEdit({ kind: 'insertStop', line: ttLine, a: x.a, b: x.b, station: x.station, minA: Math.round(x.minA), minB: Math.round(x.minB) });
+        insertAt = null;
+        await reloadView();
+      });
+    });
+    // Abfahrten: streichen/hinzufügen sammeln, dann eine Änderung je Richtung und Tag (mit früheren zusammengeführt)
+    const draftOf = (key: string) => depDraft.get(key) ?? depDraft.set(key, { remove: new Set(), add: [] }).get(key)!;
+    root.querySelectorAll<HTMLButtonElement>('[data-dep]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const [key, t] = b.dataset.dep!.split('|');
+        const d = draftOf(key);
+        const m = Number(t);
+        if (d.remove.has(m)) d.remove.delete(m);
+        else d.remove.add(m);
+        rerender();
+      }),
+    );
+    // im Plan weggefallene Abfahrt wieder fahren lassen
+    root.querySelectorAll<HTMLButtonElement>('[data-deprestore]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const [key, t] = b.dataset.deprestore!.split('|');
+        const d = draftOf(key);
+        d.add = [...new Set([...d.add, Number(t)])].sort((x, y) => x - y);
+        rerender();
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-depnew]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const [key, t] = b.dataset.depnew!.split('|');
+        const d = draftOf(key);
+        d.add = d.add.filter((x) => x !== Number(t));
+        rerender();
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-depaddbtn]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const key = b.dataset.depaddbtn!;
+        const inp = root.querySelector<HTMLInputElement>(`[data-depadd="${CSS.escape(key)}"]`)!;
+        const m = /^(\d{1,2}):([0-5]\d)$/.exec(inp.value.trim());
+        if (!m || Number(m[1]) > 27) return toast('Uhrzeit als HH:MM (nach Mitternacht 24:30 …).');
+        const d = draftOf(key);
+        d.add = [...new Set([...d.add, Number(m[1]) * 60 + Number(m[2])])].sort((x, y) => x - y);
+        rerender();
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-depcancel]').forEach((b) => b.addEventListener('click', () => (depDraft.delete(b.dataset.depcancel!), rerender())));
+    root.querySelectorAll<HTMLButtonElement>('[data-depsave]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const key = b.dataset.depsave!;
+        const d = depDraft.get(key)!;
+        const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+        const old = plan().edits.find((e) => e.kind === 'departures' && e.line === ttLine && e.pattern === key && e.day === ttDay) as Extract<LineEdit, { kind: 'departures' }> | undefined;
+        const add = new Set(old?.add ?? []);
+        const remove = new Set(old?.remove ?? []);
+        for (const m of d.remove) {
+          const t = fmt(m);
+          // eine früher hinzugefügte Abfahrt streichen = einfach nicht mehr hinzufügen
+          if (add.has(t)) add.delete(t);
+          else remove.add(t);
+        }
+        // eine früher gestrichene Abfahrt hinzufügen = einfach nicht mehr streichen
+        for (const m of d.add) {
+          const t = fmt(m);
+          if (remove.has(t)) remove.delete(t);
+          else add.add(t);
+        }
+        const edits = plan().edits.filter((e) => e !== old);
+        const next: LineEdit[] = add.size || remove.size ? [...edits, { kind: 'departures', line: ttLine, pattern: key, day: ttDay, add: [...add].sort(), remove: [...remove].sort() }] : edits;
+        void run(async () => {
+          await savePlan({ id: planId, edits: next }, 'Abfahrten gespeichert');
+          depDraft.delete(key);
+          await reloadView();
+        });
+      }),
+    );
+    // Takt je Haltefolge (beide Richtungen)
+    root.querySelectorAll<HTMLInputElement>('[data-hw]').forEach((el) =>
+      el.addEventListener('change', () => {
+        const [key, f] = el.dataset.hw!.split('|');
+        const cur = { ...hwOf(key) };
+        if (f === 'every') cur.every = Number(el.value);
+        else cur[f as 'from' | 'to'] = el.value.trim();
+        hwDraft.set(key, cur);
+      }),
+    );
+    root.querySelectorAll<HTMLInputElement>('[data-hw$="|from"], [data-hw$="|to"]').forEach((el) =>
+      el.addEventListener('input', () => {
+        const key = el.dataset.hw!.split('|')[0];
+        const val = (f: string) => root.querySelector<HTMLInputElement>(`[data-hw="${CSS.escape(`${key}|${f}`)}"]`)!.value;
+        const out = root.querySelector<HTMLElement>(`[data-hwnow="${CSS.escape(key)}"]`);
+        const b = baseView ? matchBase(lineView!.patterns, baseView.patterns).match[lineView!.patterns.findIndex((p) => p.key === key)] : null;
+        if (out && !Number.isNaN(toMin(val('from'))) && !Number.isNaN(toMin(val('to')))) out.innerHTML = hwNowText(key, b, val('from'), val('to'));
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-hwsave]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const key = b.dataset.hwsave!;
+        const hw = hwOf(key);
+        const t =/^([01]?\d|2[0-7]):[0-5]\d$/;
+        if (!t.test(hw.from) || !t.test(hw.to)) return toast('Uhrzeiten im Format HH:MM.');
+        void run(async () => {
+          await addEdit({ kind: 'headway', line: ttLine, day: ttDay, from: hw.from.padStart(5, '0'), to: hw.to.padStart(5, '0'), every: Math.round(hw.every), pattern: key });
+          await reloadView();
+        });
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-quick]').forEach((b) =>
+      b.addEventListener('click', () => {
+        resetForm(b.dataset.quick as Kind);
+        form.line = ttLine;
+        if (form.kind === 'addVariant') form.stops = [{ station: '', min: 0 }];
+        section = 'aenderungen';
+        rerender();
+      }),
+    );
+    const nm = root.querySelector<HTMLElement>('#pl-netmap');
+    if (nm) {
+      const map = L.map(nm, { minZoom: 10, maxZoom: 17, zoomSnap: 0.25 });
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', { attribution: 'Esri, HERE, Garmin, © OpenStreetMap', maxZoom: 17 }).addTo(map);
+      map.setView([48.2085, 16.3725], 11.5);
+      setTimeout(() => {
+        map.invalidateSize();
+        new NetMapLayer(map, new NetGraph(n)).render(netView());
+      }, 60);
+    }
+    root.querySelector('#ed-add')?.addEventListener('click', () => {
+      const e = editFromForm();
+      if (typeof e === 'string') return toast(e);
+      void run(async () => {
+        await addEdit(e);
+        resetForm();
+      });
+    });
+    // Fahrplan: Fahrzeit direkt ändern → „Fahrzeit“-Änderung (eine je Abschnitt, neuere ersetzt ältere)
+    root.querySelectorAll<HTMLInputElement>('[data-tt]').forEach((inp) =>
+      inp.addEventListener('change', () => {
+        const [from, to] = inp.dataset.tt!.split('|');
+        const min = Math.max(0, Math.round(Number(inp.value)));
+        const edits = plan().edits.filter((e) => !(e.kind === 'time' && e.line === ttLine && ((e.from === from && e.to === to) || (e.from === to && e.to === from))));
+        void run(async () => {
+          await savePlan({ id: planId, edits: [...edits, { kind: 'time', line: ttLine, from, to, min }] }, `${ttLine}: ${n.stations.get(from)?.name} ↔ ${n.stations.get(to)?.name} jetzt ${min} min`);
+          linesFor = '';
+          lineViewFor = '';
+        });
+      }),
+    );
+    // Probe
+    root.querySelector<HTMLSelectElement>('#pr-slot')?.addEventListener('change', (e) => (probe.slot = (e.target as HTMLSelectElement).value as SlotId));
+    root.querySelector('#pr-go')?.addEventListener('click', () => {
+      if (!probe.from || !probe.to) return toast('Start und Ziel wählen.');
+      probe.busy = true;
+      rerender();
+      void run(async () => {
+        try {
+          probe.routes = await adm<RouteOption[]>('POST', '/api/admin/routing/test', { plan: planId, from: probe.from, to: probe.to, slot: probe.slot });
+        } finally {
+          probe.busy = false;
+        }
+      });
+    });
+    const res = root.querySelector<HTMLElement>('.adm-probe-res');
+    if (res) makeExpandable(res);
+    // Versionen
+    const vd = root.querySelector<HTMLDetailsElement>('details.adm-versions');
+    vd?.addEventListener('toggle', () => {
+      if (vd.open && !versions)
+        void run(async () => {
+          versions = await adm('GET', '/api/admin/routing/versions');
+        });
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-restore]').forEach((b) =>
+      b.addEventListener('click', () => {
+        if (!confirm('Alle Netzpläne auf diesen Stand zurücksetzen?')) return;
+        void run(async () => {
+          state = await adm<RoutingAdminState>('POST', `/api/admin/routing/versions/${b.dataset.restore}/restore`);
+          forgetPlanNet();
+          net = null;
+          versions = null;
+          paramsFor = '';
+          toast('Wiederhergestellt', 'info');
+        });
+      }),
+    );
+  }
+
+  return { html, bind };
+}

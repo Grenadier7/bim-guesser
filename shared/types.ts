@@ -31,7 +31,8 @@ export interface District {
 }
 
 /** current = aktueller Fahrplan inkl. Baustellen, regular = Referenztag ohne Störungen */
-export type NetMode = 'current' | 'regular';
+/** 'regular' = Standard-Netzplan, 'current' = nächster echter Tag (Auskunft), 'plan:<id>' = weiterer Netzplan der Admin-Seite */
+export type NetMode = 'current' | 'regular' | `plan:${string}`;
 
 export interface Line {
   id: string;
@@ -81,7 +82,8 @@ export interface NetworkData extends NetworkPublic {
 
 // ---------------------------------------------------------------- Zeit & Einstellungen
 
-export type SlotId = 'wd12' | 'wd17' | 'sa02' | 'su12';
+/** Uhrzeit der Routenjagd – Standard wd12, wd17, sa02, su12; auf der Admin-Seite frei hinzufügbar/entfernbar */
+export type SlotId = string;
 
 export interface TimeSlot {
   id: SlotId;
@@ -566,6 +568,227 @@ export interface Me {
   friendRequests: number;
   friendsOnline: string[];
   invites: InvitePublic[];
+  /** darf die Admin-Seite sehen (vergeben nur über die Kommandozeile) */
+  admin?: boolean;
+}
+
+// ---------------------------------------------------------------- Admin
+
+export interface AdminUserRow {
+  name: string;
+  email: string | null;
+  admin: boolean;
+  created: number;
+  lastSeen: number;
+  online: boolean;
+  level: number;
+  games: number;
+  sessions: number;
+}
+
+export interface AdminUserDetail extends AdminUserRow {
+  xp: number;
+  stats: AccountStats;
+  medals: MedalPublic[];
+  friends: string[];
+  incoming: string[];
+  outgoing: string[];
+  /** synchronisierter Spielstand: Schlüssel → Größe in Bytes */
+  data: Record<string, number>;
+  invites: number;
+}
+
+export interface AdminLogEntry {
+  at: number;
+  admin: string;
+  action: string;
+  target: string | null;
+  detail: string | null;
+}
+
+export interface AdminLobby {
+  code: string;
+  mode: GameMode;
+  phase: string;
+  /** „Runde 2/5“ bzw. „Frage 3/10“ */
+  progress: string;
+  /** Zeit gerade angehalten */
+  paused: boolean;
+  players: { id: string; name: string; account?: string; connected: boolean; host: boolean; score: number }[];
+  chat: { name: string; text: string; at: number }[];
+  createdAt: number;
+  lastActivity: number;
+}
+
+export interface AdminStats {
+  /** Momentaufnahmen (alle 5 min, ab 2 Tagen je Stunde der Höchstwert) */
+  samples: { at: number; online: number; lobbies: number; playing: number; players: number; visitors: number; anon: number }[];
+  /** je Tag (Wien): fertige Spiele, Spieler darin, neue und aktive Accounts, Besucher (mit/ohne Account) */
+  days: { day: string; route: number; quiz: number; players: number; newUsers: number; activeUsers: number; visitors: number; anonVisitors: number }[];
+  /** wie oft welche Linie in Routen gewählt wurde (Zeitraum), häufigste zuerst */
+  lines: { line: string; n: number }[];
+}
+
+export interface AdminUserStats {
+  days: { day: string; route: number; quiz: number; training: number; points: number }[];
+}
+
+export interface AdminOverview {
+  version: string;
+  uptimeSec: number;
+  memoryMb: number;
+  users: { total: number; online: number; new7d: number; admins: number; withEmail: number };
+  lobbies: AdminLobby[];
+  activeGames: number;
+  mail: boolean;
+  warnings: string[];
+  timetable: { loaded: boolean; validUntil: string | null };
+}
+
+/** Stellschrauben der Routenberechnung (Standardwerte siehe server/overrides.ts) */
+export interface RoutingParams {
+  /** Umsteigen an derselben Haltestelle (min) */
+  changeMin: number;
+  /** Fußweg zu einer anderen Haltestelle höchstens (m) */
+  transferWalkM: number;
+  /** von/zu einer Adresse höchstens zu Fuß (m) */
+  accessWalkM: number;
+  /** ganz zu Fuß bis (m) */
+  walkOnlyM: number;
+  /** höchstens so viele Fahrten in einer Verbindung */
+  maxRides: number;
+  /** „Realistisch“: Anteil der Ø-Wartezeit an der ersten Haltestelle */
+  firstWaitFactor: number;
+}
+
+/** Betriebszeit einer neuen Linie an einem Tagestyp: von–bis alle `every` Minuten (bis auch nach Mitternacht, z.B. 24:30) */
+export interface ServiceBand {
+  from: string;
+  to: string;
+  every: number;
+}
+
+/** Änderung im Netzplan – Stationen als Netz-IDs; wird der Reihe nach angewendet */
+export type LineEdit =
+  /** über die bisherige Endstation `at` hinaus weiterfahren: `stops` der Reihe nach, `min` = Fahrzeit ab dem vorigen Halt */
+  | { kind: 'extend'; line: string; at: string; stops: { station: string; min: number }[] }
+  /** Linie endet bei `at`: alle Halte hinter `at` (vom Ende `end` aus gesehen) fallen weg */
+  | { kind: 'cut'; line: string; at: string; beyond: string }
+  /** Fahrzeit zwischen zwei aufeinanderfolgenden Halten (beide Richtungen) */
+  | { kind: 'time'; line: string; from: string; to: string; min: number }
+  /** neue Station (ID vergibt der Server: „n…“) */
+  | { kind: 'addStation'; station: string; name: string; lat: number; lon: number; district: number }
+  | { kind: 'renameStation'; station: string; name: string }
+  | { kind: 'moveStation'; station: string; lat: number; lon: number }
+  /** Station auflassen: Linien fahren durch, ohne zu halten */
+  | { kind: 'removeStation'; station: string }
+  /** neue Linie in beide Richtungen; Fahrzeiten ab dem vorigen Halt; Takt je Tagestyp */
+  | { kind: 'addLine'; line: string; mode: Mode; color: string; stops: { station: string; min: number }[]; service: Record<DayType, ServiceBand[]> }
+  | { kind: 'removeLine'; line: string }
+  /** Takt ändern: an diesem Tagestyp zwischen `from` und `to` alle `every` Minuten (Fahrzeiten wie bisher);
+   *  `pattern` = „Start>Ende“ (Station-IDs, beide Richtungen) – ohne: alle Haltefolgen der Linie */
+  | { kind: 'headway'; line: string; day: DayType; from: string; to: string; every: number; pattern?: string }
+  /** zusätzliche Fahrten einer bestehenden Linie auf eigener Haltefolge (beide Richtungen), z.B. jede 2. S1 nach Hütteldorf */
+  | { kind: 'addVariant'; line: string; stops: { station: string; min: number }[]; service: Record<DayType, ServiceBand[]> }
+  /** neuen Halt zwischen zwei aufeinanderfolgenden Halten einfügen (beide Richtungen): a → station `minA`, station → b `minB` */
+  | { kind: 'insertStop'; line: string; a: string; b: string; station: string; minA: number; minB: number }
+  /** Linie hält hier nicht mehr (fährt durch; andere Linien halten weiter) */
+  | { kind: 'skipStop'; line: string; station: string }
+  /** einzelne Abfahrten am ersten Halt einer Haltefolge („Start>Ende“, diese Richtung) hinzufügen/streichen */
+  | { kind: 'departures'; line: string; pattern: string; day: DayType; add: string[]; remove: string[] };
+export type NetEdit = LineEdit;
+
+/** eine Linie im Fahrplan (Admin): Verkehrsmittel, Fahrten je Tag, Endstationen, Takt am Werktag */
+export interface TimetableLineInfo {
+  line: string;
+  mode: Mode;
+  /** Regionalzug (fährt nur auf S-Bahn-Abschnitten mit) */
+  regional: boolean;
+  trips: Record<DayType, number>;
+  termini: string[];
+  /** typischer Takt Mo–Fr 6–20 Uhr (min) */
+  every: number | null;
+}
+
+/** Netzplan: Standard („regular“) oder weiterer Plan, der in der Lobby wählbar sein kann */
+export interface NetworkPlan {
+  id: string;
+  label: string;
+  hint: string;
+  /** in der Lobby unter „Netz“ wählbar */
+  inMenu: boolean;
+  params: Partial<RoutingParams>;
+  edits: LineEdit[];
+  updatedAt?: number;
+  updatedBy?: string;
+}
+
+/** Fahrplan-Ansicht einer Linie (Admin): Haltefolgen mit Fahrzeiten und Fahrten je Stunde */
+export interface TimetableLineView {
+  line: string;
+  mode: Mode;
+  patterns: {
+    /** „Start>Ende“ (Station-IDs) – für „Takt ändern“ */
+    key: string;
+    stops: { station: string | null; name: string; min: number | null }[];
+    /** Fahrten je Tagestyp und Stunde (0–24) */
+    trips: Record<DayType, number[]>;
+    /** Abfahrten am ersten Halt (Minuten ab Mitternacht) */
+    deps: Record<DayType, number[]>;
+    through: string | null;
+  }[];
+}
+
+/** Betriebsmeldung der Wiener Linien (Störung, Bauarbeiten) */
+export interface TrafficInfo {
+  /** long = länger dauernd (meist Bauarbeiten), short = kurzfristige Störung */
+  kind: 'long' | 'short';
+  title: string;
+  text: string;
+  lines: string[];
+  /** Zeitraum (ms), null = unbekannt */
+  start: number | null;
+  end: number | null;
+}
+
+/** Linie im Netz „Aktuell“ und wie sie anders fährt als regulär (laut Fahrplandaten) */
+export interface CurrentLine {
+  id: string;
+  mode: Mode;
+  color: string;
+  /** Endstellen der längsten Fahrt – aktuell und regulär (null = fährt dort nicht) */
+  termini: [string, string] | null;
+  wasTermini: [string, string] | null;
+  /** Halte, die aktuell nicht bedient werden bzw. nur aktuell dazukommen */
+  without: string[];
+  extra: string[];
+}
+
+/** Admin: Netz „Aktuell“ – welche echten Tage gespielt werden und was anders ist als im regulären Netz */
+export interface CurrentNetInfo {
+  generatedAt: string;
+  /** nächster typischer Tag je Tagestyp (YYYY-MM-DD) */
+  days: Record<DayType, string>;
+  regularDays: Record<DayType, ReferenceDay>;
+  /** nur im aktuellen Fahrplan (z.B. Ersatzverkehr) */
+  onlyCurrent: CurrentLine[];
+  /** fahren aktuell nicht */
+  missing: CurrentLine[];
+  /** fahren aktuell anders (andere Haltefolgen, z.B. kurzgeführt) */
+  changed: CurrentLine[];
+  /** Meldungen der Wiener Linien (live), Stand und ob der Abruf gerade fehlschlug */
+  infos: TrafficInfo[];
+  infoAt: number | null;
+  infoError: boolean;
+  /** offene Lobbys mit „Aktuell“ */
+  lobbies: number;
+}
+
+export interface RoutingAdminState {
+  plans: NetworkPlan[];
+  defaults: RoutingParams;
+  /** Ergebnis beim Anwenden je Plan: je Änderung, wie viele Fahrten/Haltefolgen betroffen waren, oder ein Fehler */
+  report: Record<string, string[]>;
 }
 
 export interface FriendsList {

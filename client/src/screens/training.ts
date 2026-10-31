@@ -1,7 +1,7 @@
 // Trainingsmodus: echte Strecken ohne Zeit und Punkte, mit Coach, gestuften Hilfen,
 // "Was fährt hier ab?", Erklärung am Ende, Wiederholung und Merkliste.
 import type { Difficulty, GameSettings, Line, SlotId, TrainingResult, TrainingRound } from '../../../shared/types.ts';
-import { DIFFICULTY_PRESETS, TIME_SLOTS } from '../../../shared/rules.ts';
+import { DIFFICULTY_PRESETS, slotOr, TIME_SLOTS } from '../../../shared/rules.ts';
 import { DEFAULT_TRAINING } from '../../../shared/defaults.ts';
 import { api } from '../api.ts';
 import { RouteBuilder } from '../builder.ts';
@@ -81,7 +81,7 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
         share: 0.7,
       };
     }
-    return { slot: cfg.slot, network: 'regular', difficulty: p.id, stations: p.stations, distance: p.distance, minTransfers: p.minTransfers, countWait: true, focus };
+    return { slot: slotOr(cfg.slot), network: 'regular', difficulty: p.id, stations: p.stations, distance: p.distance, minTransfers: p.minTransfers, countWait: true, focus };
   }
 
   // -------------------------------------------------------------- Einstellungen
@@ -107,7 +107,7 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
             <li><b>Am Ende:</b> Vergleich mit der schnellsten Verbindung und <i>warum</i> sie schneller ist.</li>
             <li><b>Wiederholung:</b> was nicht geklappt hat, kommt ${RETRY_AFTER} Strecken später nochmal.</li>
           </ul></details>
-        <div class="setting"><span>${icon('clock', 15)} Uhrzeit</span><div class="seg seg-wide">${TIME_SLOTS.map((t) => `<button data-slot="${t.id}" class="${t.id === cfg.slot ? 'on' : ''}">${t.short}</button>`).join('')}</div></div>
+        <div class="setting"><span>${icon('clock', 15)} Uhrzeit</span><div class="seg seg-wide">${TIME_SLOTS.map((t) => `<button data-slot="${t.id}" class="${t.id === slotOr(cfg.slot) ? 'on' : ''}">${t.short}</button>`).join('')}</div></div>
         <div class="setting"><span>${icon('target', 15)} Schwierigkeit</span><div class="seg seg-wide">${DIFFICULTY_PRESETS.map((d) => `<button data-preset="${d.id}" class="${d.id === cfg.preset ? 'on' : ''}">${d.label}</button>`).join('')}</div></div>
         <div class="setting"><span>${icon('pin', 15)} Gebiet</span>${areaPicker(net.data.districts, cfg.area, false, cfg.area ? 'die meisten Strecken starten oder enden hier' : 'Starts und Ziele überall')}</div>
         <label class="toggle"><input type="checkbox" id="coach" ${cfg.coach ? 'checked' : ''}><span class="switch"></span>
@@ -167,7 +167,7 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
     setMapBig(false);
     for (const r of mem.retry) r.due--;
     const due = mem.retry.find((r) => r.due <= 0);
-    panel.innerHTML = loadingHtml(due ? 'Wiederholung wird geladen …' : 'Strecke wird gesucht …', 'Der Fahrplan wird für mehrere Abfahrtszeiten durchgerechnet.');
+    panel.innerHTML = loadingHtml(due ? 'Wiederholung wird geladen …' : 'Strecke wird gesucht …');
     try {
       round = due ? await api.trainingRound(settings(), { from: due.from, to: due.to }) : await (prefetch ?? api.trainingRound(settings()));
       isRetry = !!due;

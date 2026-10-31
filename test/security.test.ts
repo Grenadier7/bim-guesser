@@ -495,7 +495,7 @@ function defineTests() {
       assert.equal(st.body.state.rounds[0].status, 'revealed');
       const rev = await s.call('GET', `/api/games/${code}/rounds/0/reveal?token=${h.body.token}`);
       const a = rev.body.evaluations.find((e: { playerName: string }) => e.playerName === 'A');
-      assert.match(a.error, /nicht nachgerechnet/);
+      assert.match(a.error, /nicht ausgewertet/);
     });
   });
 }

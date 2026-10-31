@@ -1,8 +1,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { distM, normName } from '../shared/geo.ts';
-import type { GameSettings, Headways, Line, NetMode, NetworkData, NetworkPublic, SlotId, Station, StationKind, StationRef } from '../shared/types.ts';
-import { distanceRange, linePatterns } from '../shared/rules.ts';
+import type { DayType, GameSettings, Headways, Line, LineEdit, NetMode, NetworkData, NetworkPublic, ServiceBand, SlotId, Station, StationKind, StationRef } from '../shared/types.ts';
+import { distanceRange, isNightSlot, linePatterns } from '../shared/rules.ts';
 import { inStationKinds } from '../shared/pools.ts';
 import type { EfaPoint } from './efa.ts';
 import { coversTime, timetableWarnings } from './timetable.ts';
@@ -15,6 +15,20 @@ function loadHeadways(): Headways['lines'] | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Takt einer neuen Linie in den Zeitfenstern der Steckbriefe (wd7, wd12, wd20, sa12, su12) */
+function headwaysOf(service: Record<DayType, ServiceBand[]>): Record<string, number | null> {
+  const at = (d: DayType, h: number) => {
+    const t = h * 60;
+    const b = service[d].find((x) => {
+      const [fh, fm] = x.from.split(':').map(Number);
+      const [th, tm] = x.to.split(':').map(Number);
+      return t >= fh * 60 + fm && t <= th * 60 + tm;
+    });
+    return b ? b.every : null;
+  };
+  return { wd7: at('wd', 7), wd12: at('wd', 12), wd20: at('wd', 20), sa12: at('sa', 12), su12: at('su', 12) };
 }
 
 /** Kein Start/Ziel-Paar möglich (Einstellungen zu eng) – wird im Spiel zur verständlichen Meldung */
@@ -51,26 +65,202 @@ export class Network {
    *  versehentlich als Haltestelle erkannt werden */
   private virtual = new Map<string, Station>();
   private addresses: [number, number, string, number][] = [];
+  /** Admin-Seite: ausgenommene Adressen (Index) und eigene (hinten angehängt) */
+  private addressOff = new Set<number>();
+  private addressExtra: [number, number, string, number][] = [];
+  /** Netz wie in network.json – Änderungen eines Netzplans setzen immer hier auf */
+  private base: Pick<NetworkData, 'stations' | 'lines' | 'efaIds'>;
+  /** Takt neuer Linien (für Steckbriefe und „Was fährt hier ab?“) */
+  private extraHeadways: Headways['lines'] = {};
+  /** Netzplan dieses Netzes ('regular' = Standard) */
+  planId = 'regular';
 
   constructor(data: NetworkData) {
     this.data = data;
+    this.base = structuredClone({ stations: data.stations, lines: data.lines, efaIds: data.efaIds });
     try {
       this.addresses = (JSON.parse(readFileSync(path.join(path.dirname(FILE), 'addresses.json'), 'utf8')) as { addresses: [number, number, string, number][] }).addresses;
     } catch {
       /* ohne Adressdaten nur Haltestellen */
     }
-    for (const s of data.stations) {
-      this.stations.set(s.id, s);
-      const k = normName(s.name);
-      this.byNorm.set(k, [...(this.byNorm.get(k) ?? []), s]);
-    }
-    for (const l of data.lines) this.lines.set(l.id, l);
-    for (const [sid, ids] of Object.entries(data.efaIds)) for (const id of ids) this.efaToStation.set(id, sid);
+    this.index();
     try {
       for (const [id, n] of Object.entries(JSON.parse(readFileSync(USAGE_FILE, 'utf8')) as Record<string, number>)) this.usage.set(id, n);
     } catch {
       /* noch keine Statistik */
     }
+  }
+
+  /** Netz-Station zu einer EFA-ID */
+  stationOfEfa(efaId: string): string | null {
+    return this.efaToStation.get(efaId) ?? null;
+  }
+
+  /** Nachschlage-Tabellen aus data neu aufbauen */
+  private index() {
+    this.stations.clear();
+    this.lines.clear();
+    this.byNorm.clear();
+    this.efaToStation.clear();
+    for (const s of this.data.stations) {
+      this.stations.set(s.id, s);
+      const k = normName(s.name);
+      this.byNorm.set(k, [...(this.byNorm.get(k) ?? []), s]);
+    }
+    for (const l of this.data.lines) this.lines.set(l.id, l);
+    for (const [sid, ids] of Object.entries(this.data.efaIds)) for (const id of ids) this.efaToStation.set(id, sid);
+    this.candidateCache.clear();
+  }
+
+  /**
+   * Änderungen eines Netzplans (Admin-Seite) anwenden – damit der Routen-Baukasten, die Karten, das Quiz und
+   * „Was fährt hier ab?“ dasselbe Netz kennen wie die Routenberechnung (timetable.ts). Beginnt immer beim Stand aus
+   * network.json. Haltefolgen, die auch im aktuellen Netz („Aktuell“) gelten, bleiben dort unverändert.
+   */
+  applyEdits(edits: LineEdit[]) {
+    const b = structuredClone(this.base);
+    this.data.stations = b.stations;
+    this.data.lines = b.lines;
+    this.data.efaIds = b.efaIds;
+    this.extraHeadways = {};
+    this.index();
+    const touched = new Set<string>();
+    for (const e of edits) {
+      if (e.kind === 'addStation') {
+        if (this.stations.has(e.station)) continue;
+        const st: Station = { id: e.station, name: e.name, lat: e.lat, lon: e.lon, modes: [], lines: [], district: e.district };
+        this.data.stations.push(st);
+        this.data.efaIds[e.station] = [`x:${e.station}`];
+        this.index();
+        continue;
+      }
+      if (e.kind === 'renameStation' || e.kind === 'moveStation') {
+        const st = this.stations.get(e.station);
+        if (!st) continue;
+        if (e.kind === 'renameStation') st.name = e.name;
+        else ((st.lat = e.lat), (st.lon = e.lon));
+        this.index();
+        continue;
+      }
+      if (e.kind === 'removeStation') {
+        const st = this.stations.get(e.station);
+        if (!st) continue;
+        for (const l of this.data.lines) {
+          const keep = l.patterns.map((p) => p.filter((x) => x !== st.id));
+          l.nets = l.nets.filter((_, i) => keep[i].length >= 2);
+          l.patterns = keep.filter((p) => p.length >= 2);
+        }
+        this.data.stations = this.data.stations.filter((x) => x.id !== st.id);
+        delete this.data.efaIds[st.id];
+        this.index();
+        continue;
+      }
+      if (e.kind === 'addLine') {
+        if (this.lines.has(e.line)) continue;
+        const ids = e.stops.map((s) => s.station).filter((id) => this.stations.has(id));
+        if (ids.length < 2) continue;
+        this.data.lines.push({ id: e.line, mode: e.mode, color: e.color, patterns: [ids, [...ids].reverse()], nets: ['r', 'r'] });
+        this.extraHeadways[e.line] = headwaysOf(e.service);
+        this.index();
+        touched.add(e.line);
+        continue;
+      }
+      if (e.kind === 'removeLine') {
+        this.data.lines = this.data.lines.filter((l) => l.id !== e.line);
+        this.index();
+        touched.add(e.line);
+        continue;
+      }
+      const line = this.lines.get(e.line);
+      // Fahrzeit und Takt ändern nur den Fahrplan
+      if (!line || e.kind === 'time' || e.kind === 'headway') continue;
+      touched.add(line.id);
+      if (e.kind === 'skipStop') {
+        const keep = line.patterns.map((p) => p.filter((x) => x !== e.station));
+        line.nets = line.nets.filter((_, i) => keep[i].length >= 2);
+        line.patterns = keep.filter((p) => p.length >= 2);
+        continue;
+      }
+      if (e.kind === 'insertStop') {
+        if (!this.stations.has(e.station)) continue;
+        line.patterns = line.patterns.map((p) => {
+          for (let j = 1; j < p.length; j++)
+            if ((p[j - 1] === e.a && p[j] === e.b) || (p[j - 1] === e.b && p[j] === e.a)) return [...p.slice(0, j), e.station, ...p.slice(j)];
+          return p;
+        });
+        continue;
+      }
+      if (e.kind === 'departures') continue;
+      if (e.kind === 'addVariant') {
+        const ids = e.stops.map((s) => s.station).filter((id) => this.stations.has(id));
+        if (ids.length >= 2) (line.patterns.push(ids, [...ids].reverse()), line.nets.push('r', 'r'));
+        continue;
+      }
+      const edit = (p: string[]): string[] => {
+        if (e.kind === 'extend') {
+          const ids = e.stops.map((s) => s.station).filter((id) => this.stations.has(id));
+          if (!ids.length || p.some((x) => ids.includes(x))) return p;
+          if (p[p.length - 1] === e.at) return [...p, ...ids];
+          if (p[0] === e.at) return [...[...ids].reverse(), ...p];
+          return p;
+        }
+        const ia = p.indexOf(e.at);
+        const ib = p.indexOf(e.beyond);
+        if (ia < 0 || ib < 0) return p;
+        return ib > ia ? p.slice(0, ia + 1) : p.slice(ia);
+      };
+      const patterns: string[][] = [];
+      const nets: string[] = [];
+      line.patterns.forEach((p, i) => {
+        const n = line.nets[i];
+        const q = n.includes('r') ? edit(p) : p;
+        if (q === p) return void (patterns.push(p), nets.push(n));
+        const c = n.replace('r', '');
+        if (c) (patterns.push(p), nets.push(c));
+        if (q.length >= 2) (patterns.push(q), nets.push('r'));
+      });
+      line.patterns = patterns;
+      line.nets = nets;
+    }
+    // Linien und Verkehrsmittel je Station aus den Haltefolgen neu (nur, wo sich etwas geändert haben kann)
+    if (touched.size || edits.some((e) => e.kind === 'removeStation')) {
+      const served = new Map<string, Set<string>>();
+      for (const l of this.data.lines) for (const id of new Set(l.patterns.flat())) (served.get(id) ?? served.set(id, new Set()).get(id)!).add(l.id);
+      for (const s of this.data.stations) {
+        const keep = s.lines.filter((id) => !touched.has(id) && this.lines.has(id));
+        const now = [...new Set([...keep, ...[...(served.get(s.id) ?? [])].filter((id) => touched.has(id))])];
+        s.lines = now;
+        s.modes = [...new Set(now.map((id) => this.lines.get(id)!.mode).filter((m) => m !== 'W'))];
+      }
+    }
+    this.candidateCache.clear();
+  }
+
+  /** Adressen als Start/Ziel: einzelne ausnehmen („a:Index“) und eigene dazu (Admin-Seite) */
+  applyAddresses(cfg: { removed: string[]; added: { name: string; lat: number; lon: number; district: number }[] }) {
+    this.addressOff = new Set(cfg.removed.map((id) => Number(id.slice(2))).filter((i) => i < this.addresses.length));
+    this.addressExtra = cfg.added.map((a) => [a.lat, a.lon, a.name, a.district]);
+  }
+
+  /** alle wählbaren Adressen (mit stabiler Nummer: eigene hinter den gebauten) */
+  private addressList(): { i: number; lat: number; lon: number; name: string; district: number }[] {
+    const all = [...this.addresses, ...this.addressExtra].map(([lat, lon, name, district], i) => ({ i, lat, lon, name, district }));
+    return all.filter((a) => !this.addressOff.has(a.i));
+  }
+
+  /** Admin-Seite: alle gebauten Adressen (Index = ID „a:Index“) für die Karte */
+  allAddresses(): [number, number, string, number][] {
+    return this.addresses;
+  }
+
+  /** Admin-Seite: Adressen suchen (Name), auch ausgenommene */
+  searchAddresses(q: string, limit = 50): { id: string; name: string; district: number; lat: number; lon: number; removed: boolean; own: boolean }[] {
+    const n = normName(q);
+    if (n.length < 2) return [];
+    return [...this.addresses, ...this.addressExtra]
+      .map(([lat, lon, name, district], i) => ({ id: `a:${i}`, name, district, lat, lon, removed: this.addressOff.has(i), own: i >= this.addresses.length }))
+      .filter((a) => normName(a.name).includes(n))
+      .slice(0, limit);
   }
 
   /** Start/Ziel verwendet → seltener ziehen (gespeichert in data/usage.json) */
@@ -118,7 +308,8 @@ export class Network {
 
   publicData(): NetworkPublic {
     const { efaIds: _omit, ...pub } = this.data;
-    return { ...pub, headways: loadHeadways(), addressCount: this.addresses.length };
+    const hw = loadHeadways();
+    return { ...pub, headways: hw ? { ...hw, ...this.extraHeadways } : hw, addressCount: this.addressList().length };
   }
 
   station(id: string): Station {
@@ -139,7 +330,7 @@ export class Network {
   }
 
   get hasAddresses(): boolean {
-    return this.addresses.length > 0;
+    return this.addressList().length > 0;
   }
 
   /**
@@ -147,9 +338,9 @@ export class Network {
    * Regeln wie bei Haltestellen: Entfernung, Fokus-Kreis, Abwechslung zu früheren Runden.
    */
   randomAddressPair(s: GameSettings, past: PastPair[] = []): [Station, Station] {
-    if (this.addresses.length < 2) throw new NoPairError('Keine Adressdaten vorhanden – bitte „Haltestellen“ wählen.');
+    const all = this.addressList();
+    if (all.length < 2) throw new NoPairError('Keine Adressdaten vorhanden – bitte „Haltestellen“ wählen.');
     const [minD, maxD] = distanceRange(s.distance);
-    const all = this.addresses.map(([lat, lon, name, district], i) => ({ i, lat, lon, name, district }));
     const inFocus = s.focus ? all.filter((x) => distM(x, s.focus!) <= s.focus!.radiusM) : [];
     // je Ende: mit Wahrscheinlichkeit `share` aus dem Fokus-Kreis, sonst aus ganz Wien
     const pick = () => {
@@ -228,14 +419,14 @@ export class Network {
 
   /** Stationen, die für die Einstellungen in Frage kommen (gecacht) */
   candidates(pool: StationKind[], slot: SlotId, net: NetMode): Station[] {
-    const key = `${pool.join(',')}|${slot === 'sa02' ? 'n' : 'd'}|${net}`;
+    const key = `${pool.join(',')}|${isNightSlot(slot) ? 'n' : 'd'}|${net}`;
     let hit = this.candidateCache.get(key);
     if (!hit) this.candidateCache.set(key, (hit = this.computeCandidates(pool, slot, net)));
     return hit;
   }
 
   private computeCandidates(pool: StationKind[], slot: SlotId, net: NetMode): Station[] {
-    const night = slot === 'sa02';
+    const night = isNightSlot(slot);
     return [...this.stations.values()].filter((s) => {
       if (!this.linesAt(s.id, net).length) return false;
       // nachts nur Stationen mit U-Bahn oder Nachtbus

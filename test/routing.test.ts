@@ -112,5 +112,5 @@ test('Regression Punkt 16: Linie fährt den Abschnitt nicht → Meldung mit Vors
   const r = await routing.evaluateUserRoute(net, legs, A, C, SLOT, 'regular', { countWait: false, avgWait: false, restriction: null }, []);
   assert.equal(r.route, null);
   assert.match(r.error ?? '', /U3 fährt um diese Zeit nicht direkt/);
-  assert.match(r.error ?? '', /laut Auskunft.*U2 bis/);
+  assert.match(r.error ?? '', /So fährt man.*U2 bis/);
 });

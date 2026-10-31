@@ -2,8 +2,10 @@
 // Spieler mit geheimem Token, Host, Live-Verbindungen, Events.
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
-import type { ChatMessage, GameEvent, GameMode, GamePhase, LobbyState, PlayerPublic } from '../shared/types.ts';
+import type { AdminLobby, ChatMessage, GameEvent, GameMode, GamePhase, LobbyState, PlayerPublic } from '../shared/types.ts';
 import { cleanChat, cleanName } from './security.ts';
+import { ezPhrase, isEz } from './ez.ts';
+import { isOffensive, moderate } from './moderation.ts';
 
 export class GameError extends Error {
   status: number;
@@ -48,7 +50,12 @@ export interface PlayerAccount {
   name: string;
 }
 
+/** Admin als „Host“: Aktionen der Admin-Seite laufen über dieselben Methoden wie die des Hosts */
+const ADMIN: Player = { id: 'admin', token: '', name: 'Admin', score: 0, connections: 0, lastSeen: 0 };
+
 export abstract class Lobby extends EventEmitter {
+  /** Schlüssel für Host-Aktionen im Auftrag eines Admins – bleibt im Server (nie in einer Antwort) */
+  readonly adminKey = randomBytes(24).toString('base64url');
   abstract readonly mode: GameMode;
   readonly id: string;
   phase: GamePhase = 'lobby';
@@ -104,7 +111,9 @@ export abstract class Lobby extends EventEmitter {
 
   say(token: string, raw: unknown): ChatMessage {
     const p = this.auth(token);
-    const text = cleanChat(raw);
+    // Chat-Moderation: gesperrte Wörter werden zu Sternchen; „/ez“ wird zu einem zufälligen Spruch
+    const clean = cleanChat(raw);
+    const text = isEz(clean) ? ezPhrase(this) : moderate(clean);
     if (!text) throw new GameError('Leere Nachricht.');
     const now = Date.now();
     const recent = (this.chatTimes.get(p.id) ?? []).filter((t) => now - t < CHAT_WINDOW_MS);
@@ -125,7 +134,7 @@ export abstract class Lobby extends EventEmitter {
     this.byToken.delete(p.token);
     this.hosts.delete(p.id);
     this.emitEvent({ type: 'kicked', playerId: p.id });
-    this.post(null, '', `${p.name} wurde vom Host entfernt.`);
+    this.post(null, '', `${p.name} wurde ${host === ADMIN ? 'von der Spielleitung' : 'vom Host'} entfernt.`);
     this.touch();
     this.checkPresence();
   }
@@ -217,6 +226,7 @@ export abstract class Lobby extends EventEmitter {
     while (this.players.has(id));
     const token = randomBytes(24).toString('base64url');
     let clean = cleanName(name) || `Spieler ${this.players.size + 1}`;
+    if (isOffensive(clean)) throw new GameError('Dieser Name ist nicht erlaubt – bitte einen anderen wählen.');
     const taken = new Set([...this.players.values()].map((p) => p.name));
     for (let i = 2; taken.has(clean); i++) clean = `${clean.replace(/ \d+$/, '').slice(0, 17)} ${i}`;
     const player: Player = { id, token, name: clean, score: 0, connections: 0, lastSeen: Date.now(), userId: account?.id, account: account?.name };
@@ -238,6 +248,45 @@ export abstract class Lobby extends EventEmitter {
     return this.auth(token).id;
   }
 
+  /** für die Admin-Übersicht: wer ist drin, wie weit, was wird geschrieben? */
+  adminInfo(): AdminLobby {
+    const s = this.state() as unknown as {
+      currentRound?: number;
+      current?: number;
+      pausedAt?: number | null;
+      rounds?: { pausedAt: number | null }[];
+      settings: { rounds?: number; questions?: number };
+    };
+    const paused = this.mode === 'quiz' ? !!s.pausedAt : !!s.rounds?.[s.currentRound ?? -1]?.pausedAt;
+    const progress =
+      this.phase === 'lobby' ? '' : this.mode === 'quiz' ? `Frage ${Math.max(0, s.current ?? 0) + 1}/${s.settings.questions}` : `Runde ${Math.max(0, s.currentRound ?? 0) + 1}/${s.settings.rounds}`;
+    return {
+      code: this.id,
+      mode: this.mode,
+      phase: this.phase,
+      progress,
+      paused,
+      players: [...this.players.values()].map((p) => ({
+        id: p.id,
+        name: p.name,
+        ...(p.account ? { account: p.account } : {}),
+        connected: p.connections > 0,
+        host: this.hosts.has(p.id),
+        score: p.score,
+      })),
+      chat: this.chat.slice(-30).map((m) => ({ name: m.name, text: m.text, at: m.at })),
+      createdAt: this.createdAt,
+      lastActivity: this.lastActivity,
+    };
+  }
+
+  /** Nachricht der Spielleitung in den Lobby-Chat */
+  adminSay(raw: unknown) {
+    const text = cleanChat(raw);
+    if (!text) throw new GameError('Leere Nachricht.');
+    this.post(null, '', `Spielleitung: ${text}`);
+  }
+
   get playerCount(): number {
     return this.players.size;
   }
@@ -253,6 +302,7 @@ export abstract class Lobby extends EventEmitter {
   }
 
   protected requireHost(token: string): Player {
+    if (token === this.adminKey) return ADMIN;
     const p = this.auth(token);
     if (!this.hosts.has(p.id)) throw new GameError('Nur der Host kann das.', 403);
     return p;

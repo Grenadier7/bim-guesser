@@ -102,7 +102,7 @@ Oben rechts **👤 Anmelden** – ohne Account geht alles wie bisher. Mit Accoun
   geht nie verloren), danach gilt der Account (`client/src/account.ts`, `client/src/boot.ts`).
 - **Level & XP**: Runde 5 + Punkte/20, Routenjagd 20 (+30 Sieg), Quiz 10 + Punkte/50 (+20 Sieg), Trainingsstrecke
   10–20, Kurs 40 (+60 gemeistert), Tutorial 50. Level 2 bei 100 XP, jedes weitere Level 50 XP mehr.
-- **Medaillen** (14): z.B. Volltreffer (1000 Routenpunkte), Schlauer als die Auskunft, Volle 1300, Sieger, Quiz-Ass,
+- **Medaillen** (14): z.B. Volltreffer (1000 Routenpunkte), Schneller als die Bestzeit, Volle 1300, Sieger, Quiz-Ass,
   Netzkenner/Netzmeister (Lernpfad), Gesellig (3 Freunde) – neue werden gemeldet.
 - **Statistik & Lieblinge**: Spiele, Siege, Ø Routenpunkte, Zeit in Öffis, Kurse; Lieblingslinie je U-Bahn/S-Bahn/
   Bim/Bus und Lieblingsstation. Gezählt wird die *bewusste Wahl*: Gab es an der Einstiegsstation keine andere Linie
@@ -116,8 +116,11 @@ Oben rechts **👤 Anmelden** – ohne Account geht alles wie bisher. Mit Accoun
   und die öffentliche Adresse `PUBLIC_URL` (oder `NGROK_URL`/`NGROK_DOMAIN`); Links werden nie aus dem Host-Header
   gebaut. Lokal mit `docker compose up` fängt **Mailpit** alle Mails ab: http://localhost:8025. Ohne Mailserver zum
   Testen: `MAIL_FILE=data/mails.jsonl`.
-- **Datenschutz** (Link auf der Startseite und im Account-Fenster): was gespeichert wird, wer was sieht, Cookie,
-  Löschen. Kontaktadresse dort: `CONTACT_EMAIL`, sonst die Adresse aus `MAIL_FROM`.
+- **Rechtliches** (Fußzeile der Startseite, Links wie `/#impressum`, `/#datenschutz`, `/#regeln`, `/#quellen`):
+  Impressum (§ 5 ECG, § 25 MedienG), Datenschutzerklärung (DSGVO), Nutzungsregeln, Quellen & Lizenzen. Angaben zum
+  Betreiber auf der Admin-Seite (Einstellungen → Impressum & Datenschutz); fehlen sie, warnt die Admin-Übersicht.
+  Kontakt-E-Mail: die dort eingetragene, sonst `CONTACT_EMAIL`, sonst die Adresse aus `MAIL_FROM`. Die kurze Fassung
+  steht weiter im Account-Fenster.
 - **Account löschen** (⚙️, mit Passwort bestätigt): löscht sofort alles – Spielstand, Statistik, Medaillen,
   Freundschaften, Einladungen, Sitzungen; der Name ist danach wieder frei.
 
@@ -125,6 +128,51 @@ Technik: `server/accounts.ts` (SQLite über `node:sqlite` in `STATE_DIR/accounts
 also mitsichern), Passwörter mit Argon2id (`node:crypto`, braucht Node ≥ 24.7), Sitzungs- und Reset-Tokens nur als
 SHA-256 gespeichert. Ändernde Account-Anfragen nur als JSON (Schutz gegen fremde Seiten), eigene Rate-Limits für
 Anmelden/Registrieren/Passwort vergessen. Statistik-Fehler stören nie ein laufendes Spiel.
+
+## Admin
+
+Admin-Rechte gibt es **nur über die Kommandozeile** (wer Zugriff auf den Server hat, entscheidet):
+
+```bash
+npm run admin -- grant <Benutzername>          # lokal (auch: list, revoke <Name>)
+docker exec oeffi-guesser node server/admin-cli.ts grant <Benutzername>   # im Container
+```
+
+Danach gibt es im Account-Fenster „🛠 Admin-Bereich öffnen“ (außerhalb einer Lobby). Er muss je Sitzung mit dem
+eigenen Passwort **entsperrt** werden (mind. 10 Zeichen) und sperrt sich nach 30 min ohne Aktion bzw. spätestens nach 8 h.
+Admins können andere Admins nicht ändern; Namen wie „admin“ oder „spielleitung“ sind für Spieler gesperrt; nach
+5 falschen Passwörtern ist ein Name 15 min gesperrt.
+
+- **Übersicht**: Kennzahlen, Grafiken (Besucher online mit/ohne Account, Besucher je Tag, fertige Spiele, meistgewählte
+  Linien, Spieler in Lobbys, Accounts je Tag; Zeitraum 1/7/30/90 Tage, Tooltips, Tabellenansicht) und alle Lobbys –
+  verwalten wie vom Host: starten, pausieren/fortsetzen, Runde abbrechen, weiter, beenden, Spieler entfernen,
+  Host-Rechte vergeben, als „Spielleitung“ in den Chat schreiben. Besucher werden über eine zufällige Kennung je
+  Browser gezählt (`/api/ping`, kein Bezug zur Person).
+- **Accounts**: suchen, alles sehen (inkl. Verlauf als Grafik), Passwort setzen, **Link zum Zurücksetzen** (1 h),
+  auf allen Geräten abmelden, Statistik zurücksetzen, umbenennen, E-Mail ändern, löschen.
+- **Netzpläne**: „Standard“ (gilt für Spiele, Training, Quiz und Lernen) plus beliebig viele eigene Pläne, die in der
+  Lobby unter „Netz“ wählbar sein können (mit eigener Karte). Dazu die Kachel **LIVE Aktuell**: welche echten Tage
+  gespielt werden, je Linie wie sie anders fährt (Endstellen, ausgelassene/zusätzliche Halte – aus den Fahrplandaten)
+  und wie lange (Betriebsmeldungen der Wiener Linien, live, 10 min zwischengespeichert), Name, Erklärung, an/aus. Je Plan:
+  - **Fahrplan** – alle Linien (U, S, Regionalzüge mit Halt in Wien, Bim, Bus, Nachtbus) mit Halten, Fahrzeiten,
+    Abfahrten je Tagestyp und Takt; direkt änderbar (Fahrzeit, Halt auslassen/einfügen, Abfahrten streichen/dazu,
+    Takt je Zeitraum – vorbelegt mit dem Takt, der jetzt fährt). Änderungen stehen direkt im Fahrplan (neu grün, weggefallen durchgestrichen, Fahrzeit mit
+    „vorher“, je Linie Liste mit „↺ rückgängig“); „Original anzeigen“ zeigt den Fahrplan ohne Änderungen.
+  - **Änderungen** – verlängern, kürzen, Fahrzeit, Stationen anlegen/umbenennen/verschieben/entfernen, Linien
+    anlegen/entfernen, Takt, Zusatzfahrten auf Teilstrecken (z.B. jede 2. S1 nach Hütteldorf), Halt einfügen/auslassen.
+  - **Karte** – das Netz des Plans; **Probe** – Route mit Details berechnen; **Plan** – Name, Erklärung, Parameter
+    (Umsteigezeit, Fußwege, …), Versionen zum Zurückholen.
+- **Einstellungen**: Hinweis für alle, **Impressum & Datenschutz** (Name, Anschrift, E-Mail, Zweck, Hosting – stehen
+  öffentlich im Impressum), Uhrzeiten (1–8, hinzufügen/entfernen/sortieren), Netz-Auswahl, Was zählt? (je Wertung
+  Name, Symbol, Erklärung, Kurztext; „Umstiege vermeiden“ mit Aufschlag, an/aus), Joker und ihr Abzug,
+  Schwierigkeit und Punkte-Faktoren, Standard-Einstellungen aller Lobbys, Haltestellen-Auswahl (welche Stationen
+  „wichtig“/„alle“ sind – per Klick), Adressen (alle auf der Karte: anklicken = ausnehmen/aufnehmen, leere Stelle =
+  neue Adresse), Chat-Moderation (Wortliste in Deutsch, Englisch, Türkisch, Serbisch/Kroatisch/Bosnisch).
+- **Protokoll**: jede Admin-Aktion mit Zeit, Admin und Ziel.
+
+Netzpläne und Einstellungen liegen in `STATE_DIR/config/` (jede Änderung als Version in `config/history/`).
+**Sicherung**: `deploy/backup.sh` läuft auf dem Host und legt Kopien in einem Ordner ab, den der Container nie sieht –
+siehe `BEFEHLE.md`.
 
 ## Eigener Referenzfahrplan (GTFS)
 
@@ -236,7 +284,7 @@ verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der S
 5. **Host-Steuerung** während der Runde: ⏸ Pause (Zeit steht, alle sehen eine Pause-Anzeige, Pausenzeit zählt
    nicht zur benötigten Zeit), ✖ Runde abbrechen (Lösung wird gezeigt, keine Punkte), ⏹ Spiel beenden.
    Unter „👥 Spieler“ (Lobby und laufendes Spiel): ✕ kicken, 👑 zum Host machen – es kann mehrere Hosts geben.
-   **💬 Lobby-Chat** unten rechts.
+   **💬 Lobby-Chat** unten rechts – `/ez` schickt statt der Nachricht einen zufälligen Spruch (`server/ez.ts`).
 6. **Inaktive Lobby**: nach 9 min ohne Aktion fragt ein Fenster die Hosts „Lobby behalten?“ (30 s). Keine Antwort →
    der nächste verbundene Spieler wird Host und gefragt; antwortet niemand oder „Lobby löschen“ → Lobby wird
    geschlossen (`LOBBY_IDLE_MS`, `LOBBY_IDLE_ANSWER_MS`).
@@ -329,6 +377,8 @@ Normale Commits und Pushes deployen nichts – nur Tags `v*`.
 - `deploy/Caddyfile.snippet` ins Caddyfile übernehmen, Caddy neu laden.
 - `deploy/update.sh` nach `~/docker/services/bimguesser/` kopieren, ausführbar machen, cron-Eintrag:
   `*/2 * * * * ~/docker/services/bimguesser/update.sh >> ~/docker/services/bimguesser/update.log 2>&1`
+- `deploy/backup.sh` ebenso, cron-Eintrag (täglich 04:30):
+  `30 4 * * * bash ~/docker/services/bimguesser/backup.sh >> ~/docker/services/bimguesser/backup.log 2>&1`
 - Das Paket `bim-guesser` auf GitHub (Packages) auf **public** stellen – sonst braucht Ditto ein `docker login ghcr.io`.
 
 **Container-Details:** `Dockerfile` (Node 24, läuft als Benutzer `node`), Laufzeitdaten (Auskunfts-Cache,

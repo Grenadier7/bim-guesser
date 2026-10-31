@@ -73,7 +73,7 @@ function withText(trains: string[] | undefined, prefix: string): string {
 function waitNote(route: RouteOption): string {
   const wait = route.medianMin - route.rideMin;
   if (wait < 2) return '';
-  return `<p class="wait-note">⏳ Gewertet: <b>${route.medianMin} min</b> = Ø ${wait} min Warten auf die erste Abfahrt + ${route.rideMin} min unterwegs. Oben eine Beispielfahrt.</p>`;
+  return `<p class="wait-note">⏳ Gewertet: <b>${route.medianMin} min</b> – inkl. Ø ${wait} min Warten auf die erste Abfahrt.</p>`;
 }
 
 /** Berechneter Zeitplan (Ø-Wartezeiten): genau die Minuten, die gewertet werden */
@@ -89,8 +89,7 @@ function stepsDetails(route: RouteOption, star?: StarFn): string {
   });
   const end = route.steps!.length ? route.steps![route.steps!.length - 1] : null;
   const endAt = end ? addMin(end.at, end.min) : '';
-  return `<ol class="leg-detail">${rows.join('')}<li class="ld-end"><span class="ld-time">${esc(endAt)}</span><span>🏁 Ankunft – <b>${route.medianMin} min</b></span></li></ol>
-    <p class="wait-note">Berechnet mit Ø-Wartezeiten (halber Takt) und Umsteigezeit.</p>`;
+  return `<ol class="leg-detail">${rows.join('')}<li class="ld-end"><span class="ld-time">${esc(endAt)}</span><span>🏁 Ankunft – <b>${route.medianMin} min</b></span></li></ol>`;
 }
 
 function addMin(hhmm: string, min: number): string {
@@ -112,19 +111,29 @@ function placeTip(btn: HTMLElement) {
   const left = Math.max(8, Math.min(r.left - 8, window.innerWidth - w - 8));
   pop.style.left = `${left}px`;
   pop.style.top = `${r.bottom + 6}px`;
+  pop.classList.add('placed');
   // passt es unten nicht mehr hin → über dem ⓘ anzeigen
   requestAnimationFrame(() => {
     const h = pop.offsetHeight;
     if (r.bottom + 6 + h > window.innerHeight - 8) pop.style.top = `${Math.max(8, r.top - h - 6)}px`;
   });
 }
+/** Beim Scrollen stimmt die fixe Position nicht mehr → zurück auf „direkt unter dem ⓘ“ */
+function unplaceTips() {
+  for (const pop of document.querySelectorAll<HTMLElement>('.tip-pop.placed')) {
+    pop.classList.remove('placed');
+    pop.style.left = pop.style.top = pop.style.width = '';
+  }
+}
 // (ohne Browser – z.B. in Tests – gibt es kein document)
-if (typeof document !== 'undefined')
+if (typeof document !== 'undefined') {
   for (const ev of ['mouseover', 'focusin', 'click'] as const)
     document.addEventListener(ev, (e) => {
       const btn = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('.info-tip');
       if (btn) placeTip(btn);
     });
+  document.addEventListener('scroll', unplaceTips, { capture: true, passive: true });
+}
 
 /** Listeneinträge per Klick auf-/zuklappen */
 export function makeExpandable(list: HTMLElement) {

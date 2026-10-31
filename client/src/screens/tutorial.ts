@@ -41,7 +41,7 @@ export function tutorialScreen(panel: HTMLElement, onBack: () => void): Screen {
   async function load() {
     setMapBig(false);
     app.map.clear();
-    panel.innerHTML = loadingHtml(`Runde ${idx + 1} wird vorbereitet …`, 'Der Fahrplan wird durchgerechnet.');
+    panel.innerHTML = loadingHtml(`Runde ${idx + 1} wird vorbereitet …`);
     try {
       round = await api.trainingRound({ ...DEFAULT_SETTINGS, slot: 'wd12', network: 'regular' }, { from: rounds[idx].from.id, to: rounds[idx].to.id });
     } catch (e) {
@@ -158,7 +158,7 @@ export function tutorialScreen(panel: HTMLElement, onBack: () => void): Screen {
          <p>Deine Route: <b>${res.durationMin ?? '–'} min</b>${res.route ? ` <span class="chainline">${chain(res.route.legs)}</span>` : ''}<br>
             Beste Verbindung: <b>${best.medianMin} min</b> <span class="chainline">${chain(best.legs)}</span></p>
          ${res.error ? `<p class="err">${esc(res.error)}</p>` : ''}
-         <p><b>${points}</b> von 1000 Routenpunkten – ${idx === 0 ? 'je näher an der besten Verbindung, desto mehr.' : 'mit Umstieg genauso schnell wie die Auskunft.'}</p>
+         <p><b>${points}</b> von 1000 Routenpunkten – ${idx === 0 ? 'je näher an der besten Verbindung, desto mehr.' : 'mit Umstieg genauso schnell wie die beste Verbindung.'}</p>
          <p class="muted">Auf der Karte: durchgezogen die beste Verbindung, gestrichelt deine Route.</p></div>
        <button class="btn btn-primary btn-big" id="tut-next">${last ? 'Wie gibt es Punkte? →' : 'Runde 2 →'}</button>`,
     );
@@ -182,7 +182,7 @@ export function tutorialScreen(panel: HTMLElement, onBack: () => void): Screen {
        <div class="learn-card">
          <p>Du hast in den zwei Runden <b>${total}</b> Routenpunkte geholt. Im echten Spiel kommt pro Runde dazu:</p>
          <ul class="facts">
-           <li><b>Route: bis 1000 Punkte</b> – so schnell wie die beste Verbindung der Auskunft = 1000, bei 70 % länger = 0. Findest du sogar eine schnellere: bis 1300.</li>
+           <li><b>Route: bis 1000 Punkte</b> – so schnell wie die beste Verbindung = 1000, 70 % länger = 0. Findest du eine noch schnellere: bis 1300.</li>
            <li><b>⏱ Zeitbonus:</b> bis +10 %, je schneller du abgibst.</li>
            <li><b>💡 Joker</b> (Linien am Start, Umstiegsorte …) helfen, kosten aber 40–50 % der Routenpunkte.</li>
            <li><b>📍 Wo liegt das?</b> Vor der Runde Start und Ziel auf der Karte antippen: bis +150.</li>

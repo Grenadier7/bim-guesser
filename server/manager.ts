@@ -1,5 +1,5 @@
 // Verwaltung aller Lobbys (Routenjagd und Quiz) über ihren Code
-import type { GameMode } from '../shared/types.ts';
+import type { GameMode, NetMode } from '../shared/types.ts';
 import { Game } from './game.ts';
 import { GameError, IDLE_WARN_MS, type Lobby } from './lobby.ts';
 import type { Network } from './network.ts';
@@ -26,8 +26,12 @@ export class GameManager {
   onCreate: ((g: Lobby) => void) | null = null;
   private qnet;
 
-  constructor(net: Network) {
+  /** Netz zur Netz-Auswahl einer Lobby (Netzpläne der Admin-Seite) */
+  private netFor: (mode: NetMode) => Network;
+
+  constructor(net: Network, netFor?: (mode: NetMode) => Network) {
     this.net = net;
+    this.netFor = netFor ?? (() => net);
     this.qnet = quizNet(net);
     setInterval(() => this.cleanup(), 10 * 60 * 1000).unref();
     // inaktive Lobbys nachfragen lassen
@@ -47,7 +51,7 @@ export class GameManager {
     let code = '';
     do code = Array.from({ length: 5 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
     while (this.games.has(code));
-    const g = mode === 'quiz' ? new QuizGame(code, this.qnet, settings) : new Game(code, this.net, settings as never);
+    const g = mode === 'quiz' ? new QuizGame(code, this.qnet, settings) : new Game(code, this.netFor, settings as never);
     g.creatorIp = ip;
     this.onCreate?.(g);
     // geschlossen (Inaktivität / vom Host) → weg damit
@@ -86,6 +90,16 @@ export class GameManager {
     let n = 0;
     for (const g of this.games.values()) if (g.phase === 'playing' && g.hasConnections) n++;
     return n;
+  }
+
+  /** Netz geändert (Admin-Seite): neue Quiz-Lobbys bekommen das neue Netz */
+  refreshNet() {
+    this.qnet = quizNet(this.net);
+  }
+
+  /** alle Lobbys (Admin-Übersicht) */
+  list(): Lobby[] {
+    return [...this.games.values()];
   }
 
   get lobbyCount(): number {

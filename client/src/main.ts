@@ -6,6 +6,9 @@ import { accountButton, announceMedals, openAccount, renderInvites, takeResetLin
 import { isMine, setMine } from './learn/model.ts';
 import { GameMap } from './map.ts';
 import { NetIndex } from './net.ts';
+import { resetNetLayer } from './netmap.ts';
+import { openLegalFromHash } from './legal.ts';
+import { applyGameConfig } from '../../shared/config.ts';
 import { finalScreen } from './screens/final.ts';
 import { homeScreen } from './screens/home.ts';
 import { hostActions, hostBar } from './screens/host.ts';
@@ -16,6 +19,7 @@ import { revealScreen } from './screens/reveal.ts';
 import { roundScreen } from './screens/round.ts';
 import { loadingHtml, type Screen } from './screens/screen.ts';
 import { trainingScreen } from './screens/training.ts';
+import { adminScreen } from './screens/admin.ts';
 import { tutorialScreen } from './screens/tutorial.ts';
 import { ChatWidget } from './chat.ts';
 import { hideIdle, idleCheck } from './idle.ts';
@@ -31,6 +35,75 @@ document.querySelector('.topbar')!.append(acctSlot);
 const inviteHost = document.createElement('div');
 inviteHost.className = 'invite-host';
 document.body.append(inviteHost);
+// Hinweis der Spielleitung für alle (Admin-Seite) – wegklickbar, bis sich der Text ändert
+const notice = document.createElement('div');
+notice.className = 'notice-bar';
+notice.hidden = true;
+document.body.prepend(notice);
+
+function renderNotice() {
+  const text = app.config?.announcement.text ?? '';
+  let closed = '';
+  try {
+    closed = localStorage.getItem('oeffi-notice-closed') ?? '';
+  } catch {
+    /* ohne Speicher immer zeigen */
+  }
+  notice.hidden = !text || closed === text;
+  if (notice.hidden) return;
+  notice.innerHTML = `<span>📢 ${esc(text)}</span><button class="icon-btn" aria-label="Hinweis schließen">✕</button>`;
+  notice.querySelector('button')!.addEventListener('click', () => {
+    try {
+      localStorage.setItem('oeffi-notice-closed', text);
+    } catch {
+      /* egal */
+    }
+    notice.hidden = true;
+  });
+}
+
+/** Besucherzahl: zufällige Kennung dieses Browsers (kein Bezug zur Person), jede Minute, solange die Seite sichtbar ist */
+function startVisitorPing() {
+  let id = '';
+  try {
+    id = localStorage.getItem('oeffi-visitor') ?? '';
+    if (!/^[a-z0-9]{12,40}$/.test(id)) localStorage.setItem('oeffi-visitor', (id = crypto.randomUUID().replace(/-/g, '')));
+  } catch {
+    id = crypto.randomUUID().replace(/-/g, '');
+  }
+  const ping = () => {
+    if (document.visibilityState !== 'visible') return;
+    void fetch('/api/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: id }), credentials: 'same-origin' }).catch(() => {});
+  };
+  ping();
+  setInterval(ping, 60_000);
+  document.addEventListener('visibilitychange', ping);
+}
+
+/** Lobby mit eigenem Netzplan: dessen Netz laden (Karte, Routen-Baukasten), sonst das Standard-Netz */
+let netLoading: string | null = null;
+function ensurePlanNet() {
+  const s = app.state;
+  const want = app.session && s?.mode === 'route' && s.settings.network.startsWith('plan:') ? s.settings.network.slice(5) : 'regular';
+  if (want === app.netPlan || want === netLoading) return;
+  netLoading = want;
+  api
+    .network(want)
+    .then((data) => {
+      if (netLoading !== want) return;
+      app.net = new NetIndex(data);
+      app.netPlan = want;
+      resetNetLayer();
+      // Bildschirm mit dem neuen Netz neu aufbauen
+      screen?.destroy?.();
+      screenKey = '';
+      render();
+    })
+    .catch((e) => toast((e as Error).message))
+    .finally(() => {
+      if (netLoading === want) netLoading = null;
+    });
+}
 
 function renderAccount() {
   acctSlot.innerHTML = accountButton();
@@ -73,7 +146,7 @@ function keyFor(): string {
 
 function mount(key: string): Screen {
   // Startseite: großer Auswahlbildschirm ohne Karte
-  document.body.classList.toggle('panel-full', key === 'home');
+  document.body.classList.toggle('panel-full', key === 'home' || key === 'admin');
   // Handy: Karte nur, wo sie gebraucht wird – Bildschirme können das selbst ändern
   setMobileMap(!['home', 'lobby', 'final', 'qlobby', 'qfinal'].includes(key));
   setTimeout(() => app.map.invalidate(), 50);
@@ -85,6 +158,7 @@ function mount(key: string): Screen {
   if (key === 'learn') return learnScreen(panel, back);
   if (key === 'training') return trainingScreen(panel, back);
   if (key === 'tutorial') return tutorialScreen(panel, back);
+  if (key === 'admin') return adminScreen(panel, back);
   if (key === 'lobby') return lobbyScreen(panel);
   if (key === 'final') return finalScreen(panel);
   if (key === 'qlobby') return quizLobbyScreen(panel);
@@ -95,7 +169,7 @@ function mount(key: string): Screen {
   app.map.clear();
   const s = app.state;
   const n = (s?.mode === 'route' ? s.currentRound : 0) + 1;
-  panel.innerHTML = loadingHtml(`Runde ${n} wird vorbereitet …`, 'Die Wiener-Linien-API wird für mehrere Abfahrtszeiten abgefragt.');
+  panel.innerHTML = loadingHtml(`Runde ${n} wird vorbereitet …`);
   panel.prepend(hostBar());
   return {};
 }
@@ -104,6 +178,7 @@ function mount(key: string): Screen {
 let chatSync = () => {};
 
 function render() {
+  ensurePlanNet();
   chatSync();
   renderInvites(inviteHost);
   const key = keyFor();
@@ -183,9 +258,14 @@ async function init() {
   renderAccount();
   startPolling();
   takeResetLink();
-  panel.innerHTML = loadingHtml('Lade Netzdaten …');
+  panel.innerHTML = loadingHtml('Wird geladen …');
   try {
-    app.net = new NetIndex(await api.network());
+    // erst die Spiel-Konfiguration (Uhrzeiten, Wertungen, Standard-Einstellungen …), dann das Netz
+    const [config, network] = await Promise.all([api.config(), api.network()]);
+    app.config = config;
+    applyGameConfig(config);
+    renderNotice();
+    app.net = new NetIndex(network);
   } catch (e) {
     panel.innerHTML = `<div class="loading"><p class="err">Server nicht erreichbar: ${esc((e as Error).message)}</p></div>`;
     return;
@@ -193,6 +273,9 @@ async function init() {
   // geteilter Einstellungs-Link → Startseite (legt die Lobby an) statt in die alte Lobby zurück
   if (new URLSearchParams(location.search).has('settings') || !(await restoreSession())) render();
   setInterval(tick, 250);
+  startVisitorPing();
+  // Link wie /#impressum oder /#datenschutz
+  openLegalFromHash();
   // ☆ hinter Liniennummern (z.B. in der Routenjagd-Auflösung): Linie für „Lernen → Üben“ merken
   // ☆ für mehrere gleichwertige Linien („S1/S2/S3“): alle merken, in der Meldung „nur S1“ wählbar (Punkt 8)
   document.addEventListener('click', (e) => {

@@ -7,7 +7,7 @@ import { setPanel, type Screen } from './screen.ts';
 import { importProblems, takeSettingsLink } from '../settingsShare.ts';
 import { offerTutorial } from '../progress.ts';
 import { account } from '../account.ts';
-import { openAccount } from '../accountui.ts';
+import { bindLegalLinks, legalFooter } from '../legal.ts';
 
 const MODES = [
   {
@@ -46,6 +46,28 @@ function tile(m: (typeof MODES)[number], cls: string): string {
     <span class="mt-text">${m.text}</span><span class="mt-tag">${m.tag}</span></button>`;
 }
 
+/** Einladungskarte – nur, wenn es die Lobby noch gibt; sonst ein kurzer Hinweis und der Code fliegt raus */
+async function showInvite(slot: HTMLElement, code: string, codeIn: HTMLInputElement, nameIn: HTMLInputElement, join: () => unknown) {
+  const info = await api.exists(code).catch(() => ({ exists: true }) as Awaited<ReturnType<typeof api.exists>>);
+  if (!slot.isConnected) return;
+  if (!info.exists) {
+    slot.innerHTML = `<div class="invite-gone">Die Lobby <b>${esc(code)}</b> gibt es nicht mehr – das Spiel ist wohl schon vorbei. Starte unten ein neues oder gib einen anderen Code ein.</div>`;
+    codeIn.value = '';
+    history.replaceState(null, '', location.pathname + location.hash);
+    return;
+  }
+  const what = info.mode === 'quiz' ? 'Quiz-Lobby' : 'Lobby';
+  const state = info.phase === 'playing' ? ' – das Spiel läuft schon, du steigst mitten ein' : info.phase === 'finished' ? ' – das Spiel ist gerade fertig' : '';
+  slot.innerHTML = `<div class="invite-card"><div>📨 Du wurdest in die ${what} <b>${esc(code)}</b> eingeladen${state}.</div>
+    <label class="field"><span>Dein Name</span><input id="inviteName" maxlength="40" placeholder="z.B. Alex" value="${esc(nameIn.value)}"></label>
+    <button class="btn btn-primary btn-big" id="joinInvite">Jetzt beitreten</button></div>`;
+  const inviteName = slot.querySelector<HTMLInputElement>('#inviteName')!;
+  inviteName.addEventListener('input', () => (nameIn.value = inviteName.value));
+  inviteName.addEventListener('keydown', (e) => e.key === 'Enter' && join());
+  slot.querySelector('#joinInvite')!.addEventListener('click', join);
+  inviteName.focus();
+}
+
 export function homeScreen(panel: HTMLElement): Screen {
   app.map.clear();
   const urlCode = new URLSearchParams(location.search).get('code')?.toUpperCase() ?? '';
@@ -56,13 +78,7 @@ export function homeScreen(panel: HTMLElement): Screen {
     { class: 'home' },
     `<header class="hero"><span class="logo big">U</span><div><h1>BimGuesser Wien</h1><p>Wie gut kennst du die Wiener Öffis?</p></div></header>
      ${tut ? `<button class="tut-hint" data-mode="tutorial">🎓 Neu hier? <b>Tutorial spielen</b> – 2 Runden, 3 Minuten</button>` : ''}
-     ${
-       urlCode
-         ? `<div class="invite-card"><div>📨 Du wurdest in die Lobby <b>${esc(urlCode)}</b> eingeladen.</div>
-              <label class="field"><span>Dein Name</span><input id="inviteName" maxlength="40" placeholder="z.B. Alex" value="${esc(account.me?.name ?? app.prefs.name)}"></label>
-              <button class="btn btn-primary btn-big" id="joinInvite">Jetzt beitreten</button></div>`
-         : ''
-     }
+     ${urlCode ? '<div id="invite-slot"></div>' : ''}
      ${tile(MODES[0], 'mode-hero')}
      <h3 class="more-modes">Weitere Spielmodi</h3>
      <div class="mode-grid mode-grid-3">${MODES.slice(1)
@@ -81,7 +97,7 @@ export function homeScreen(panel: HTMLElement): Screen {
               <span class="btn btn-primary">Los</span></button>`
          : ''
      }
-     <p class="home-foot"><button class="link" id="privacy">Datenschutz</button></p>`,
+     ${legalFooter()}`,
   );
   const nameIn = el.querySelector<HTMLInputElement>('#name')!;
   const codeIn = el.querySelector<HTMLInputElement>('#code')!;
@@ -136,16 +152,14 @@ export function homeScreen(panel: HTMLElement): Screen {
     }
   };
   el.querySelector('#join')!.addEventListener('click', join);
-  el.querySelector('#privacy')!.addEventListener('click', () => openAccount('privacy'));
-  // Einladung: Name oben eintragen, ein Klick zum Beitreten
-  const inviteName = el.querySelector<HTMLInputElement>('#inviteName');
-  inviteName?.addEventListener('input', () => (nameIn.value = inviteName.value));
-  inviteName?.addEventListener('keydown', (e) => e.key === 'Enter' && join());
-  el.querySelector('#joinInvite')?.addEventListener('click', join);
+  bindLegalLinks(el);
+  // Einladung: erst prüfen, ob es die Lobby noch gibt – dann Name oben eintragen, ein Klick zum Beitreten
+  const slot = el.querySelector<HTMLElement>('#invite-slot');
+  if (slot) void showInvite(slot, urlCode, codeIn, nameIn, join);
   codeIn.addEventListener('input', () => (codeIn.value = codeIn.value.toUpperCase().replace(/[^A-Z0-9]/g, '')));
   codeIn.addEventListener('keydown', (e) => e.key === 'Enter' && join());
   setPanel(panel, el);
-  if (urlCode) (inviteName ?? codeIn).focus();
+  if (urlCode && !slot) codeIn.focus();
   // geteilter Einstellungs-Link (Punkt 14): gleich eine Lobby mit diesen Einstellungen
   const shared = takeSettingsLink();
   if (shared) {

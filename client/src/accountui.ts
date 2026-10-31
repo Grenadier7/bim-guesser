@@ -7,6 +7,7 @@ import { api } from './api.ts';
 import { app, endSession, savePrefs, startSession } from './store.ts';
 import { esc, h, lineChip, toast } from './ui.ts';
 import { icon } from './icons.ts';
+import { openLegal, type LegalPage } from './legal.ts';
 
 type Tab = 'login' | 'register' | 'forgot' | 'reset' | 'profile' | 'people' | 'friends' | 'settings' | 'privacy';
 
@@ -65,7 +66,7 @@ function statsHtml(s: AccountStats): string {
   return `<h4>📊 Statistik</h4>
     <div class="stats">
       ${tile(s.games, 'Routenjagden')}${tile(s.wins, 'Siege')}${tile(s.rounds, 'Runden')}${tile(s.avgRoute, 'Ø Routenpunkte')}
-      ${tile(s.bestRound, 'beste Runde')}${tile(s.perfectRounds, 'Volltreffer')}${tile(s.beatApi, 'besser als Auskunft')}${tile(s.quizGames, 'Quiz-Spiele')}
+      ${tile(s.bestRound, 'beste Runde')}${tile(s.perfectRounds, 'Volltreffer')}${tile(s.beatApi, 'Bestzeit geschlagen')}${tile(s.quizGames, 'Quiz-Spiele')}
       ${tile(s.trainings, 'Trainingsstrecken')}${tile(`${Math.round(s.minutes / 60)} h`, 'in Öffis unterwegs')}${tile(`${s.coursesDone}/9`, 'Kurse')}${tile(s.coursesMastered, 'gemeistert')}
     </div>
     <h4>❤️ Lieblinge</h4>
@@ -114,10 +115,10 @@ async function privacyHtml(): Promise<string> {
   return `<div class="privacy">
     <h4>Ohne Account</h4>
     <p>Einstellungen, Lernstand und Tutorial bleiben nur in deinem Browser. Am Server gibt es dazu nichts. Dein Spielname ist nur in der Lobby sichtbar, solange sie besteht.
-      Kein Tracking, keine Werbung, keine Analyse-Dienste.</p>
+      Kein Tracking, keine Werbung, keine Analyse-Dienste. Für die Besucherzahl meldet die Seite jede Minute eine zufällige Kennung dieses Browsers – ohne Bezug zu dir, nach 90 Tagen gelöscht.</p>
     <h4>Mit Account wird gespeichert</h4>
     <ul>
-      <li><b>Benutzername</b> und <b>Passwort</b> – das Passwort nur verschlüsselt (Argon2), niemand kann es lesen.</li>
+      <li><b>Benutzername</b> und <b>Passwort</b> – das Passwort nur verschlüsselt, niemand kann es lesen.</li>
       <li><b>E-Mail</b> (freiwillig) – nur für „Passwort vergessen“, nie sichtbar für andere.</li>
       <li>Dein <b>Spielstand</b>: Lernfortschritt, Einstellungen, Tutorial – damit er auf allen Geräten gleich ist.</li>
       <li><b>Statistik</b>: Spiele, Punkte, Medaillen, Lieblingslinien, Freundschaften und Einladungen, wann du zuletzt online warst.</li>
@@ -132,6 +133,7 @@ async function privacyHtml(): Promise<string> {
     <h4>Löschen</h4>
     <p>Unter ⚙️ kannst du deinen Account jederzeit selbst löschen – alles oben Genannte ist dann sofort weg.</p>
     ${p.contact ? `<h4>Fragen?</h4><p>Schreib an <a href="mailto:${esc(p.contact)}">${esc(p.contact)}</a>.</p>` : ''}
+    <p><a href="#datenschutz" data-legal="datenschutz">Vollständige Datenschutzerklärung</a> · <a href="#impressum" data-legal="impressum">Impressum</a></p>
   </div>`;
 }
 
@@ -203,7 +205,12 @@ async function body(): Promise<string> {
           <button class="btn btn-danger">Account endgültig löschen</button></form></details>
       <p class="muted"><button type="button" class="link" data-tab="privacy">Datenschutz – was gespeichert wird</button></p>`;
   const p = await accountApi.profile(me.name);
-  return `<div class="profile-head"><h3>${esc(me.name)}</h3></div>${levelBar(p.level)}${medalsHtml(p.medals)}${p.stats ? statsHtml(p.stats) : ''}`;
+  const adminBtn = me.admin
+    ? app.session
+      ? '<p class="muted">🛠 Den Admin-Bereich gibt es außerhalb einer Lobby.</p>'
+      : '<button class="btn btn-dark adm-open" id="adm-open">🛠 Admin-Bereich öffnen</button>'
+    : '';
+  return `${adminBtn}<div class="profile-head"><h3>${esc(me.name)}</h3></div>${levelBar(p.level)}${medalsHtml(p.medals)}${p.stats ? statsHtml(p.stats) : ''}`;
 }
 
 /** jede Anzeige bekommt eine Nummer – eine ältere, langsamere Antwort überschreibt nie eine neuere */
@@ -242,6 +249,14 @@ async function render() {
 }
 
 function bind() {
+  // Rechtliches öffnet ein eigenes Fenster – das Account-Fenster geht dafür zu
+  sheet.querySelectorAll<HTMLAnchorElement>('[data-legal]').forEach((a) =>
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      close();
+      openLegal(a.dataset.legal as LegalPage);
+    }),
+  );
   sheet.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) =>
     b.addEventListener('click', () => {
       tab = b.dataset.tab as Tab;
@@ -290,6 +305,11 @@ function bind() {
     }, 250);
   });
   sheet.querySelector('#logout')?.addEventListener('click', () => void signOut());
+  sheet.querySelector('#adm-open')?.addEventListener('click', () => {
+    close();
+    app.view = 'admin';
+    app.onChange();
+  });
   sheet.querySelectorAll<HTMLFormElement>('form[data-form]').forEach((f) =>
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -310,8 +330,8 @@ function bind() {
             break;
           case 'forgot':
             await accountApi.forgot(v('email'));
-            f.innerHTML = `<p class="good">📬 Wenn <b>${esc(v('email'))}</b> bei einem Account eingetragen ist, ist jetzt eine E-Mail mit Link unterwegs (gilt 1 Stunde).</p>
-              <p class="muted">Nichts da? Schau im Spam-Ordner nach. Mails gehen nur an Adressen, die im Account unter ⚙️ eingetragen sind.</p>`;
+            f.innerHTML = `<p class="good">📬 Falls zu <b>${esc(v('email'))}</b> ein Account gehört, ist jetzt eine E-Mail mit Link unterwegs (1 Stunde gültig).</p>
+              <p class="muted">Nichts angekommen? Schau auch im Spam-Ordner nach.</p>`;
             break;
           case 'email':
             account.me = await accountApi.setEmail(v('email'));

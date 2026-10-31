@@ -308,6 +308,8 @@ export interface TripQuery {
   count?: number;
   /** Zwischenhalt, über den die Fahrt führen muss (EFA stop id) – z.B. um eine bestimmte U-Bahn-Linie zu erzwingen */
   via?: string;
+  /** Netzplan (sonst der der laufenden Runde, siehe plancontext.ts) */
+  plan?: string;
 }
 
 /** „coord:lon:lat“ (Adresse) oder EFA-Haltestellen-ID */

@@ -15,6 +15,8 @@ import type { LatLon, Mode, NetMode, Restriction, RouteLeg, RouteOption, RouteSt
 import { lineColor, lineGroupLabel, regionalTrains, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
 import * as efa from './efa.ts';
 import { distM, type Network } from './network.ts';
+import { currentPlan, withPlan } from './plancontext.ts';
+import { DEFAULT_PARAMS, paramsFor } from './plans.ts';
 
 /** Abfahrtszeiten relativ zum Zeitfenster, an denen gesampelt wird (Minuten) */
 export const SAMPLE_OFFSETS = [0, 10, 20, 30, 40, 50];
@@ -292,7 +294,7 @@ async function suggestion(net: Network, leg: UserLeg, slotTime: number): Promise
     const pt = trips[0]?.legs.filter((l) => l.mode !== 'W') ?? [];
     if (!pt.length) return '';
     const parts = pt.map((l) => `${l.line ?? '?'} bis ${efa.cleanName(l.to.name)}`);
-    return ` So geht es laut Auskunft zu dieser Zeit: ${parts.join(', dann ')}.`;
+    return ` So fährt man zu dieser Zeit: ${parts.join(', dann ')}.`;
   } catch {
     return '';
   }
@@ -427,7 +429,7 @@ export function expectedWait(departures: number[], t: number, window = HEADWAY_W
  * zur ersten Abfahrt kann man sich die Zeit meist einteilen – beim Umsteigen nicht.
  * Gilt nur, wenn die erste Linie direkt an der Start-Station abfährt (kein Fußweg dorthin).
  */
-export const FIRST_WAIT_FACTOR = 0.7;
+export const FIRST_WAIT_FACTOR = DEFAULT_PARAMS.firstWaitFactor;
 
 /**
  * Ø-Wartezeiten: Fahrzeit je Linie (Median) + Umsteigeweg + halber Takt der nächsten Linie.
@@ -478,7 +480,7 @@ async function averagedRoute(
     if (meanWait == null) return null;
     // "fährt etwa alle …": gleichwertiger regelmäßiger Takt
     const every = meanWait * 2;
-    const wait = meanWait * (i === 0 && !w0 ? FIRST_WAIT_FACTOR : 1);
+    const wait = meanWait * (i === 0 && !w0 ? paramsFor(currentPlan()).firstWaitFactor : 1);
     if (i > 0 || countWait) {
       const before = t;
       add('wait', wait, { to: net.station(legs[i].from).name, every: Math.round(every), ...(extra?.[i]?.length ? { with: extra[i] } : {}) });
@@ -503,7 +505,12 @@ async function averagedRoute(
 
 // ---------------------------------------------------------------- Top-Verbindungen
 
-export async function topRoutes(net: Network, fromId: string, toId: string, slotTime: number, q: RouteQuery): Promise<RouteOption[]> {
+/** beste Verbindungen – im Netzplan dieses Netzes (Fahrplan, Parameter; siehe plancontext.ts) */
+export function topRoutes(net: Network, fromId: string, toId: string, slotTime: number, q: RouteQuery): Promise<RouteOption[]> {
+  return withPlan(net.planId, () => topRoutesIn(net, fromId, toId, slotTime, q));
+}
+
+async function topRoutesIn(net: Network, fromId: string, toId: string, slotTime: number, q: RouteQuery): Promise<RouteOption[]> {
   const from = net.mainEfaId(fromId);
   const to = net.mainEfaId(toId);
   const rq = restrictionQuery(q.restriction);
@@ -622,7 +629,20 @@ export function validateLegs(net: Network, legs: UserLeg[], mode: NetMode, restr
   return null;
 }
 
-export async function evaluateUserRoute(
+export function evaluateUserRoute(
+  net: Network,
+  legs: UserLeg[],
+  fromId: string,
+  toId: string,
+  slotTime: number,
+  netMode: NetMode,
+  q: RouteQuery,
+  top: RouteOption[],
+): Promise<UserRouteResult> {
+  return withPlan(net.planId, () => evaluateIn(net, legs, fromId, toId, slotTime, netMode, q, top));
+}
+
+async function evaluateIn(
   net: Network,
   legs: UserLeg[],
   fromId: string,

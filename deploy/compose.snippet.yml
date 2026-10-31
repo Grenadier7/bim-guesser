@@ -21,7 +21,8 @@
       - MAIL_FROM=${MAIL_FROM:-BimGuesser <noreply@example.org>}
       - CONTACT_EMAIL=${CONTACT_EMAIL:-}
     volumes:
-      - ./bimguesser/state:/app/state # Auskunfts-Cache, Statistik, Accounts (accounts.db – mitsichern!)
+      - ./bimguesser/state:/app/state # Auskunfts-Cache, Statistik, Accounts, Netzpläne – gesichert per backup.sh
+      # Sicherungsordner (~/backups) hier NIE eintragen – der Container darf ihn nicht sehen
     networks:
       - proxy_network
 

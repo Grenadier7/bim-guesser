@@ -4,6 +4,7 @@ import type {
   Evaluation,
   GameSettings,
   GameState,
+  NetMode,
   Guesses,
   Restriction,
   RoundPublic,
@@ -74,11 +75,14 @@ export class Game extends Lobby {
   private pastPairs: PastPair[] = [];
   private generation = 0;
   private net: Network;
+  /** Netz zur Netz-Auswahl (Netzpläne der Admin-Seite) – gewählt beim Spielstart */
+  private netFor: (mode: NetMode) => Network;
 
-  constructor(id: string, net: Network, settings: Partial<GameSettings> | undefined) {
+  constructor(id: string, net: Network | ((mode: NetMode) => Network), settings: Partial<GameSettings> | undefined) {
     super(id);
-    this.net = net;
+    this.netFor = typeof net === 'function' ? net : () => net;
     this.settings = sanitizeSettings(settings);
+    this.net = this.netFor(this.settings.network);
   }
 
   protected onPresenceChange() {
@@ -115,6 +119,7 @@ export class Game extends Lobby {
   async start(token: string): Promise<void> {
     this.requireHost(token);
     if (this.phase !== 'lobby') return;
+    this.net = this.netFor(this.settings.network);
     this.phase = 'playing';
     for (const p of this.players.values()) p.score = 0;
     const gen = ++this.generation;
@@ -241,7 +246,7 @@ export class Game extends Lobby {
         const minTransfers = attempt < 12 ? wanted : 0;
         routes = sortRoutes(await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), minTransfers }), this.settings);
       } catch (e) {
-        if (e instanceof EfaUnavailableError) throw new GameError('Die Wiener-Linien-Auskunft antwortet gerade nicht – bitte in einer Minute nochmal starten.', 503);
+        if (e instanceof EfaUnavailableError) throw new GameError('Die Runde konnte gerade nicht vorbereitet werden – bitte in einer Minute nochmal starten.', 503);
         throw e;
       }
       if (!routes.length || routes[0].key === 'walk') continue;
@@ -256,7 +261,7 @@ export class Game extends Lobby {
       round.routes = routes;
       return routes;
     }
-    throw new GameError('Keine passende Strecke gefunden – bitte nochmal versuchen (evtl. andere Einstellungen).', 502);
+    throw new GameError('Keine passende Strecke gefunden – bitte nochmal starten oder die Einstellungen ändern.', 502);
   }
 
   private async openRound(i: number, gen: number) {
@@ -422,6 +427,8 @@ export class Game extends Lobby {
       elapsedSec: Math.round(elapsedMs / 100) / 10,
     });
     this.touch();
+    // Statistik der Admin-Seite: gewählte Linien
+    this.emit('lines', round.submissions.get(playerId)!.legs.map((l) => l.line));
     this.emitEvent({ type: 'submitted', round: roundIdx, playerId });
     this.emitState();
     return this.maybeReveal(round);
@@ -457,7 +464,7 @@ export class Game extends Lobby {
         durationMin: null,
         matchedRank: null,
         source: 'none' as const,
-        error: 'Deine Route konnte gerade nicht nachgerechnet werden – die Wiener-Linien-Auskunft hat nicht geantwortet.',
+        error: 'Deine Route konnte gerade nicht ausgewertet werden.',
       };
     }
   }

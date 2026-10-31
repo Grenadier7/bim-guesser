@@ -1,4 +1,5 @@
 import type { QuizSettings } from '../../shared/quiz.ts';
+import type { PublicConfig } from '../../shared/config.ts';
 import type { ChatMessage, GameMode, GameSettings, Guesses, JoinResponse, LatLon, LobbyState, NetworkPublic, RoundReveal, SubmitResponse, TipKind, TipResult, TrainingResult, TrainingRound, UserLeg } from '../../shared/types.ts';
 
 export class ApiError extends Error {
@@ -30,9 +31,11 @@ const g = (code: string) => `/api/games/${encodeURIComponent(code)}`;
 const q = (a: Auth) => `token=${encodeURIComponent(a.token)}`;
 
 export const api = {
-  network: () => call<NetworkPublic>('GET', '/api/network'),
+  network: (plan?: string) => call<NetworkPublic>('GET', plan && plan !== 'regular' ? `/api/network?plan=${encodeURIComponent(plan)}` : '/api/network'),
+  config: () => call<PublicConfig>('GET', '/api/config'),
   create: (playerName: string, mode: GameMode, settings: Partial<GameSettings> | Partial<QuizSettings>) =>
     call<JoinResponse>('POST', '/api/games', { playerName, mode, settings }),
+  exists: (code: string) => call<{ exists: boolean; mode?: GameMode; phase?: 'lobby' | 'playing' | 'finished' }>('GET', `${g(code)}/exists`),
   join: (code: string, playerName: string) => call<JoinResponse>('POST', `${g(code)}/join`, { playerName }),
   state: (a: Auth) => call<{ playerId: string; state: LobbyState }>('GET', `${g(a.code)}?${q(a)}`),
   settings: (a: Auth, settings: Partial<GameSettings> | Partial<QuizSettings>) => call<LobbyState>('PUT', `${g(a.code)}/settings`, { token: a.token, settings }),

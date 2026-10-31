@@ -1,4 +1,5 @@
 // App-Zustand: Sitzung (Lobby-Code + Spieler-ID), Spielzustand und Live-Verbindung (SSE).
+import type { PublicConfig } from '../../shared/config.ts';
 import type { GameEvent, GameSettings, GameState, LobbyState, PlayerPublic, QuizState, RoundPublic, RoundReveal } from '../../shared/types.ts';
 import type { QuizSettings } from '../../shared/quiz.ts';
 import { TIME_LIMITS } from '../../shared/rules.ts';
@@ -32,6 +33,10 @@ const tabStore = () => sessionStorage;
 
 export const app = {
   net: null as unknown as NetIndex,
+  /** Netzplan, zu dem app.net gehört ('regular' = Standard) */
+  netPlan: 'regular',
+  /** Spiel-Konfiguration vom Server (Hinweis für alle …) */
+  config: null as PublicConfig | null,
   map: null as unknown as GameMap,
   session: null as Session | null,
   state: null as LobbyState | null,
@@ -39,7 +44,7 @@ export const app = {
   clockOffset: 0,
   reveals: new Map<number, RoundReveal>(),
   /** Bildschirm außerhalb einer Lobby */
-  view: 'home' as 'home' | 'learn' | 'training' | 'tutorial',
+  view: 'home' as 'home' | 'learn' | 'training' | 'tutorial' | 'admin',
   prefs: loadMerged<Prefs>(PREFS_KEY, { name: '', settings: {}, quiz: {} }),
   onChange: () => {},
   /** Chat-Nachrichten und Verlauf (vom Chat-Fenster gesetzt) */

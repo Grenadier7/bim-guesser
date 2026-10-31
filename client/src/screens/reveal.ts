@@ -1,5 +1,5 @@
 import type { Evaluation, RoundReveal } from '../../../shared/types.ts';
-import { MODE_LABEL, RESTRICTIONS, TIPS, fmtTimeLeft, maxRoundPoints, restrictionLabel, routeCostOf, transferPenalty, transfersOf } from '../../../shared/rules.ts';
+import { MODE_LABEL, RESTRICTIONS, TIPS, fmtTimeLeft, maxRoundPoints, restrictionLabel, routeCostOf, scoringUnit, transferPenalty, transfersOf } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import type { PlayerRoute } from '../map.ts';
 import { netLayer, netView, smoothRoute } from '../netmap.ts';
@@ -42,7 +42,7 @@ export function revealScreen(panel: HTMLElement): Screen {
   /** Zeitlimit der Runde – für „Zeit übrig“ */
   const limitSec = currentRound()!.limitSec;
   let reveal: RoundReveal | null = null;
-  panel.innerHTML = loadingHtml('Lade Auflösung …');
+  panel.innerHTML = loadingHtml('Auflösung wird geladen …');
 
   // Netzfehler: Meldung + Nochmal statt ewigem Spinner (Befund M-11)
   function load() {
@@ -55,7 +55,7 @@ export function revealScreen(panel: HTMLElement): Screen {
         panel.innerHTML = `<div class="waiting"><p>Auflösung konnte nicht geladen werden: ${esc((e as Error).message)}</p>
           <button class="btn btn-primary" id="retry-reveal">Nochmal laden</button></div>`;
         panel.querySelector('#retry-reveal')!.addEventListener('click', () => {
-          panel.innerHTML = loadingHtml('Lade Auflösung …');
+          panel.innerHTML = loadingHtml('Auflösung wird geladen …');
           load();
         });
       });
@@ -128,7 +128,7 @@ export function revealScreen(panel: HTMLElement): Screen {
     panel.innerHTML = '';
     panel.append(hostBar(), h('h2', { class: 'reveal-title' }, `Auflösung · Runde ${idx + 1}/${s.settings.rounds}`));
     if (reveal.cancelled)
-      panel.append(h('div', { class: 'cancelled' }, '✖ Runde vom Host abgebrochen – keine Punkte. Hier die Lösung zum Nachschauen:'));
+      panel.append(h('div', { class: 'cancelled' }, 'Runde vom Host abgebrochen – keine Punkte. Die Lösung:'));
     if (round.restriction)
       panel.append(h('div', { class: 'restriction' }, `${RESTRICTIONS[round.restriction].icon} ${esc(restrictionLabel(round.restriction, round.bannedLines))}`));
     const isBest = s.settings.goal === 'best';
@@ -137,7 +137,7 @@ export function revealScreen(panel: HTMLElement): Screen {
 
     if (multi) {
       const table = h('div', { class: 'ranking' });
-      table.innerHTML = `<h3>Runde <small>– antippen für Details</small></h3><ol>${reveal.evaluations
+      table.innerHTML = `<h3>Rangliste <small>· antippen für Details</small></h3><ol>${reveal.evaluations
         .map(
           (e) => `<li data-key="p:${e.playerId}" class="expandable ${e.playerId === myId ? 'is-me' : ''}">
             <span class="pname">${esc(e.playerName)}</span>
@@ -170,13 +170,10 @@ export function revealScreen(panel: HTMLElement): Screen {
       .join('');
     makeExpandable(list);
     hoverable(list);
-    const sub = s.settings.avgWait
-      ? `berechnet mit Ø-Wartezeit + Umsteigezeit${s.settings.countWait ? ', ab Abfragezeit' : ''}`
-      : s.settings.countWait
-        ? 'Tür-zu-Tür ab Abfragezeit, Median über 6 Abfahrtszeiten'
-        : 'reine Reisezeit, Median der Stichprobe';
+    // was die Minuten enthalten – kurz, ohne Rechenweg
+    const sub = scoringUnit(s.settings);
     panel.append(
-      h('h3', {}, isBest ? `Beste Verbindungen <small>(Zeit + ${penalty} min je Umstieg · ${sub})</small>` : `Schnellste Verbindungen <small>(${sub})</small>`),
+      h('h3', {}, isBest ? `Beste Verbindungen <small>(${sub}, +${penalty} min je Umstieg)</small>` : `Schnellste Verbindungen <small>(${sub})</small>`),
       list,
     );
     // nicht mit allen Varianten erschlagen: erst die besten, Rest auf Wunsch
@@ -194,7 +191,7 @@ export function revealScreen(panel: HTMLElement): Screen {
       'beforeend',
       `<div class="legend">${(['U', 'S', 'T', 'B', 'W'] as const)
         .map((m) => `<span><i class="lg lg-${m}"></i>${MODE_LABEL[m]}</span>`)
-        .join('')}<span><i class="lg lg-user"></i>gestrichelt = eure Routen</span><span class="lg-note">durchgezogen = beste Verbindungen der Auskunft</span></div>`,
+        .join('')}<span><i class="lg lg-user"></i>gestrichelt = eure Routen</span><span class="lg-note">durchgezogen = ${isBest ? 'beste' : 'schnellste'} Verbindungen</span></div>`,
     );
 
     const last = idx + 1 >= s.settings.rounds;
@@ -223,9 +220,9 @@ export function revealScreen(panel: HTMLElement): Screen {
     if (ev.timedOut) verdict = '<p class="err">Zeit abgelaufen – nicht abgegeben.</p>';
     else if (ev.error) verdict = `<p class="err">${esc(ev.error)}</p>`;
     else if (ev.matchedRank === 0) verdict = `<p class="good">Volltreffer – das ist die ${word} Verbindung!</p>`;
-    else if (ev.matchedRank !== null) verdict = `<p>Das ist Verbindung <b>#${ev.matchedRank + 1}</b> der Stichprobe.</p>`;
-    else if (ev.costMin !== null && ev.costMin < best) verdict = `<p class="good">${isBest ? 'Besser' : 'Schneller'} als alles, was die Auskunft gefunden hat – stark!</p>`;
-    else verdict = `<p>Nicht unter den Top-Verbindungen – selbst nachgerechnet über ${ev.route?.samples ?? 0} Abfahrten.</p>`;
+    else if (ev.matchedRank !== null) verdict = `<p>Das ist Verbindung <b>Nr. ${ev.matchedRank + 1}</b> der Liste.</p>`;
+    else if (ev.costMin !== null && ev.costMin < best) verdict = `<p class="good">${isBest ? 'Besser' : 'Schneller'} als alle Verbindungen der Liste – stark!</p>`;
+    else verdict = '<p>Nicht unter den Top-Verbindungen.</p>';
     const diff = ev.costMin !== null ? ev.costMin - best : null;
     const tr = ev.route ? transfersOf(ev.route) : 0;
     const max = maxRoundPoints(routeState().settings);
