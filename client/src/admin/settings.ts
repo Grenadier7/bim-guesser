@@ -10,7 +10,7 @@ import type { NetIndex } from '../net.ts';
 import { esc, toast } from '../ui.ts';
 
 import { adm, planNet } from './api.ts';
-import { miniMap } from './minimap.ts';
+import { addrMap, type AddrRow } from './addrmap.ts';
 import { mountPickers, pickerSlot } from './picker.ts';
 import type { Tab } from './plans.ts';
 
@@ -49,7 +49,10 @@ export function settingsTab(rerender: () => void): Tab {
   let net: NetIndex | null = null;
   let addrQuery = '';
   let addrHits: { id: string; name: string; district: number; removed: boolean; own: boolean }[] = [];
-  const newAddr = { name: '', district: 0, point: null as { lat: number; lon: number } | null };
+  /** alle Adressen für die Karte (einmal geladen) und wo die Karte zuletzt stand */
+  let addrAll: AddrRow[] | null = null;
+  let addrView: { lat: number; lon: number; zoom: number } | null = null;
+  let addrShow: ((id: string) => void) | null = null;
   let versions: { id: string; at: number; by: string; note: string }[] | null = null;
   /** zuletzt bearbeitete Haltestellen-Gruppe bleibt offen */
   let openPool = '';
@@ -97,14 +100,24 @@ export function settingsTab(rerender: () => void): Tab {
       }
       case 'scoring': {
         const d = draft('scoring');
-        return `${(Object.keys(d.modes) as ScoringMode[])
-          .map(
-            (id) => `<div class="adm-box">${chk(`modes.${id}.enabled`, d.modes[id].enabled, 'wählbar')}
-            <div class="adm-grid3"><label class="field"><span>Symbol</span>${inp(`modes.${id}.icon`, d.modes[id].icon, 'maxlength="8"')}</label><label class="field"><span>Name</span>${inp(`modes.${id}.label`, d.modes[id].label, 'maxlength="30"')}</label></div>
-            <label class="field"><span>Erklärung (Tooltip)</span><textarea data-cfg="modes.${id}.hint" rows="2" maxlength="400">${esc(d.modes[id].hint)}</textarea></label></div>`,
-          )
-          .join('')}
-          <label class="field adm-inline"><span>„Umstiege vermeiden“: Aufschlag je Umstieg</span>${num('transferPenalty', d.transferPenalty, 'min="0" max="15"')} min</label>`;
+        const ex = 30 + 2 * d.transferPenalty;
+        return `<p class="muted">Drei Wertungen – jede mit Name, Symbol, Erklärung (Tooltip in der Lobby) und Kurztext, der bei den Minuten steht (Runde, Auflösung). Was gerechnet wird, bleibt je Wertung gleich: <b>Realistisch</b> = Tür zu Tür mit Ø-Wartezeit, <b>Wie die Auskunft</b> = echte Abfahrten ab Startzeit, <b>Nur Fahrzeit</b> = ab dem Einsteigen.</p>
+          ${(Object.keys(d.modes) as ScoringMode[])
+            .map(
+              (id) => `<div class="adm-box adm-mode ${d.modes[id].enabled ? '' : 'off'}"><div class="adm-modehead"><span class="adm-modeprev">${esc(d.modes[id].icon)} ${esc(d.modes[id].label)}</span>${chk(`modes.${id}.enabled`, d.modes[id].enabled, 'in der Lobby wählbar')}</div>
+            <div class="adm-grid3"><label class="field"><span>Symbol</span>${inp(`modes.${id}.icon`, d.modes[id].icon, 'maxlength="8"')}</label><label class="field"><span>Name</span>${inp(`modes.${id}.label`, d.modes[id].label, 'maxlength="30"')}</label><label class="field"><span>Kurztext bei den Minuten</span>${inp(`modes.${id}.unit`, d.modes[id].unit, 'maxlength="30"')}</label></div>
+            <label class="field"><span>Erklärung (Tooltip)</span><textarea data-cfg="modes.${id}.hint" rows="2" maxlength="400">${esc(d.modes[id].hint)}</textarea></label>
+            ${
+              id === 'realistic'
+                ? `<div class="adm-sub"><div class="adm-modehead"><b>Zusatz: ${esc(d.avoid.label)}</b>${chk('avoid.enabled', d.avoid.enabled, 'anbieten')}</div>
+                <div class="adm-grid2"><label class="field"><span>Name</span>${inp('avoid.label', d.avoid.label, 'maxlength="30"')}</label>
+                <label class="field adm-inline"><span>Aufschlag je Umstieg</span>${num('transferPenalty', d.transferPenalty, 'min="0" max="15"')} min</label></div>
+                <label class="field"><span>Erklärung – <code>{min}</code> wird durch den Aufschlag ersetzt</span><textarea data-cfg="avoid.hint" rows="2" maxlength="400">${esc(d.avoid.hint)}</textarea></label>
+                <small class="muted">Beispiel in der Lobby: 30 min mit 2 Umstiegen zählen als ${ex} min – eine direkte Verbindung mit ${ex - 1} min gewinnt. Wie viel der Wartezeit an der ersten Haltestelle zählt, steht je Netzplan unter „Netzpläne“ → „Plan & Routenberechnung“.</small></div>`
+                : ''
+            }</div>`,
+            )
+            .join('')}`;
       }
       case 'tips': {
         const d = draft('tips');
@@ -192,17 +205,17 @@ export function settingsTab(rerender: () => void): Tab {
       }
       case 'addresses': {
         const d = draft('addresses');
-        return `<div class="field"><span>Adresse suchen (zum Ausnehmen)</span><input class="line-input" id="ad-q" value="${esc(addrQuery)}" placeholder="z.B. Hauptstraße" autocomplete="off"></div>
+        return `<p class="adm-addrlegend"><b>${(addrAll?.length ?? 0) + d.added.length - d.removed.length}</b> Adressen als Start/Ziel ·
+            <span><i class="on"></i>aktiv</span><span><i class="off"></i>ausgenommen (<span id="ad-count">${d.removed.length}</span>)</span><span><i class="own"></i>eigene (${d.added.length})</span></p>
+          <div class="adm-addrmap" id="ad-map"></div>
+          <p class="muted">Punkt anklicken: ausnehmen oder wieder aufnehmen (eigene: entfernen). Leere Stelle anklicken: dort eine eigene Adresse anlegen. Ab Zoom 15 lassen sich einzelne Häuser gut treffen. Erst „Speichern“ übernimmt.</p>
+          <div class="field"><span>Adresse suchen</span><input class="line-input" id="ad-q" value="${esc(addrQuery)}" placeholder="z.B. Hauptstraße" autocomplete="off"></div>
           ${addrHits.length ? `<ul class="adm-list">${addrHits.map((a) => {
             const off = d.removed.includes(a.id);
-            return `<li><span>${esc(a.name)} <small class="muted">${a.district}. Bezirk${a.own ? ' · eigene' : ''}</small></span><button type="button" class="btn btn-ghost btn-small" data-addr="${a.id}">${off ? 'Wieder aufnehmen' : 'Ausnehmen'}</button></li>`;
+            return `<li><span>${esc(a.name)} <small class="muted">${a.district}. Bezirk${a.own ? ' · eigene' : ''}${off ? ' · ausgenommen' : ''}</small></span><span class="adm-row"><button type="button" class="link" data-addrshow="${a.id}">auf der Karte</button><button type="button" class="btn btn-ghost btn-small" data-addr="${a.id}">${off ? 'Wieder aufnehmen' : 'Ausnehmen'}</button></span></li>`;
           }).join('')}</ul>` : ''}
-          <p class="muted">${d.removed.length} ausgenommen.</p>
-          <h4>Eigene Adressen</h4>${d.added.length ? `<ul class="adm-list">${d.added.map((a, i) => `<li><span>${esc(a.name)} <small class="muted">${a.district}. Bezirk</small></span><button type="button" class="icon-btn" data-rmaddr="${i}" aria-label="entfernen">✕</button></li>`).join('')}</ul>` : '<p class="muted">Keine.</p>'}
-          <div class="adm-grid2"><label class="field"><span>Adresse</span><input id="na-name" maxlength="60" value="${esc(newAddr.name)}" placeholder="z.B. Stephansplatz 1"></label>
-          <label class="field"><span>Bezirk</span><input type="number" id="na-d" min="1" max="23" value="${newAddr.district || ''}"></label></div>
-          <div class="field"><span>Ort – auf die Karte klicken</span><div class="adm-map" id="na-map"></div></div>
-          <button type="button" class="btn btn-ghost" id="na-add">Adresse hinzufügen</button>`;
+          <h4>Eigene Adressen</h4>${d.added.length ? `<ul class="adm-list">${d.added.map((a, i) => `<li><span>${esc(a.name)} <small class="muted">${a.district}. Bezirk</small></span><span class="adm-row"><button type="button" class="link" data-addrshow="own:${i}">auf der Karte</button><button type="button" class="icon-btn" data-rmaddr="${i}" aria-label="entfernen">✕</button></span></li>`).join('')}</ul>` : '<p class="muted">Keine – auf der Karte eine leere Stelle anklicken.</p>'}
+          `;
       }
       case 'chat': {
         const d = draft('chat');
@@ -215,6 +228,7 @@ export function settingsTab(rerender: () => void): Tab {
   async function html(): Promise<string> {
     st ??= await adm<ConfigState>('GET', '/api/admin/config');
     net ??= await planNet('regular');
+    if (open === 'addresses') addrAll ??= await adm<AddrRow[]>('GET', '/api/admin/addresses/all');
     return `<p class="muted">Gilt sofort für neue Lobbys und alle, die die Seite neu laden. „Standard“ = Wert aus dem Spiel selbst.</p>
       ${ORDER.map(
         (k) => `<details class="adm-sec" data-sec="${k}" ${open === k ? 'open' : ''}><summary>${esc(st!.labels[k])}${st!.changed.includes(k) ? ' <span class="adm-badge adm-badge-mod">geändert</span>' : ''}</summary>
@@ -380,16 +394,36 @@ export function settingsTab(rerender: () => void): Tab {
       }),
     );
     root.querySelectorAll<HTMLButtonElement>('[data-rmaddr]').forEach((b) => b.addEventListener('click', () => (draft('addresses').added.splice(Number(b.dataset.rmaddr), 1), rerender())));
-    root.querySelector<HTMLInputElement>('#na-name')?.addEventListener('input', (e) => (newAddr.name = (e.target as HTMLInputElement).value));
-    root.querySelector<HTMLInputElement>('#na-d')?.addEventListener('input', (e) => (newAddr.district = Number((e.target as HTMLInputElement).value)));
-    const map = root.querySelector<HTMLElement>('#na-map');
-    if (map) miniMap(map, net, newAddr.point, (p) => (newAddr.point = p));
-    root.querySelector('#na-add')?.addEventListener('click', () => {
-      if (!newAddr.name.trim() || !newAddr.point || !(newAddr.district >= 1 && newAddr.district <= 23)) return toast('Adresse, Bezirk (1–23) und Ort auf der Karte angeben.');
-      draft('addresses').added.push({ name: newAddr.name.trim(), lat: newAddr.point.lat, lon: newAddr.point.lon, district: newAddr.district });
-      Object.assign(newAddr, { name: '', district: 0, point: null });
-      rerender();
-    });
+    const map = root.querySelector<HTMLElement>('#ad-map');
+    if (map && addrAll) {
+      const d = draft('addresses');
+      const removed = new Set(d.removed);
+      addrShow = addrMap(map, {
+        all: addrAll,
+        removed,
+        own: d.added,
+        view: addrView,
+        onToggle: (id) => {
+          if (removed.has(id)) removed.delete(id);
+          else removed.add(id);
+          d.removed = [...removed];
+          const c = root.querySelector('#ad-count');
+          if (c) c.textContent = String(removed.size);
+        },
+        onRemoveOwn: (i) => (d.added.splice(i, 1), rerender()),
+        onAdd: (a) => (d.added.push(a), rerender()),
+        onView: (v) => (addrView = v),
+      }).show;
+    }
+    root.querySelectorAll<HTMLButtonElement>('[data-addrshow]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const id = b.dataset.addrshow!;
+        // eigene stehen in der Suche als „a:<gebaute + Nr>“
+        const i = Number(id.slice(2));
+        addrShow?.(id.startsWith('a:') && addrAll && i >= addrAll.length ? `own:${i - addrAll.length}` : id);
+        root.querySelector('#ad-map')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }),
+    );
     // speichern / Standard / verwerfen
     root.querySelector<HTMLButtonElement>(`[data-save="${k}"]`)?.addEventListener('click', () =>
       run(async () => {

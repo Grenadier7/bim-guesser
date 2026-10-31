@@ -248,6 +248,11 @@ export class Network {
     return all.filter((a) => !this.addressOff.has(a.i));
   }
 
+  /** Admin-Seite: alle gebauten Adressen (Index = ID „a:Index“) für die Karte */
+  allAddresses(): [number, number, string, number][] {
+    return this.addresses;
+  }
+
   /** Admin-Seite: Adressen suchen (Name), auch ausgenommene */
   searchAddresses(q: string, limit = 50): { id: string; name: string; district: number; lat: number; lon: number; removed: boolean; own: boolean }[] {
     const n = normName(q);

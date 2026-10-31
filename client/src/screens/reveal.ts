@@ -1,5 +1,5 @@
 import type { Evaluation, RoundReveal } from '../../../shared/types.ts';
-import { MODE_LABEL, RESTRICTIONS, TIPS, fmtTimeLeft, maxRoundPoints, restrictionLabel, routeCostOf, transferPenalty, transfersOf } from '../../../shared/rules.ts';
+import { MODE_LABEL, RESTRICTIONS, TIPS, fmtTimeLeft, maxRoundPoints, restrictionLabel, routeCostOf, scoringUnit, transferPenalty, transfersOf } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import type { PlayerRoute } from '../map.ts';
 import { netLayer, netView, smoothRoute } from '../netmap.ts';
@@ -171,7 +171,7 @@ export function revealScreen(panel: HTMLElement): Screen {
     makeExpandable(list);
     hoverable(list);
     // was die Minuten enthalten – kurz, ohne Rechenweg
-    const sub = s.settings.avgWait ? 'inkl. Wartezeit' : s.settings.countWait ? 'ab Startzeit' : 'reine Fahrzeit';
+    const sub = scoringUnit(s.settings);
     panel.append(
       h('h3', {}, isBest ? `Beste Verbindungen <small>(${sub}, +${penalty} min je Umstieg)</small>` : `Schnellste Verbindungen <small>(${sub})</small>`),
       list,

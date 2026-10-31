@@ -8,6 +8,7 @@ import {
   cleanFocusShare,
   cleanMinTransfers,
   cleanStationKinds,
+  AVOID_TRANSFERS,
   isSlotId,
   slotOr,
   matchPreset,
@@ -56,6 +57,7 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   else if (tl === true) out.tips = 'cheap';
   else if (tl === false) out.tips = 'off';
   if (s.goal === 'best' || s.goal === 'fastest') out.goal = s.goal;
+  if (out.goal === 'best' && !AVOID_TRANSFERS.enabled) out.goal = 'fastest';
   if (s.endpoints === 'stations' || s.endpoints === 'addresses') out.endpoints = s.endpoints;
   // Adressen: Schwierigkeit „eigene“ (die Schnellwahl meint Haltestellen) – wer danach eine Schnellwahl antippt,
   // spielt wieder mit Haltestellen

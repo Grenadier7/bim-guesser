@@ -6261,3 +6261,88 @@ details.adm-linechg li {
   width: max-content;
   margin-bottom: 2px;
 }
+
+/* ---------------------------------------------------------------- Admin: „Was zählt?“ */
+.adm-mode.off {
+  opacity: 0.6;
+}
+.adm-modehead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.adm-modeprev {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: #fff;
+  font-weight: 700;
+  font-size: 14px;
+}
+.adm-sub {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--line);
+  background: var(--bg);
+  border-radius: 0 8px 8px 0;
+}
+
+/* ---------------------------------------------------------------- Admin: alle Adressen auf der Karte */
+.adm-addrmap {
+  height: min(60vh, 520px);
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.adm-addrlegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  font-size: 13px;
+}
+.adm-addrlegend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+.adm-addrlegend i.on {
+  background: #1b1e23;
+}
+.adm-addrlegend i.off {
+  background: #fff;
+  border: 2px solid var(--err);
+}
+.adm-addrlegend i.own {
+  background: var(--good);
+}
+.adm-addrpop {
+  display: grid;
+  gap: 4px;
+  min-width: 160px;
+}
+.adm-addrpop small {
+  color: var(--muted);
+}
+.adm-addrpop input {
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font: inherit;
+}
+.adm-addrpop label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.adm-addrpop label input {
+  width: 64px;
+}

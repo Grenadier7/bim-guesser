@@ -11,6 +11,7 @@ import { DEFAULT_QUIZ_SETTINGS, DEFAULT_SETTINGS, DEFAULT_TRAINING } from './def
 import { POOL_OVERRIDES } from './pools.ts';
 import type { QuizSettings } from './quiz.ts';
 import {
+  AVOID_TRANSFERS,
   DIFFICULTY_PRESETS,
   DISTANCES,
   NET_MODES,
@@ -36,9 +37,11 @@ export interface GameConfig {
   netModes: { regular: { label: string; hint: string }; current: { label: string; hint: string; enabled: boolean } };
   /** „Was zählt?“ */
   scoring: {
-    modes: Record<ScoringMode, { icon: string; label: string; hint: string; enabled: boolean }>;
+    modes: Record<ScoringMode, { icon: string; label: string; hint: string; unit: string; enabled: boolean }>;
     /** Aufschlag je Umstieg bei „Umstiege vermeiden“ (min) */
     transferPenalty: number;
+    /** „Umstiege vermeiden“: Name, Erklärung, wählbar */
+    avoid: { label: string; hint: string; enabled: boolean };
   };
   /** Joker: Name und Abzug (Anteil der Routenpunkte); Stufen günstig/teuer als Zu-/Abschlag */
   tips: { kinds: Record<TipKind, { label: string; share: number }>; levels: Record<Exclude<TipLevel, 'off'>, number> };
@@ -109,8 +112,9 @@ const DEFAULTS: GameConfig = clone({
     current: { label: NET_MODES[1].label, hint: NET_MODES[1].hint, enabled: true },
   },
   scoring: {
-    modes: Object.fromEntries(SCORING_MODES.map((m) => [m.id, { icon: m.icon, label: m.label, hint: m.hint, enabled: true }])) as GameConfig['scoring']['modes'],
+    modes: Object.fromEntries(SCORING_MODES.map((m) => [m.id, { icon: m.icon, label: m.label, hint: m.hint, unit: m.unit, enabled: true }])) as GameConfig['scoring']['modes'],
     transferPenalty: TRANSFER_PENALTY.avg,
+    avoid: { ...AVOID_TRANSFERS },
   },
   tips: {
     kinds: Object.fromEntries(Object.values(TIPS).map((t) => [t.kind, { label: t.label, share: t.share }])) as GameConfig['tips']['kinds'],
@@ -190,13 +194,19 @@ export function sanitizeSection<K extends GameConfigSection>(key: K, input: unkn
     case 'scoring': {
       const dd = d as GameConfig['scoring'];
       const modes = (v.modes ?? {}) as Record<string, Record<string, unknown>>;
-      const out: GameConfig['scoring'] = { modes: clone(dd.modes), transferPenalty: num(v.transferPenalty ?? dd.transferPenalty, 0, 15, 'Aufschlag je Umstieg', 1) };
+      const av = (v.avoid ?? {}) as Record<string, unknown>;
+      const out: GameConfig['scoring'] = {
+        modes: clone(dd.modes),
+        transferPenalty: num(v.transferPenalty ?? dd.transferPenalty, 0, 15, 'Aufschlag je Umstieg', 1),
+        avoid: { label: text(av.label ?? dd.avoid.label, 30, 'Name'), hint: text(av.hint ?? dd.avoid.hint, 400, 'Erklärung', true), enabled: av.enabled !== false },
+      };
       for (const id of Object.keys(dd.modes) as ScoringMode[]) {
         const m = modes[id] ?? {};
         out.modes[id] = {
           icon: text(m.icon ?? dd.modes[id].icon, 8, 'Symbol'),
           label: text(m.label ?? dd.modes[id].label, 30, 'Name'),
           hint: text(m.hint ?? dd.modes[id].hint, 400, 'Erklärung', true),
+          unit: text(m.unit ?? dd.modes[id].unit, 30, 'Kurztext'),
           enabled: m.enabled !== false,
         };
       }
@@ -295,6 +305,7 @@ export function applyGameConfig(c: GameConfig | PublicConfig, menu?: MenuPlan[])
   for (const m of SCORING_MODES) Object.assign(m, c.scoring.modes[m.id]);
   TRANSFER_PENALTY.avg = c.scoring.transferPenalty;
   TRANSFER_PENALTY.fixed = c.scoring.transferPenalty * 2;
+  Object.assign(AVOID_TRANSFERS, c.scoring.avoid);
   for (const t of Object.values(TIPS)) Object.assign(t, c.tips.kinds[t.kind]);
   for (const l of TIP_LEVELS) if (l.id !== 'off') l.delta = c.tips.levels[l.id];
   for (const p of DIFFICULTY_PRESETS) Object.assign(p, clone(c.difficulty.presets[p.id]));

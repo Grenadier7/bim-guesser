@@ -13,6 +13,7 @@ import {
   NET_MODES,
   RESTRICTION_FREQUENCIES,
   SCORING_MODES,
+  AVOID_TRANSFERS,
   scoringModeOf,
   TIP_LEVELS,
   tipShare,
@@ -211,11 +212,11 @@ export function lobbyScreen(panel: HTMLElement): Screen {
           )}
             ${mode ? '' : '<small class="hint">Eigene Kombination (alter Link) – einen Modus antippen.</small>'}</div>
           ${
-            mode === 'realistic'
+            mode === 'realistic' && AVOID_TRANSFERS.enabled
               ? `<div class="toggles">${toggleInfo(
                   'avoidTransfers',
-                  'Umstiege vermeiden',
-                  `Jeder Umstieg zählt zusätzlich ${penalty} min – für alle, die lieber direkt fahren, auch wenn es etwas länger dauert. Beispiel: 30 min mit 2 Umstiegen zählen als ${30 + 2 * penalty} min – eine direkte Verbindung mit ${30 + 2 * penalty - 1} min gewinnt.<br>Aus = nur die Zeit zählt (Umsteigeweg und Wartezeit sind sowieso schon drin).`,
+                  esc(AVOID_TRANSFERS.label),
+                  `${esc(AVOID_TRANSFERS.hint.replaceAll('{min}', String(penalty)))} Beispiel: 30 min mit 2 Umstiegen zählen als ${30 + 2 * penalty} min – eine direkte Verbindung mit ${30 + 2 * penalty - 1} min gewinnt.<br>Aus = nur die Zeit zählt (Umsteigeweg und Wartezeit sind sowieso schon drin).`,
                   st.goal === 'best',
                   ro,
                   st.goal === 'best' ? `+${penalty} min je Umstieg` : '',

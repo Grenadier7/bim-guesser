@@ -290,6 +290,7 @@ export function adminRoutes(app: Express, d: AdminDeps) {
     }),
   );
   app.get('/api/admin/addresses', h((req) => (admin(req), d.net.searchAddresses(String(req.query.q ?? '')))));
+  app.get('/api/admin/addresses/all', h((req) => (admin(req), d.net.allAddresses())));
 
   // ---------------------------------------------------------------- Netzpläne und Routenberechnung
   const routingState = (): RoutingAdminState => ({ plans: d.plans.list(), defaults: DEFAULT_PARAMS, report: lastReport });

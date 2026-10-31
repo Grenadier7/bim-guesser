@@ -1,6 +1,6 @@
 import type { Guesses, LatLon, RoundPublic, Station, TipKind, TipResult } from '../../../shared/types.ts';
 import { icon } from '../icons.ts';
-import { RESTRICTIONS, TIPS, XTREME_LEVELS, baseLimitSec, restrictionAllowsLine, fmtDuration, fmtTimeLeft, locatePoints, restrictionLabel, tipShare } from '../../../shared/rules.ts';
+import { RESTRICTIONS, TIPS, XTREME_LEVELS, baseLimitSec, restrictionAllowsLine, fmtDuration, fmtTimeLeft, locatePoints, restrictionLabel, scoringUnit, tipShare } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import { RouteBuilder } from '../builder.ts';
 import { distM, fmtDist } from '../net.ts';
@@ -68,7 +68,7 @@ export function roundScreen(panel: HTMLElement): Screen {
           }Haltestellen selbst eintippen${showNames ? '' : ' · keine Namen'}${showMap ? '' : ' · leere Karte'}</small></div>`
         : ''
     }
-    <div class="when">🕒 ${esc(round.when ?? '')}${s.settings.network === 'current' ? ' · aktuelles Netz' : ''}${s.settings.countWait ? ' · inkl. Wartezeit' : ''}</div>
+    <div class="when">🕒 ${esc(round.when ?? '')}${s.settings.network === 'current' ? ' · aktuelles Netz' : ''}${s.settings.countWait ? ` · ${esc(scoringUnit(s.settings))}` : ''}</div>
     ${
       round.restriction
         ? `<div class="restriction">${RESTRICTIONS[round.restriction].icon} <b>${esc(restrictionLabel(round.restriction, round.bannedLines))}</b> – ${

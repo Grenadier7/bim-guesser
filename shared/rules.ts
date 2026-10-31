@@ -255,12 +255,22 @@ export function isSlotId(v: unknown): v is SlotId {
  */
 export type ScoringMode = 'realistic' | 'info' | 'ride';
 
-export const SCORING_MODES: { id: ScoringMode; icon: string; label: string; hint: string; enabled?: boolean; settings: Pick<GameSettings, 'countWait' | 'avgWait' | 'goal'> }[] = [
+export const SCORING_MODES: {
+  id: ScoringMode;
+  icon: string;
+  label: string;
+  hint: string;
+  /** kurz bei den Minuten (Runde, Auflösung) – was sie enthalten */
+  unit: string;
+  enabled?: boolean;
+  settings: Pick<GameSettings, 'countWait' | 'avgWait' | 'goal'>;
+}[] = [
   {
     id: 'realistic',
     icon: '🧭',
     label: 'Realistisch',
     hint: 'Tür zu Tür wie im echten Leben: Fahrzeit, Umsteigewege und die durchschnittliche Wartezeit auf jede Linie (S-Bahn alle 15 min → Ø 7,5 min, an der ersten Haltestelle 70 % davon). Ein zufällig perfekter Anschluss bringt keinen Vorteil.',
+    unit: 'inkl. Wartezeit',
     settings: { countWait: true, avgWait: true, goal: 'fastest' },
   },
   {
@@ -268,6 +278,7 @@ export const SCORING_MODES: { id: ScoringMode; icon: string; label: string; hint
     icon: '🕐',
     label: 'Wie die Auskunft',
     hint: 'Wie WienMobil oder AnachB „ab jetzt“: echte Abfahrten ab der Startzeit – wer einen knappen Anschluss erwischt, hat Glück.',
+    unit: 'ab Startzeit',
     settings: { countWait: true, avgWait: false, goal: 'fastest' },
   },
   {
@@ -275,9 +286,24 @@ export const SCORING_MODES: { id: ScoringMode; icon: string; label: string; hint
     icon: '🚇',
     label: 'Nur Fahrzeit',
     hint: 'Nur die Zeit ab dem Einsteigen zählt – wie lange man am Start wartet, ist egal. Für reines Linienwissen.',
+    unit: 'reine Fahrzeit',
     settings: { countWait: false, avgWait: false, goal: 'fastest' },
   },
 ];
+
+/** Kurztext zu den Minuten je nach Wertung (eigene Kombination: nach den Schaltern) */
+export function scoringUnit(s: Pick<GameSettings, 'countWait' | 'avgWait' | 'goal'>): string {
+  const m = SCORING_MODES.find((x) => x.id === scoringModeOf(s));
+  if (m) return m.unit;
+  return s.avgWait ? 'inkl. Wartezeit' : s.countWait ? 'ab Startzeit' : 'reine Fahrzeit';
+}
+
+/** „Umstiege vermeiden“ (nur bei Realistisch): Name, Erklärung ({min} = Aufschlag), wählbar */
+export const AVOID_TRANSFERS = {
+  label: 'Umstiege vermeiden',
+  hint: 'Jeder Umstieg zählt zusätzlich {min} min – für alle, die lieber direkt fahren, auch wenn es etwas länger dauert.',
+  enabled: true,
+};
 
 /** Welcher Modus? null = eigene Kombination (z.B. aus einem alten geteilten Link) */
 export function scoringModeOf(s: Pick<GameSettings, 'countWait' | 'avgWait' | 'goal'>): ScoringMode | null {
