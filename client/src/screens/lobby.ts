@@ -22,6 +22,7 @@ import {
   RESTRICTION_EXTRA_MAX_SEC,
   HARD_RESTRICTION_EXTRA_SEC,
   SLOT_DAYTYPE,
+  slotOr,
   TIME_BONUS_REF_SEC,
   TIME_LIMITS,
   TIME_SLOTS,
@@ -88,7 +89,7 @@ const ADV_TABS: { id: AdvTab; label: string }[] = [
 
 function regularHint(s: GameSettings): string {
   if (s.network !== 'regular') return esc(NET_MODES.find((n) => n.id === s.network)?.hint ?? '');
-  const day = app.net.data.regularDays[SLOT_DAYTYPE[s.slot]];
+  const day = app.net.data.regularDays[SLOT_DAYTYPE[slotOr(s.slot)]];
   const d = new Date(`${day.date}T00:00:00Z`);
   const txt = d.toLocaleDateString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
   return `Referenztag ${txt} – ${esc(day.note)}.`;

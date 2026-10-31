@@ -17,6 +17,7 @@ import {
   SCORING_MODES,
   SLOT_DAYTYPE,
   SLOT_TIME,
+  slotOr,
   STATION_KINDS,
   TIME_SLOTS,
   TIPS,
@@ -24,13 +25,13 @@ import {
   TRANSFER_PENALTY,
   type ScoringMode,
 } from './rules.ts';
-import type { DayType, DistanceRange, GameSettings, NetMode, SlotId, StationKind, TipKind, TipLevel } from './types.ts';
+import type { DayType, DistanceRange, GameSettings, NetMode, StationKind, TipKind, TipLevel } from './types.ts';
 
 export type PresetId = 'easy' | 'medium' | 'hard' | 'expert';
 
 export interface GameConfig {
-  /** die vier Uhrzeiten der Routenjagd (IDs bleiben, Tag/Uhrzeit/Texte sind frei) */
-  slots: Record<SlotId, { short: string; label: string; day: DayType; time: string }>;
+  /** Uhrzeiten der Routenjagd (1–8, Reihenfolge = Reihenfolge der Knöpfe; Tag/Uhrzeit/Texte frei) */
+  slots: Record<string, { short: string; label: string; day: DayType; time: string }>;
   /** Netz-Auswahl: Texte für „Regulär“ und „Aktuell“, „Aktuell“ abschaltbar */
   netModes: { regular: { label: string; hint: string }; current: { label: string; hint: string; enabled: boolean } };
   /** „Was zählt?“ */
@@ -131,7 +132,6 @@ export const defaultGameConfig = (): GameConfig => clone(DEFAULTS);
 
 // ---------------------------------------------------------------- prüfen
 
-const SLOT_IDS: SlotId[] = ['wd12', 'wd17', 'sa02', 'su12'];
 const KIND_IDS = STATION_KINDS.map((k) => k.id);
 
 export class ConfigError extends Error {}
@@ -162,14 +162,19 @@ export function sanitizeSection<K extends GameConfigSection>(key: K, input: unkn
   const v = (input ?? {}) as Record<string, unknown>;
   switch (key) {
     case 'slots': {
-      const out = clone(d) as GameConfig['slots'];
-      for (const id of SLOT_IDS) {
+      const dd = d as GameConfig['slots'];
+      const keys = input ? Object.keys(v) : Object.keys(dd);
+      if (keys.length < 1 || keys.length > 8) throw new ConfigError('1 bis 8 Uhrzeiten.');
+      const out: GameConfig['slots'] = {};
+      for (const id of keys) {
+        if (!/^[a-z0-9]{2,12}$/.test(id)) throw new ConfigError('Ungültige Uhrzeit.');
         const x = (v[id] ?? {}) as Record<string, unknown>;
-        const t = String(x.time ?? out[id].time);
-        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) throw new ConfigError(`Uhrzeit ${id}: Format HH:MM.`);
-        const day = x.day ?? out[id].day;
-        if (day !== 'wd' && day !== 'sa' && day !== 'su') throw new ConfigError(`Tag ${id}: Werktag, Samstag oder Sonntag.`);
-        out[id] = { short: text(x.short ?? out[id].short, 20, 'Kurzname'), label: text(x.label ?? out[id].label, 40, 'Name'), day, time: t };
+        const def = dd[id] ?? { short: '', label: '', day: 'wd', time: '' };
+        const t = String(x.time ?? def.time);
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(t)) throw new ConfigError('Uhrzeit im Format HH:MM.');
+        const day = x.day ?? def.day;
+        if (day !== 'wd' && day !== 'sa' && day !== 'su') throw new ConfigError('Tag: Werktag, Samstag oder Sonntag.');
+        out[id] = { short: text(x.short ?? def.short, 20, 'Kurzname'), label: text(x.label ?? def.label, 40, 'Name'), day, time: t };
       }
       return out as GameConfig[K];
     }
@@ -276,12 +281,12 @@ export function sanitizeSection<K extends GameConfigSection>(key: K, input: unkn
 /** Konfiguration auf die Spiel-Konstanten übertragen (Server und Browser) */
 export function applyGameConfig(c: GameConfig | PublicConfig, menu?: MenuPlan[]) {
   const plans = menu ?? ('plans' in c ? c.plans : []);
-  for (const t of TIME_SLOTS) {
-    const s = c.slots[t.id];
-    t.short = s.short;
-    t.label = s.label;
-    SLOT_DAYTYPE[t.id] = s.day;
-    SLOT_TIME[t.id] = s.time.split(':').map(Number) as [number, number];
+  TIME_SLOTS.length = 0;
+  for (const k of Object.keys(SLOT_TIME)) (delete SLOT_TIME[k], delete SLOT_DAYTYPE[k]);
+  for (const [id, s] of Object.entries(c.slots)) {
+    TIME_SLOTS.push({ id, short: s.short, label: s.label });
+    SLOT_DAYTYPE[id] = s.day;
+    SLOT_TIME[id] = s.time.split(':').map(Number) as [number, number];
   }
   NET_MODES.length = 0;
   NET_MODES.push({ id: 'regular', ...c.netModes.regular });
@@ -298,6 +303,9 @@ export function applyGameConfig(c: GameConfig | PublicConfig, menu?: MenuPlan[])
   Object.assign(DEFAULT_SETTINGS, clone(c.defaults.route));
   Object.assign(DEFAULT_QUIZ_SETTINGS, clone(c.defaults.quiz));
   Object.assign(DEFAULT_TRAINING, clone(c.defaults.training));
+  // Standard-Uhrzeit entfernt → erste Uhrzeit
+  DEFAULT_SETTINGS.slot = slotOr(DEFAULT_SETTINGS.slot);
+  DEFAULT_TRAINING.slot = slotOr(DEFAULT_TRAINING.slot);
   POOL_OVERRIDES.add = Object.fromEntries(Object.entries(c.pools.add).map(([k, v]) => [k, new Set(v)]));
   POOL_OVERRIDES.remove = Object.fromEntries(Object.entries(c.pools.remove).map(([k, v]) => [k, new Set(v)]));
 }

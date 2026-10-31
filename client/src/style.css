@@ -6117,3 +6117,147 @@ details.adm-linechg li {
   border-radius: 10px;
   padding: 10px 14px;
 }
+
+
+/* ---------------------------------------------------------------- Admin: Netz „Aktuell“ (live, nicht bearbeitbar) */
+.adm-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  vertical-align: middle;
+}
+.adm-live-badge i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  animation: adm-pulse 1.6s ease-in-out infinite;
+}
+.adm-live-badge.big {
+  font-size: 12px;
+  padding: 3px 10px 3px 8px;
+  align-self: flex-start;
+}
+@keyframes adm-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .adm-live-badge i {
+    animation: none;
+  }
+}
+.adm-plan.adm-plan-live {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--panel)), var(--panel) 70%);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.adm-plan.adm-plan-live.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.adm-live {
+  display: grid;
+  gap: 12px;
+}
+.adm-live-head {
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: linear-gradient(120deg, #1b1e23, #2a1416 70%, #5a0b11);
+  color: #fff;
+}
+.adm-live-head h3 {
+  margin: 0 0 4px;
+}
+.adm-live-head p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: rgb(255 255 255 / 0.85);
+}
+.adm-live-days {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.adm-live-days > div {
+  display: grid;
+  gap: 2px;
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 10px 12px;
+  border-top: 3px solid var(--accent);
+}
+.adm-live-days b {
+  font-size: 15px;
+}
+.adm-live-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.adm-live-stat {
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 2px;
+}
+.adm-live-stat b {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.adm-live-stat span {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.adm-live-stat.new b {
+  color: #0f6b3a;
+}
+.adm-live-stat.chg b {
+  color: var(--warn);
+}
+.adm-live-stat.gone b {
+  color: var(--err);
+}
+.adm-live-lines {
+  display: grid;
+  gap: 10px;
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.adm-live-lines h4 {
+  margin: 0 0 6px;
+}
+.adm-live-lines .chip {
+  margin: 0 2px 4px 0;
+}
+@media (max-width: 700px) {
+  .adm-live-days,
+  .adm-live-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .adm-live-head {
+    flex-direction: column;
+  }
+}
+.adm-plan .adm-live-badge {
+  justify-self: start;
+  align-self: start;
+  width: max-content;
+  margin-bottom: 2px;
+}

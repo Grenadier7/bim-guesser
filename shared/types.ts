@@ -82,7 +82,8 @@ export interface NetworkData extends NetworkPublic {
 
 // ---------------------------------------------------------------- Zeit & Einstellungen
 
-export type SlotId = 'wd12' | 'wd17' | 'sa02' | 'su12';
+/** Uhrzeit der Routenjagd – Standard wd12, wd17, sa02, su12; auf der Admin-Seite frei hinzufügbar/entfernbar */
+export type SlotId = string;
 
 export interface TimeSlot {
   id: SlotId;
@@ -736,6 +737,22 @@ export interface TimetableLineView {
     deps: Record<DayType, number[]>;
     through: string | null;
   }[];
+}
+
+/** Admin: Netz „Aktuell“ – welche echten Tage gespielt werden und was anders ist als im regulären Netz */
+export interface CurrentNetInfo {
+  generatedAt: string;
+  /** nächster typischer Tag je Tagestyp (YYYY-MM-DD) */
+  days: Record<DayType, string>;
+  regularDays: Record<DayType, ReferenceDay>;
+  /** nur im aktuellen Fahrplan (z.B. Ersatzverkehr) */
+  onlyCurrent: { id: string; mode: Mode; color: string }[];
+  /** fahren aktuell nicht */
+  missing: { id: string; mode: Mode; color: string }[];
+  /** fahren aktuell anders (andere Haltefolgen, z.B. kurzgeführt) */
+  changed: { id: string; mode: Mode; color: string }[];
+  /** offene Lobbys mit „Aktuell“ */
+  lobbies: number;
 }
 
 export interface RoutingAdminState {

@@ -1,5 +1,5 @@
 import type { DayType, NetMode, ReferenceDay, SlotId } from '../shared/types.ts';
-import { isRegularNet, SLOT_DAYTYPE, SLOT_TIME } from '../shared/rules.ts';
+import { isRegularNet, SLOT_DAYTYPE, SLOT_TIME, slotOr } from '../shared/rules.ts';
 import { naiveMinutes } from './efa.ts';
 
 
@@ -81,7 +81,9 @@ function atTime(d: Date, [h, m]: [number, number]): number {
 }
 
 /** Abfragezeitpunkt (naive Minuten) für Zeitfenster + Netzmodus */
-export function slotTime(slot: SlotId, net: NetMode, regularDays: Record<DayType, ReferenceDay>): number {
+export function slotTime(id: SlotId, net: NetMode, regularDays: Record<DayType, ReferenceDay>): number {
+  // Lobby mit einer inzwischen entfernten Uhrzeit → erste Uhrzeit
+  const slot = slotOr(id);
   const type = SLOT_DAYTYPE[slot];
   const day = isRegularNet(net) ? new Date(`${regularDays[type].date}T00:00:00Z`) : nextTypicalDay(type);
   return atTime(day, SLOT_TIME[slot]);

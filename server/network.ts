@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { distM, normName } from '../shared/geo.ts';
 import type { DayType, GameSettings, Headways, Line, LineEdit, NetMode, NetworkData, NetworkPublic, ServiceBand, SlotId, Station, StationKind, StationRef } from '../shared/types.ts';
-import { distanceRange, linePatterns } from '../shared/rules.ts';
+import { distanceRange, isNightSlot, linePatterns } from '../shared/rules.ts';
 import { inStationKinds } from '../shared/pools.ts';
 import type { EfaPoint } from './efa.ts';
 import { coversTime, timetableWarnings } from './timetable.ts';
@@ -414,14 +414,14 @@ export class Network {
 
   /** Stationen, die für die Einstellungen in Frage kommen (gecacht) */
   candidates(pool: StationKind[], slot: SlotId, net: NetMode): Station[] {
-    const key = `${pool.join(',')}|${slot === 'sa02' ? 'n' : 'd'}|${net}`;
+    const key = `${pool.join(',')}|${isNightSlot(slot) ? 'n' : 'd'}|${net}`;
     let hit = this.candidateCache.get(key);
     if (!hit) this.candidateCache.set(key, (hit = this.computeCandidates(pool, slot, net)));
     return hit;
   }
 
   private computeCandidates(pool: StationKind[], slot: SlotId, net: NetMode): Station[] {
-    const night = slot === 'sa02';
+    const night = isNightSlot(slot);
     return [...this.stations.values()].filter((s) => {
       if (!this.linesAt(s.id, net).length) return false;
       // nachts nur Stationen mit U-Bahn oder Nachtbus

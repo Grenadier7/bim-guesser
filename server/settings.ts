@@ -9,6 +9,7 @@ import {
   cleanMinTransfers,
   cleanStationKinds,
   isSlotId,
+  slotOr,
   matchPreset,
   NET_MODES,
   stationKindsFromPool,
@@ -19,6 +20,7 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   const out = { ...base };
   if (!s) return out;
   if (isSlotId(s.slot)) out.slot = s.slot;
+  out.slot = slotOr(out.slot);
   // Netz: Regulär, Aktuell oder ein Netzplan aus dem Menü (Admin-Seite)
   if (NET_MODES.some((m) => m.id === s.network)) out.network = s.network!;
   // Schnellwahl setzt die Regler; einzelne Regler-Werte überschreiben danach

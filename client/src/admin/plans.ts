@@ -3,8 +3,9 @@
 // die Auswahlfelder gleich neue Stationen und Linien), Fahrplan je Linie mit direkt änderbaren Fahrzeiten,
 // Probe-Abfrage mit allen Details, Versionen.
 import L from 'leaflet';
-import type { DayType, LineEdit, Mode, NetworkPlan, RouteOption, RoutingAdminState, RoutingParams, ServiceBand, SlotId, TimetableLineInfo, TimetableLineView } from '../../../shared/types.ts';
-import { lineColor, MODE_LABEL, TIME_SLOTS } from '../../../shared/rules.ts';
+import type { GameConfig } from '../../../shared/config.ts';
+import type { CurrentNetInfo, DayType, LineEdit, Mode, NetworkPlan, RouteOption, RoutingAdminState, RoutingParams, ServiceBand, SlotId, TimetableLineInfo, TimetableLineView } from '../../../shared/types.ts';
+import { lineColor, MODE_LABEL, NET_MODES, TIME_SLOTS } from '../../../shared/rules.ts';
 import { NetGraph } from '../netgraph.ts';
 import { NetMapLayer, netView } from '../netmap.ts';
 import type { NetIndex } from '../net.ts';
@@ -130,6 +131,10 @@ export function plansTab(rerender: () => void): Tab {
   };
   const probe = { from: '', to: '', slot: 'wd12' as SlotId, routes: null as RouteOption[] | null, busy: false };
   let newPlan: { label: string; copy: boolean } | null = null;
+  /** „Aktuell“ (kein bearbeitbarer Plan): echte Tage, Unterschiede zum regulären Netz, Name/Erklärung/an-aus */
+  const CURRENT = '__current';
+  let cur: CurrentNetInfo | null = null;
+  let curCfg: GameConfig['netModes'] | null = null;
   let versions: { id: string; at: number; by: string; note: string }[] | null = null;
 
   const plan = (): NetworkPlan => state!.plans.find((p) => p.id === planId) ?? state!.plans[0];
@@ -206,8 +211,22 @@ export function plansTab(rerender: () => void): Tab {
 
   async function html(): Promise<string> {
     state ??= await adm<RoutingAdminState>('GET', '/api/admin/routing');
-    if (!state.plans.some((p) => p.id === planId)) planId = 'regular';
-    net ??= await planNet(planId);
+    const isCur = planId === CURRENT;
+    if (!isCur && !state.plans.some((p) => p.id === planId)) planId = 'regular';
+    net ??= await planNet(isCur ? 'regular' : planId);
+    // Kacheln: Standard, dann „Aktuell“ (live, hervorgehoben), dann die eigenen Netzpläne
+    const planTile = (x: NetworkPlan) =>
+      `<button class="adm-plan ${x.id === planId ? 'on' : ''}" data-plan="${esc(x.id)}">${esc(x.id === 'regular' ? 'Standard' : x.label)}${x.inMenu ? ' <small>im Menü</small>' : ''}<small>${x.edits.length} Änderung${x.edits.length === 1 ? '' : 'en'}</small></button>`;
+    const liveOn = NET_MODES.some((m) => m.id === 'current');
+    const liveTile = `<button class="adm-plan adm-plan-live ${isCur ? 'on' : ''}" data-plan="${CURRENT}"><span class="adm-live-badge"><i></i>LIVE</span> ${esc(NET_MODES.find((m) => m.id === 'current')?.label ?? 'Aktuell')}<small>${liveOn ? 'echte Tage · im Menü' : 'ausgeschaltet'}</small></button>`;
+    const tiles = `<div class="adm-plans">${state.plans.map((x) => (x.id === 'regular' ? planTile(x) + liveTile : planTile(x))).join('')}
+        <button class="adm-plan adm-plan-new" id="pl-new">+ Neuer Netzplan</button></div>
+      ${newPlan ? newPlanHtml() : ''}`;
+    if (isCur) {
+      cur ??= await adm<CurrentNetInfo>('GET', '/api/admin/routing/current');
+      curCfg ??= (await adm<{ config: GameConfig }>('GET', '/api/admin/config')).config.netModes;
+      return `${tiles}${currentHtml(cur, curCfg)}`;
+    }
     const p = plan();
     if (paramsFor !== p.id) ((params = { ...p.params }), (paramsFor = p.id));
     const report = state.report[planId] ?? [];
@@ -243,14 +262,34 @@ export function plansTab(rerender: () => void): Tab {
     else
       content = `${p.id === 'regular' ? '<p class="muted">Der Standard-Netzplan gilt für „Regulär“ – und damit für Quiz, Training, Lernen und alle Karten.</p>' : metaHtml(p)}
         <h3>Routenberechnung</h3>${paramsHtml(p)}`;
-    return `
-      <div class="adm-plans">${state.plans
-        .map((x) => `<button class="adm-plan ${x.id === planId ? 'on' : ''}" data-plan="${esc(x.id)}">${esc(x.id === 'regular' ? 'Standard' : x.label)}${x.inMenu ? ' <small>im Menü</small>' : ''}<small>${x.edits.length} Änderung${x.edits.length === 1 ? '' : 'en'}</small></button>`)
-        .join('')}
-        <button class="adm-plan adm-plan-new" id="pl-new">+ Neuer Netzplan</button></div>
-      ${newPlan ? newPlanHtml() : ''}
+    return `${tiles}
       <div class="adm-subnav">${sections.map(([k, l]) => `<button data-section="${k}" class="${section === k ? 'on' : ''}">${l}</button>`).join('')}</div>
       ${content}`;
+  }
+
+  /** „Aktuell“: kein Plan zum Bearbeiten, sondern das echte Netz der nächsten Tage – eigene Ansicht */
+  function currentHtml(c: CurrentNetInfo, cfg: GameConfig['netModes']): string {
+    const fmt = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
+    const age = Math.floor((Date.now() - Date.parse(c.generatedAt)) / 864e5);
+    const chips = (ls: CurrentNetInfo['onlyCurrent']) => (ls.length ? ls.map((l) => lineChip(l.mode, l.id, l.color)).join(' ') : '<small class="muted">keine</small>');
+    const stat = (n: number, label: string, cls: string) => `<div class="adm-live-stat ${cls}"><b>${n}</b><span>${label}</span></div>`;
+    return `<div class="adm-live">
+      <div class="adm-live-head"><span class="adm-live-badge big"><i></i>LIVE</span><div><h3>${esc(cfg.current.label)}</h3>
+        <p>Gespielt wird am <b>nächsten echten Tag</b> – mit Baustellen, Sperren und Ersatzverkehr. Die Verbindungen kommen live aus der Fahrplanauskunft. Anders als die Netzpläne lässt sich dieses Netz nicht bearbeiten: Es fährt immer so, wie es gerade wirklich fährt.</p></div></div>
+      <div class="adm-live-days">${DAYS.map(([d, l]) => `<div><small>${l}</small><b>${fmt(c.days[d])}</b><small class="muted">Regulär: ${fmt(c.regularDays[d].date)}</small></div>`).join('')}</div>
+      <div class="adm-live-stats">${stat(c.onlyCurrent.length, 'nur aktuell – z.B. Ersatzverkehr', 'new')}${stat(c.changed.length, 'fahren anders', 'chg')}${stat(c.missing.length, 'fahren nicht', 'gone')}${stat(c.lobbies, `offene Lobby${c.lobbies === 1 ? '' : 's'} damit`, '')}</div>
+      <div class="adm-live-lines">
+        <div><h4><span class="adm-tag new">nur aktuell</span></h4>${chips(c.onlyCurrent)}</div>
+        <div><h4><span class="adm-tag chg">fahren anders</span></h4>${chips(c.changed)}</div>
+        <div><h4><span class="adm-tag gone">fahren nicht</span></h4>${chips(c.missing)}</div>
+      </div>
+      <p class="muted">Linienverläufe: Stand ${new Date(c.generatedAt).toLocaleDateString('de-AT')}${age > 14 ? ` <b class="adm-was">– ${age} Tage alt, beim nächsten Update der Netzdaten neu</b>` : ''}.</p>
+      <div class="adm-box adm-meta"><h4>In der Lobby</h4>
+        <label class="check"><input type="checkbox" id="cu-on" ${cfg.current.enabled ? 'checked' : ''}> in der Lobby unter „Netz“ wählbar</label>
+        <label class="field"><span>Name</span><input id="cu-label" maxlength="20" value="${esc(cfg.current.label)}"></label>
+        <label class="field"><span>Erklärung (Tooltip)</span><input id="cu-hint" maxlength="200" value="${esc(cfg.current.hint)}"></label>
+        <div class="adm-row"><button class="btn btn-primary" id="cu-save">Speichern</button></div></div>
+    </div>`;
   }
 
   function versionsHtml(): string {
@@ -817,6 +856,8 @@ export function plansTab(rerender: () => void): Tab {
       b.addEventListener('click', () => {
         planId = b.dataset.plan!;
         net = null;
+        cur = null;
+        curCfg = null;
         lineView = null;
         lineViewFor = '';
         linesFor = '';
@@ -824,6 +865,22 @@ export function plansTab(rerender: () => void): Tab {
         probe.routes = null;
         resetForm();
         rerender();
+      }),
+    );
+    root.querySelector('#cu-save')?.addEventListener('click', () =>
+      run(async () => {
+        const current = {
+          enabled: root.querySelector<HTMLInputElement>('#cu-on')!.checked,
+          label: root.querySelector<HTMLInputElement>('#cu-label')!.value,
+          hint: root.querySelector<HTMLInputElement>('#cu-hint')!.value,
+        };
+        const st = await adm<{ config: GameConfig }>('PUT', '/api/admin/config/netModes', { value: { ...curCfg!, current } });
+        curCfg = st.config.netModes;
+        // Menü im Browser gleich mitziehen (Text der Kachel)
+        const i = NET_MODES.findIndex((m) => m.id === 'current');
+        if (i >= 0) NET_MODES.splice(i, 1);
+        if (curCfg.current.enabled) NET_MODES.splice(1, 0, { id: 'current', label: curCfg.current.label, hint: curCfg.current.hint });
+        toast('Gespeichert – gilt ab sofort', 'info');
       }),
     );
     root.querySelector('#pl-new')?.addEventListener('click', () => ((newPlan = { label: '', copy: true }), rerender()));

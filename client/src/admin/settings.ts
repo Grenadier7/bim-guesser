@@ -75,19 +75,25 @@ export function settingsTab(rerender: () => void): Tab {
       }
       case 'slots': {
         const d = draft('slots');
-        return `<table class="adm-table"><thead><tr><th>Kurzname (Knopf)</th><th>Name (Tooltip)</th><th>Tag</th><th>Uhrzeit</th></tr></thead><tbody>${TIME_SLOTS.map(
-          (t) =>
-            `<tr><td>${inp(`${t.id}.short`, d[t.id].short, 'maxlength="20"')}</td><td>${inp(`${t.id}.label`, d[t.id].label, 'maxlength="40"')}</td><td>${sel(`${t.id}.day`, d[t.id].day, Object.entries(DAY_LABEL) as [string, string][])}</td><td><input type="time" data-cfg="${t.id}.time" value="${d[t.id].time}"></td></tr>`,
-        ).join('')}</tbody></table><p class="muted">Gespielt wird am Referenztag des gewählten Tagestyps zur angegebenen Uhrzeit.</p>`;
+        const ids = Object.keys(d);
+        return `<table class="adm-table adm-slots"><thead><tr><th>Kurzname (Knopf)</th><th>Name (Tooltip)</th><th>Tag</th><th>Uhrzeit</th><th></th></tr></thead><tbody>${ids
+          .map(
+            (id, i) =>
+              `<tr><td>${inp(`${id}.short`, d[id].short, 'maxlength="20"')}</td><td>${inp(`${id}.label`, d[id].label, 'maxlength="40"')}</td><td>${sel(`${id}.day`, d[id].day, Object.entries(DAY_LABEL) as [string, string][])}</td><td><input type="time" data-cfg="${id}.time" value="${d[id].time}"></td>
+              <td class="adm-slotbtns"><button type="button" class="icon-btn" data-slotmove="${i}|-1" ${i ? '' : 'disabled'} aria-label="nach oben">↑</button><button type="button" class="icon-btn" data-slotmove="${i}|1" ${i < ids.length - 1 ? '' : 'disabled'} aria-label="nach unten">↓</button><button type="button" class="icon-btn" data-rmslot="${esc(id)}" ${ids.length > 1 ? '' : 'disabled'} aria-label="Uhrzeit entfernen" title="${ids.length > 1 ? 'Uhrzeit entfernen' : 'Mindestens eine Uhrzeit bleibt'}">✕</button></td></tr>`,
+          )
+          .join('')}</tbody></table>
+          <div class="adm-row">${ids.length < 8 ? '<button type="button" class="btn btn-ghost btn-small" id="slot-add">+ Uhrzeit hinzufügen</button>' : '<small class="muted">Höchstens 8 Uhrzeiten.</small>'}</div>
+          <p class="muted">1 bis 8 Uhrzeiten – so viele Knöpfe gibt es in der Lobby und im Training. Gespielt wird am Referenztag des gewählten Tagestyps zur angegebenen Uhrzeit; zwischen 0 und 5 Uhr nur mit Stationen, an denen U-Bahn oder Nachtbus fährt. Lobbys mit einer entfernten Uhrzeit spielen mit der ersten.</p>`;
       }
       case 'netModes': {
         const d = draft('netModes');
         return `<div class="adm-grid2"><label class="field"><span>„Regulär“ – Name</span>${inp('regular.label', d.regular.label, 'maxlength="20"')}</label>
           <label class="field"><span>Erklärung</span>${inp('regular.hint', d.regular.hint, 'maxlength="200"')}</label>
-          <label class="field"><span>„Aktuell“ – Name</span>${inp('current.label', d.current.label, 'maxlength="20"')}</label>
+          <label class="field"><span><span class="adm-live-badge"><i></i>LIVE</span> „Aktuell“ – Name</span>${inp('current.label', d.current.label, 'maxlength="20"')}</label>
           <label class="field"><span>Erklärung</span>${inp('current.hint', d.current.hint, 'maxlength="200"')}</label></div>
           ${chk('current.enabled', d.current.enabled, '„Aktuell“ (nächster echter Tag mit Baustellen) wählbar')}
-          <p class="muted">Weitere Netze: unter „Netzpläne“ einen Plan anlegen und „In der Lobby wählbar“ setzen.</p>`;
+          <p class="muted">„Aktuell“ spielt am nächsten echten Tag mit Baustellen und Ersatzverkehr – was gerade anders fährt, steht unter „Netzpläne“ → „Aktuell“. Weitere Netze: unter „Netzpläne“ einen Plan anlegen und „In der Lobby wählbar“ setzen.</p>`;
       }
       case 'scoring': {
         const d = draft('scoring');
@@ -348,6 +354,28 @@ export function settingsTab(rerender: () => void): Tab {
         const a = draft('addresses');
         const id = b.dataset.addr!;
         a.removed = a.removed.includes(id) ? a.removed.filter((x) => x !== id) : [...a.removed, id];
+        rerender();
+      }),
+    );
+    // Uhrzeiten: hinzufügen, entfernen, Reihenfolge (Reihenfolge der Schlüssel = Reihenfolge der Knöpfe)
+    root.querySelector('#slot-add')?.addEventListener('click', () => {
+      const d = draft('slots');
+      d[`s${Date.now().toString(36).slice(-6)}`] = { short: 'Neu', label: 'Neue Uhrzeit', day: 'wd', time: '08:00' };
+      rerender();
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-rmslot]').forEach((b) =>
+      b.addEventListener('click', () => {
+        delete draft('slots')[b.dataset.rmslot!];
+        rerender();
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-slotmove]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const [i, dir] = b.dataset.slotmove!.split('|').map(Number);
+        const d = draft('slots');
+        const list = Object.entries(d);
+        [list[i], list[i + dir]] = [list[i + dir], list[i]];
+        drafts.set('slots', Object.fromEntries(list));
         rerender();
       }),
     );

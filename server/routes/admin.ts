@@ -9,8 +9,8 @@
 import type { Express, NextFunction, Request, Response } from 'express';
 import type { GameConfigSection } from '../../shared/config.ts';
 import { defaultGameConfig } from '../../shared/config.ts';
-import type { AdminOverview, LineEdit, NetworkPlan, RoutingAdminState, RoutingParams, SlotId } from '../../shared/types.ts';
-import { isSlotId } from '../../shared/rules.ts';
+import type { AdminOverview, CurrentNetInfo, DayType, Line, LineEdit, NetworkPlan, RoutingAdminState, RoutingParams, SlotId } from '../../shared/types.ts';
+import { slotOr } from '../../shared/rules.ts';
 import type { AccountAdmin, AccountUser, Accounts } from '../accounts.ts';
 import type { GameConfigStore } from '../gameconfig.ts';
 import { SECTION_LABEL } from '../gameconfig.ts';
@@ -22,7 +22,7 @@ import type { PlanRuntime } from '../planruntime.ts';
 import { DEFAULT_PARAMS, sanitizeEdits, sanitizeParams, type PlanStore } from '../plans.ts';
 import { topRoutes } from '../routing.ts';
 import { rateLimit } from '../security.ts';
-import { slotTime } from '../timeslots.ts';
+import { nextTypicalDay, slotTime } from '../timeslots.ts';
 import { timetableInfo, timetableLines, timetableView } from '../timetable.ts';
 import { jsonOnly, resetBase, sessionToken } from './accounts.ts';
 
@@ -334,6 +334,27 @@ export function adminRoutes(app: Express, d: AdminDeps) {
   /** Regionalzüge des Standard-Fahrplans, die man bearbeiten kann */
   const regionalLines = () => timetableLines('__base', () => false).map((l) => l.line);
   app.get('/api/admin/routing', h((req) => (admin(req), routingState())));
+  // „Aktuell“: nächster echter Tag – was im aktuellen Fahrplan anders ist als im regulären (Stand der Netzdaten)
+  app.get(
+    '/api/admin/routing/current',
+    h((req): CurrentNetInfo => {
+      admin(req);
+      const n = d.runtime.planNet('__base') ?? d.net;
+      const ref = (l: Line) => ({ id: l.id, mode: l.mode, color: l.color });
+      const out: CurrentNetInfo = { generatedAt: n.data.generatedAt, days: { wd: '', sa: '', su: '' }, regularDays: n.data.regularDays, onlyCurrent: [], missing: [], changed: [], lobbies: 0 };
+      for (const l of n.lines.values()) {
+        const of = (flag: string) => l.patterns.filter((_, i) => l.nets[i].includes(flag)).map((p) => p.join(','));
+        const c = of('c');
+        const r = of('r');
+        if (c.length && !r.length) out.onlyCurrent.push(ref(l));
+        else if (r.length && !c.length) out.missing.push(ref(l));
+        else if (c.length !== r.length || c.some((x) => !r.includes(x))) out.changed.push(ref(l));
+      }
+      for (const t of ['wd', 'sa', 'su'] as DayType[]) out.days[t] = nextTypicalDay(t).toISOString().slice(0, 10);
+      out.lobbies = d.games.list().filter((g) => (g.state() as { settings?: { network?: string } }).settings?.network === 'current').length;
+      return out;
+    }),
+  );
   // alle Linien eines Netzplans im Fahrplan (plan=__base: wie gebaut, ohne Änderungen)
   app.get(
     '/api/admin/routing/lines',
@@ -425,7 +446,7 @@ export function adminRoutes(app: Express, d: AdminDeps) {
       const from = String(req.body?.from ?? '');
       const to = String(req.body?.to ?? '');
       if (!n.stations.has(from) || !n.stations.has(to) || from === to) throw new GameError('Start und Ziel wählen (zwei verschiedene Stationen).');
-      const slot: SlotId = isSlotId(req.body?.slot) ? req.body.slot : 'wd12';
+      const slot: SlotId = slotOr(req.body?.slot);
       const time = slotTime(slot, 'regular', n.data.regularDays);
       return topRoutes(n, from, to, time, { countWait: true, avgWait: true, restriction: null });
     }),

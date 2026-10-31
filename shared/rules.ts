@@ -38,6 +38,10 @@ export const NET_MODES: { id: NetMode; label: string; hint: string }[] = [
 export const SLOT_DAYTYPE: Record<SlotId, DayType> = { wd12: 'wd', wd17: 'wd', sa02: 'sa', su12: 'su' };
 /** Uhrzeit je Zeitfenster [Stunde, Minute] – sa02: Nacht Fr → Sa (U-Bahn fährt durch) */
 export const SLOT_TIME: Record<SlotId, [number, number]> = { wd12: [12, 0], wd17: [17, 0], sa02: [2, 0], su12: [12, 0] };
+/** gültige Uhrzeit – eine inzwischen entfernte wird zur ersten */
+export const slotOr = (id: unknown): SlotId => (isSlotId(id) ? id : TIME_SLOTS[0].id);
+/** Nacht (0–5 Uhr): nur Stationen mit U-Bahn oder Nachtbus */
+export const isNightSlot = (id: SlotId) => SLOT_TIME[slotOr(id)][0] < 5;
 
 /** Netz wie das reguläre (Referenztag, eigener Fahrplan) – alles außer „Aktuell“ */
 export const isRegularNet = (n: NetMode) => n !== 'current';
@@ -237,7 +241,7 @@ export function regionalTrains(names: string[]): string[] {
 export const isSpecialLine = (l: { id: string }) => /^\d+E$/.test(l.id) || isRegionalTrain(l);
 
 export function isSlotId(v: unknown): v is SlotId {
-  return TIME_SLOTS.some((s) => s.id === v);
+  return typeof v === 'string' && TIME_SLOTS.some((s) => s.id === v);
 }
 
 // ---------------------------------------------------------------- Wertung: Modus („Was zählt?“)
