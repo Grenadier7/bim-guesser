@@ -71,11 +71,11 @@ test('Tutorial: Praterstern → Stephansplatz, Reumannplatz → Rathaus (U2-Fall
   await t.context.close();
 });
 
-test('Tutorial wird nach 2 normalen Spielen nicht mehr angeboten', async () => {
+test('Tutorial wird nach einem fertigen Spiel nicht mehr angeboten', async () => {
   const t = await app.page();
   const p = t.page;
   await p.goto(app.base);
-  await p.evaluate(() => localStorage.setItem('oeffi-progress-v1', JSON.stringify({ tutorialDone: false, played: 2 })));
+  await p.evaluate(() => localStorage.setItem('oeffi-progress-v1', JSON.stringify({ tutorialDone: false, played: 1 })));
   await p.reload();
   await p.locator('.mode-route').waitFor();
   assert.equal(await p.locator('.tut-card').count(), 0);

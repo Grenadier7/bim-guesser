@@ -56,7 +56,7 @@ Die Startseite zeigt vier Modi als Kacheln. Unten gibt es **„Mit Code beitrete
 in die richtige Lobby (Routenjagd oder Quiz).
 
 **🎓 Tutorial** (für Neue, `client/src/screens/tutorial.ts`): oben ein Hinweis, unten eine Karte – bis man es gemacht
-oder 2 normale Spiele (Routenjagd-/Quiz-Endstand, Training) abgeschlossen hat (`client/src/progress.ts`). Zwei
+oder ein normales Spiel (Routenjagd-/Quiz-Endstand, Training) abgeschlossen hat (`client/src/progress.ts`). Zwei
 geführte Runden mit echter Auskunft und Wertung: Praterstern → Stephansplatz (U1 eintippen, Ausstieg wählen),
 Reumannplatz → Rathaus („Rathaus ist doch U2“ → U2 fährt dort nicht → U1 bis Karlsplatz, U2 bis Rathaus). Sprechblasen
 zeigen den nächsten Schritt und heben das passende Feld hervor; danach die Punktevergabe.
