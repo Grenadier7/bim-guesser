@@ -2,6 +2,7 @@
 // verlassen, Fehlerfälle. Das Quiz wird komplett durchgespielt (braucht keine Wiener-Linien-Auskunft).
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
+import { EZ_PHRASES } from '../server/ez.ts';
 import { startServer, type TestServer } from './support/server.ts';
 
 let s: TestServer;
@@ -69,6 +70,13 @@ describe('Lobby (Routenjagd)', () => {
     const name = body.state.players[0].name as string;
     assert.ok(!/[<>"&]/.test(name), name);
     assert.ok(name.length <= 20, name);
+  });
+
+  test('Einladungslink: gibt es die Lobby? – nur ob, Modus und Phase, keine Spielenden', async () => {
+    const { body } = await create('route', 'Gastgeber');
+    const yes = await s.call('GET', `/api/games/${body.state.id.toLowerCase()}/exists`);
+    assert.deepEqual(yes.body, { exists: true, mode: 'route', phase: 'lobby' });
+    assert.deepEqual((await s.call('GET', '/api/games/ZZZZZ/exists')).body, { exists: false });
   });
 
   test('beitreten mit falschem Code → 404', async () => {
@@ -211,6 +219,8 @@ describe('Kicken und Chat', () => {
     assert.equal(m.body.name, 'Host');
     assert.equal((await say('x'.repeat(500))).body.text.length, 300);
     assert.equal((await say('   ')).status, 400);
+    // „/ez“ → zufälliger Spruch statt der Nachricht
+    assert.ok(EZ_PHRASES.includes((await say('/ez')).body.text));
     assert.equal((await say('hi', 'falsch')).status, 403);
     const statuses = [];
     for (let i = 0; i < 5; i++) statuses.push((await say(`spam ${i}`)).status);

@@ -35,6 +35,7 @@ export const api = {
   config: () => call<PublicConfig>('GET', '/api/config'),
   create: (playerName: string, mode: GameMode, settings: Partial<GameSettings> | Partial<QuizSettings>) =>
     call<JoinResponse>('POST', '/api/games', { playerName, mode, settings }),
+  exists: (code: string) => call<{ exists: boolean; mode?: GameMode; phase?: 'lobby' | 'playing' | 'finished' }>('GET', `${g(code)}/exists`),
   join: (code: string, playerName: string) => call<JoinResponse>('POST', `${g(code)}/join`, { playerName }),
   state: (a: Auth) => call<{ playerId: string; state: LobbyState }>('GET', `${g(a.code)}?${q(a)}`),
   settings: (a: Auth, settings: Partial<GameSettings> | Partial<QuizSettings>) => call<LobbyState>('PUT', `${g(a.code)}/settings`, { token: a.token, settings }),

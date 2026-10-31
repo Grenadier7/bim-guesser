@@ -253,6 +253,11 @@ test('Profil eines Fremden, E-Mail und Passwort ändern, Einladung ablehnen, Nam
   // Einladungslink: Name ist schon eingetragen
   await p.goto(`${app.base}/?code=${lobby.state.id}`);
   assert.equal(await p.locator('#inviteName').inputValue(), name);
+  // Link zu einer Lobby, die es nicht mehr gibt: keine Einladung, sondern ein Hinweis; Code-Feld bleibt leer
+  await p.goto(`${app.base}/?code=ZZZZZ`);
+  await p.locator('.invite-gone', { hasText: 'ZZZZZ' }).waitFor();
+  assert.equal(await p.locator('#inviteName').count(), 0);
+  assert.equal(await p.locator('#code').inputValue(), '');
   assert.deepEqual(t.errors, []);
   await t.context.close();
 });

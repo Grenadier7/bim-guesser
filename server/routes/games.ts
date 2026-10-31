@@ -53,6 +53,21 @@ export function gameRoutes(app: Express, games: GameManager, account?: { account
     }),
   );
 
+  // Einladungslink: gibt es die Lobby noch? (Modus und ob sie schon läuft – sonst nichts über sie)
+  const limitPeek = rateLimit('peek', 60, 10 * MIN, 'Zu viele Anfragen – bitte {wait} nochmal.');
+  app.get(
+    '/api/games/:code/exists',
+    limitPeek,
+    h((req) => {
+      try {
+        const g = games.get(param(req, 'code'));
+        return { exists: true, mode: g.mode, phase: g.phase };
+      } catch {
+        return { exists: false };
+      }
+    }),
+  );
+
   // Mit Code beitreten
   app.post(
     '/api/games/:code/join',

@@ -6486,3 +6486,13 @@ details.adm-linechg li {
   margin: 4px 0 0;
   padding-left: 18px;
 }
+
+.invite-gone {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+}

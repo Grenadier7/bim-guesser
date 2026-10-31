@@ -284,7 +284,7 @@ verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der S
 5. **Host-Steuerung** während der Runde: ⏸ Pause (Zeit steht, alle sehen eine Pause-Anzeige, Pausenzeit zählt
    nicht zur benötigten Zeit), ✖ Runde abbrechen (Lösung wird gezeigt, keine Punkte), ⏹ Spiel beenden.
    Unter „👥 Spieler“ (Lobby und laufendes Spiel): ✕ kicken, 👑 zum Host machen – es kann mehrere Hosts geben.
-   **💬 Lobby-Chat** unten rechts.
+   **💬 Lobby-Chat** unten rechts – `/ez` schickt statt der Nachricht einen zufälligen Spruch (`server/ez.ts`).
 6. **Inaktive Lobby**: nach 9 min ohne Aktion fragt ein Fenster die Hosts „Lobby behalten?“ (30 s). Keine Antwort →
    der nächste verbundene Spieler wird Host und gefragt; antwortet niemand oder „Lobby löschen“ → Lobby wird
    geschlossen (`LOBBY_IDLE_MS`, `LOBBY_IDLE_ANSWER_MS`).

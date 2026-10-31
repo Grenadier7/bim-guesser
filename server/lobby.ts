@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 import type { AdminLobby, ChatMessage, GameEvent, GameMode, GamePhase, LobbyState, PlayerPublic } from '../shared/types.ts';
 import { cleanChat, cleanName } from './security.ts';
+import { ezPhrase, isEz } from './ez.ts';
 import { isOffensive, moderate } from './moderation.ts';
 
 export class GameError extends Error {
@@ -110,8 +111,9 @@ export abstract class Lobby extends EventEmitter {
 
   say(token: string, raw: unknown): ChatMessage {
     const p = this.auth(token);
-    // Chat-Moderation: gesperrte Wörter werden zu Sternchen
-    const text = moderate(cleanChat(raw));
+    // Chat-Moderation: gesperrte Wörter werden zu Sternchen; „/ez“ wird zu einem zufälligen Spruch
+    const clean = cleanChat(raw);
+    const text = isEz(clean) ? ezPhrase(this) : moderate(clean);
     if (!text) throw new GameError('Leere Nachricht.');
     const now = Date.now();
     const recent = (this.chatTimes.get(p.id) ?? []).filter((t) => now - t < CHAT_WINDOW_MS);
