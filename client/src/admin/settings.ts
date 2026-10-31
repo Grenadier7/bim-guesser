@@ -28,7 +28,7 @@ const TIP_WHAT: Record<TipKind, string> = {
   transfers: 'Umstiegsorte der schnellsten Route auf der Karte',
 };
 
-const ORDER: GameConfigSection[] = ['announcement', 'slots', 'netModes', 'scoring', 'tips', 'difficulty', 'defaults', 'pools', 'addresses', 'chat'];
+const ORDER: GameConfigSection[] = ['announcement', 'legal', 'slots', 'netModes', 'scoring', 'tips', 'difficulty', 'defaults', 'pools', 'addresses', 'chat'];
 const DAY_LABEL: Record<DayType, string> = { wd: 'Werktag', sa: 'Samstag', su: 'Sonntag' };
 const PRESET_IDS: PresetId[] = ['easy', 'medium', 'hard', 'expert'];
 const date = (t: number) => new Date(t).toLocaleString('de-AT', { dateStyle: 'short', timeStyle: 'short' });
@@ -216,6 +216,21 @@ export function settingsTab(rerender: () => void): Tab {
           }).join('')}</ul>` : ''}
           <h4>Eigene Adressen</h4>${d.added.length ? `<ul class="adm-list">${d.added.map((a, i) => `<li><span>${esc(a.name)} <small class="muted">${a.district}. Bezirk</small></span><span class="adm-row"><button type="button" class="link" data-addrshow="own:${i}">auf der Karte</button><button type="button" class="icon-btn" data-rmaddr="${i}" aria-label="entfernen">✕</button></span></li>`).join('')}</ul>` : '<p class="muted">Keine – auf der Karte eine leere Stelle anklicken.</p>'}
           `;
+      }
+      case 'legal': {
+        const d = draft('legal');
+        const missing = [!d.name && 'Name', !d.street && 'Straße', !d.city && 'PLZ und Ort', !d.email && 'E-Mail'].filter(Boolean);
+        const ta = (k: keyof typeof d, rows: number, max: number) => `<textarea data-cfg="${k}" rows="${rows}" maxlength="${max}">${esc(d[k])}</textarea>`;
+        return `${missing.length ? `<p class="adm-warn">Für ein vollständiges Impressum fehlt noch: <b>${missing.join(', ')}</b>.</p>` : '<p class="adm-ok">Impressum vollständig.</p>'}
+          <p class="muted">Diese Angaben stehen öffentlich im Impressum (Startseite unten: „Impressum“). In Österreich gehören dazu Name und Anschrift (Medieninhaber) sowie eine Kontakt-E-Mail. Die Texte sind eine Vorlage – im Zweifel rechtlich prüfen lassen.</p>
+          <div class="adm-grid2"><label class="field"><span>Name (Medieninhaber)</span>${inp('name', d.name, 'maxlength="120" placeholder="Vor- und Nachname"')}</label>
+          <label class="field"><span>E-Mail (Kontakt, auch für Datenschutz)</span>${inp('email', d.email, 'maxlength="120" type="email"')}</label>
+          <label class="field"><span>Straße und Hausnummer</span>${inp('street', d.street, 'maxlength="120"')}</label>
+          <label class="field"><span>PLZ und Ort</span>${inp('city', d.city, 'maxlength="120" placeholder="z.B. 1100 Wien"')}</label>
+          <label class="field"><span>Telefon (freiwillig)</span>${inp('phone', d.phone, 'maxlength="40"')}</label>
+          <label class="field"><span>E-Mail-Anbieter für „Passwort vergessen“ (freiwillig)</span>${inp('mailProvider', d.mailProvider, 'maxlength="200" placeholder="z.B. Google (Gmail), Irland"')}</label></div>
+          <label class="field"><span>Zweck der Seite (grundlegende Richtung)</span>${ta('purpose', 2, 600)}</label>
+          <label class="field"><span>Hosting – wie die Seite erreichbar ist (steht in der Datenschutzerklärung)</span>${ta('hosting', 3, 1200)}</label>`;
       }
       case 'chat': {
         const d = draft('chat');

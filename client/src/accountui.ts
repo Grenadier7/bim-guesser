@@ -7,6 +7,7 @@ import { api } from './api.ts';
 import { app, endSession, savePrefs, startSession } from './store.ts';
 import { esc, h, lineChip, toast } from './ui.ts';
 import { icon } from './icons.ts';
+import { openLegal, type LegalPage } from './legal.ts';
 
 type Tab = 'login' | 'register' | 'forgot' | 'reset' | 'profile' | 'people' | 'friends' | 'settings' | 'privacy';
 
@@ -132,6 +133,7 @@ async function privacyHtml(): Promise<string> {
     <h4>Löschen</h4>
     <p>Unter ⚙️ kannst du deinen Account jederzeit selbst löschen – alles oben Genannte ist dann sofort weg.</p>
     ${p.contact ? `<h4>Fragen?</h4><p>Schreib an <a href="mailto:${esc(p.contact)}">${esc(p.contact)}</a>.</p>` : ''}
+    <p><a href="#datenschutz" data-legal="datenschutz">Vollständige Datenschutzerklärung</a> · <a href="#impressum" data-legal="impressum">Impressum</a></p>
   </div>`;
 }
 
@@ -247,6 +249,14 @@ async function render() {
 }
 
 function bind() {
+  // Rechtliches öffnet ein eigenes Fenster – das Account-Fenster geht dafür zu
+  sheet.querySelectorAll<HTMLAnchorElement>('[data-legal]').forEach((a) =>
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      close();
+      openLegal(a.dataset.legal as LegalPage);
+    }),
+  );
   sheet.querySelectorAll<HTMLButtonElement>('[data-tab]').forEach((b) =>
     b.addEventListener('click', () => {
       tab = b.dataset.tab as Tab;

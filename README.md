@@ -116,8 +116,11 @@ Oben rechts **👤 Anmelden** – ohne Account geht alles wie bisher. Mit Accoun
   und die öffentliche Adresse `PUBLIC_URL` (oder `NGROK_URL`/`NGROK_DOMAIN`); Links werden nie aus dem Host-Header
   gebaut. Lokal mit `docker compose up` fängt **Mailpit** alle Mails ab: http://localhost:8025. Ohne Mailserver zum
   Testen: `MAIL_FILE=data/mails.jsonl`.
-- **Datenschutz** (Link auf der Startseite und im Account-Fenster): was gespeichert wird, wer was sieht, Cookie,
-  Löschen. Kontaktadresse dort: `CONTACT_EMAIL`, sonst die Adresse aus `MAIL_FROM`.
+- **Rechtliches** (Fußzeile der Startseite, Links wie `/#impressum`, `/#datenschutz`, `/#regeln`, `/#quellen`):
+  Impressum (§ 5 ECG, § 25 MedienG), Datenschutzerklärung (DSGVO), Nutzungsregeln, Quellen & Lizenzen. Angaben zum
+  Betreiber auf der Admin-Seite (Einstellungen → Impressum & Datenschutz); fehlen sie, warnt die Admin-Übersicht.
+  Kontakt-E-Mail: die dort eingetragene, sonst `CONTACT_EMAIL`, sonst die Adresse aus `MAIL_FROM`. Die kurze Fassung
+  steht weiter im Account-Fenster.
 - **Account löschen** (⚙️, mit Passwort bestätigt): löscht sofort alles – Spielstand, Statistik, Medaillen,
   Freundschaften, Einladungen, Sitzungen; der Name ist danach wieder frei.
 
@@ -148,17 +151,22 @@ Admins können andere Admins nicht ändern; Namen wie „admin“ oder „spiell
 - **Accounts**: suchen, alles sehen (inkl. Verlauf als Grafik), Passwort setzen, **Link zum Zurücksetzen** (1 h),
   auf allen Geräten abmelden, Statistik zurücksetzen, umbenennen, E-Mail ändern, löschen.
 - **Netzpläne**: „Standard“ (gilt für Spiele, Training, Quiz und Lernen) plus beliebig viele eigene Pläne, die in der
-  Lobby unter „Netz“ wählbar sein können (mit eigener Karte). Je Plan:
+  Lobby unter „Netz“ wählbar sein können (mit eigener Karte). Dazu die Kachel **LIVE Aktuell**: welche echten Tage
+  gespielt werden, Linien nur aktuell / anders / fahren nicht, Name, Erklärung, an/aus. Je Plan:
   - **Fahrplan** – alle Linien (U, S, Regionalzüge mit Halt in Wien, Bim, Bus, Nachtbus) mit Halten, Fahrzeiten,
     Abfahrten je Tagestyp und Takt; direkt änderbar (Fahrzeit, Halt auslassen/einfügen, Abfahrten streichen/dazu,
-    Takt je Zeitraum). „wie gebaut“ zeigt das Original.
+    Takt je Zeitraum). Änderungen stehen direkt im Fahrplan (neu grün, weggefallen durchgestrichen, Fahrzeit mit
+    „vorher“, je Linie Liste mit „↺ rückgängig“); „Original anzeigen“ zeigt den Fahrplan ohne Änderungen.
   - **Änderungen** – verlängern, kürzen, Fahrzeit, Stationen anlegen/umbenennen/verschieben/entfernen, Linien
     anlegen/entfernen, Takt, Zusatzfahrten auf Teilstrecken (z.B. jede 2. S1 nach Hütteldorf), Halt einfügen/auslassen.
   - **Karte** – das Netz des Plans; **Probe** – Route mit Details berechnen; **Plan** – Name, Erklärung, Parameter
     (Umsteigezeit, Fußwege, …), Versionen zum Zurückholen.
-- **Einstellungen**: Uhrzeiten, Netz-Auswahl, Was zählt? (inkl. Umstiegs-Aufschlag), Joker und ihr Abzug,
+- **Einstellungen**: Hinweis für alle, **Impressum & Datenschutz** (Name, Anschrift, E-Mail, Zweck, Hosting – stehen
+  öffentlich im Impressum), Uhrzeiten (1–8, hinzufügen/entfernen/sortieren), Netz-Auswahl, Was zählt? (je Wertung
+  Name, Symbol, Erklärung, Kurztext; „Umstiege vermeiden“ mit Aufschlag, an/aus), Joker und ihr Abzug,
   Schwierigkeit und Punkte-Faktoren, Standard-Einstellungen aller Lobbys, Haltestellen-Auswahl (welche Stationen
-  „wichtig“/„alle“ sind – per Klick), Adressen (eigene hinzufügen, ausnehmen), Chat-Moderation (Wortliste), Hinweis für alle.
+  „wichtig“/„alle“ sind – per Klick), Adressen (alle auf der Karte: anklicken = ausnehmen/aufnehmen, leere Stelle =
+  neue Adresse), Chat-Moderation (Wortliste in Deutsch, Englisch, Türkisch, Serbisch/Kroatisch/Bosnisch).
 - **Protokoll**: jede Admin-Aktion mit Zeit, Admin und Ziel.
 
 Netzpläne und Einstellungen liegen in `STATE_DIR/config/` (jede Änderung als Version in `config/history/`).

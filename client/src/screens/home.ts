@@ -7,7 +7,7 @@ import { setPanel, type Screen } from './screen.ts';
 import { importProblems, takeSettingsLink } from '../settingsShare.ts';
 import { offerTutorial } from '../progress.ts';
 import { account } from '../account.ts';
-import { openAccount } from '../accountui.ts';
+import { bindLegalLinks, legalFooter } from '../legal.ts';
 
 const MODES = [
   {
@@ -81,7 +81,7 @@ export function homeScreen(panel: HTMLElement): Screen {
               <span class="btn btn-primary">Los</span></button>`
          : ''
      }
-     <p class="home-foot"><button class="link" id="privacy">Datenschutz</button></p>`,
+     ${legalFooter()}`,
   );
   const nameIn = el.querySelector<HTMLInputElement>('#name')!;
   const codeIn = el.querySelector<HTMLInputElement>('#code')!;
@@ -136,7 +136,7 @@ export function homeScreen(panel: HTMLElement): Screen {
     }
   };
   el.querySelector('#join')!.addEventListener('click', join);
-  el.querySelector('#privacy')!.addEventListener('click', () => openAccount('privacy'));
+  bindLegalLinks(el);
   // Einladung: Name oben eintragen, ein Klick zum Beitreten
   const inviteName = el.querySelector<HTMLInputElement>('#inviteName');
   inviteName?.addEventListener('input', () => (nameIn.value = inviteName.value));

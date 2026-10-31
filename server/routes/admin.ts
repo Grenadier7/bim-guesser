@@ -178,7 +178,10 @@ export function adminRoutes(app: Express, d: AdminDeps) {
           .sort((a, b) => b.lastActivity - a.lastActivity),
         activeGames: d.games.activeGames(),
         mail: !!d.accounts.mail,
-        warnings: d.net.referenceWarnings(),
+        warnings: [
+          ...d.net.referenceWarnings(),
+          ...((l) => (l.name && l.street && l.city && l.email ? [] : ['Impressum unvollständig – unter Einstellungen → „Impressum & Datenschutz“ Name, Anschrift und E-Mail eintragen.']))(d.config.effective().legal),
+        ],
         timetable: timetableInfo(),
       };
     }),

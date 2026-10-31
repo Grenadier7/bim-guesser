@@ -7,6 +7,7 @@ import { isMine, setMine } from './learn/model.ts';
 import { GameMap } from './map.ts';
 import { NetIndex } from './net.ts';
 import { resetNetLayer } from './netmap.ts';
+import { openLegalFromHash } from './legal.ts';
 import { applyGameConfig } from '../../shared/config.ts';
 import { finalScreen } from './screens/final.ts';
 import { homeScreen } from './screens/home.ts';
@@ -273,6 +274,8 @@ async function init() {
   if (new URLSearchParams(location.search).has('settings') || !(await restoreSession())) render();
   setInterval(tick, 250);
   startVisitorPing();
+  // Link wie /#impressum oder /#datenschutz
+  openLegalFromHash();
   // ☆ hinter Liniennummern (z.B. in der Routenjagd-Auflösung): Linie für „Lernen → Üben“ merken
   // ☆ für mehrere gleichwertige Linien („S1/S2/S3“): alle merken, in der Meldung „nur S1“ wählbar (Punkt 8)
   document.addEventListener('click', (e) => {

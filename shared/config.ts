@@ -61,7 +61,29 @@ export interface GameConfig {
   chat: { words: string[] };
   /** Hinweis oben für alle (leer = keiner) */
   announcement: { text: string };
+  /** Impressum und Datenschutz: Angaben zum Betreiber (öffentlich – stehen im Impressum) */
+  legal: LegalInfo;
 }
+
+export interface LegalInfo {
+  /** Name (Vor- und Nachname bzw. Verein/Firma) */
+  name: string;
+  street: string;
+  /** PLZ und Ort */
+  city: string;
+  email: string;
+  phone: string;
+  /** Blattlinie / Zweck der Seite (Offenlegung § 25 MedienG) */
+  purpose: string;
+  /** Wie die Seite erreichbar ist (Hosting, Weiterleitung) – steht in der Datenschutzerklärung */
+  hosting: string;
+  /** über wen „Passwort vergessen“-Mails gehen (leer = allgemein „E-Mail-Anbieter“) */
+  mailProvider: string;
+}
+
+/** Standard für die Datenschutzerklärung: so läuft BimGuesser heute (eigener Server, erreichbar über ngrok) */
+export const DEFAULT_HOSTING =
+  'Die Seite läuft auf einem eigenen Server des Betreibers. Erreichbar ist sie über den Weiterleitungs-Dienst ngrok (ngrok Inc., San Francisco, USA): Die Verbindung ist verschlüsselt (HTTPS); ngrok leitet sie an den Server weiter und verarbeitet dabei technische Verbindungsdaten wie die IP-Adresse.';
 
 export type GameConfigSection = keyof GameConfig;
 
@@ -233,6 +255,16 @@ const DEFAULTS: GameConfig = clone({
   addresses: { removed: [], added: [] },
   chat: { words: DEFAULT_BAD_WORDS },
   announcement: { text: '' },
+  legal: {
+    name: '',
+    street: '',
+    city: '',
+    email: '',
+    phone: '',
+    purpose: 'Privates, nicht-kommerzielles Online-Spiel rund um das Wiener Öffi-Netz – zum Spaß und zum Lernen. Keine Werbung, keine Einnahmen.',
+    hosting: DEFAULT_HOSTING,
+    mailProvider: '',
+  },
 });
 
 export const defaultGameConfig = (): GameConfig => clone(DEFAULTS);
@@ -385,6 +417,21 @@ export function sanitizeSection<K extends GameConfigSection>(key: K, input: unkn
     }
     case 'announcement':
       return { text: text(v.text ?? '', 300, 'Hinweis', true) } as GameConfig[K];
+    case 'legal': {
+      const dd = d as GameConfig['legal'];
+      const email = text(v.email ?? dd.email, 120, 'E-Mail', true);
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ConfigError('E-Mail-Adresse ungültig.');
+      return {
+        name: text(v.name ?? dd.name, 120, 'Name', true),
+        street: text(v.street ?? dd.street, 120, 'Straße', true),
+        city: text(v.city ?? dd.city, 120, 'PLZ und Ort', true),
+        email,
+        phone: text(v.phone ?? dd.phone, 40, 'Telefon', true),
+        purpose: text(v.purpose ?? dd.purpose, 600, 'Zweck', true),
+        hosting: text(v.hosting ?? dd.hosting, 1200, 'Hosting', true),
+        mailProvider: text(v.mailProvider ?? dd.mailProvider, 200, 'E-Mail-Anbieter', true),
+      } as GameConfig[K];
+    }
   }
   throw new ConfigError('Unbekannter Abschnitt.');
 }

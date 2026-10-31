@@ -30,6 +30,7 @@ export const SECTION_LABEL: Record<GameConfigSection, string> = {
   addresses: 'Adressen',
   chat: 'Chat-Moderation',
   announcement: 'Hinweis für alle',
+  legal: 'Impressum & Datenschutz',
 };
 const SECTIONS = Object.keys(SECTION_LABEL) as GameConfigSection[];
 
