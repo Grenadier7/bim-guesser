@@ -219,7 +219,9 @@ export function settingsTab(rerender: () => void): Tab {
       }
       case 'chat': {
         const d = draft('chat');
+        const missing = st!.defaults.chat.words.filter((w) => !d.words.includes(w));
         return `<label class="field"><span>Gesperrte Wörter und Ausdrücke – einer pro Zeile (${d.words.length})</span><textarea id="chat-words" rows="10">${esc(d.words.join('\n'))}</textarea></label>
+          ${missing.length ? `<div class="adm-row"><button type="button" class="btn btn-ghost btn-small" id="chat-merge">${missing.length} fehlende Standard-Wörter ergänzen</button><small class="muted">Deutsch, Englisch, Türkisch, Serbisch/Kroatisch/Bosnisch – deine eigenen bleiben.</small></div>` : ''}
           <p class="muted">Im Chat werden sie durch Sternchen ersetzt, als Spieler- oder Account-Name abgelehnt. Erkennt auch Tarnung wie Ziffern (f1ck), Punkte (f.u.c.k) oder gedehnte Buchstaben. Wörter bis 4 Buchstaben nur als ganzes Wort.</p>`;
       }
     }
@@ -304,6 +306,11 @@ export function settingsTab(rerender: () => void): Tab {
         q.modes = el.checked ? [...new Set([...q.modes, m])] : q.modes.filter((x) => x !== m);
       }),
     );
+    root.querySelector('#chat-merge')?.addEventListener('click', () => {
+      const d = draft('chat');
+      d.words = [...d.words, ...st!.defaults.chat.words.filter((w) => !d.words.includes(w))];
+      rerender();
+    });
     root.querySelector<HTMLTextAreaElement>('#chat-words')?.addEventListener('change', (e) => {
       draft('chat').words = (e.target as HTMLTextAreaElement).value
         .split('\n')
