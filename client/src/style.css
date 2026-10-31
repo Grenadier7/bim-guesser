@@ -5202,12 +5202,14 @@ details.danger-zone p {
   justify-content: flex-end;
 }
 
-/* viele Optionen (z.B. Netzpläne): auf mehrere Zeilen */
-.seg-wide:has(> button:nth-child(4)) {
+/* Auswahl in einer Zeile – erst umbrechen, wenn ein Knopf sonst nicht mehr ganz hineinpasst (z.B. viele Netzpläne, Handy) */
+.seg-wide {
   flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
 }
-.seg-wide:has(> button:nth-child(4)) > button {
-  flex: 1 1 calc(33% - 4px);
+.seg-wide > button {
+  min-width: max-content;
 }
 
 /* Hinweis der Spielleitung für alle */
@@ -6412,4 +6414,75 @@ details.adm-linechg li {
 }
 .legal-foot span {
   color: var(--line);
+}
+
+
+/* ---------------------------------------------------------------- Admin: „Aktuell“ – wie und wie lange Linien anders fahren */
+.adm-live-table {
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+.adm-live-table h4 {
+  margin: 6px 0 8px;
+}
+.adm-cl {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.adm-cl-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  align-content: flex-start;
+}
+.adm-info {
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #fdf0e1;
+  border-left: 3px solid var(--warn);
+}
+.adm-info.short {
+  background: #fde8e8;
+  border-left-color: var(--err);
+}
+.adm-info p {
+  margin: 3px 0 0;
+  color: var(--ink);
+}
+.adm-cl-minor {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.adm-cl-minor summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.adm-cl-minor .chip {
+  margin: 4px 2px 0 0;
+}
+.adm-hwnow {
+  flex-basis: 100%;
+  color: var(--muted);
+}
+.adm-hwnow b {
+  color: var(--ink);
+}
+.adm-info-short {
+  margin-top: 6px;
+  font-size: 13px;
+}
+.adm-info-short summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.adm-info-short ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
 }

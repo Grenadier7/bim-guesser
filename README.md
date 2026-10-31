@@ -152,10 +152,11 @@ Admins können andere Admins nicht ändern; Namen wie „admin“ oder „spiell
   auf allen Geräten abmelden, Statistik zurücksetzen, umbenennen, E-Mail ändern, löschen.
 - **Netzpläne**: „Standard“ (gilt für Spiele, Training, Quiz und Lernen) plus beliebig viele eigene Pläne, die in der
   Lobby unter „Netz“ wählbar sein können (mit eigener Karte). Dazu die Kachel **LIVE Aktuell**: welche echten Tage
-  gespielt werden, Linien nur aktuell / anders / fahren nicht, Name, Erklärung, an/aus. Je Plan:
+  gespielt werden, je Linie wie sie anders fährt (Endstellen, ausgelassene/zusätzliche Halte – aus den Fahrplandaten)
+  und wie lange (Betriebsmeldungen der Wiener Linien, live, 10 min zwischengespeichert), Name, Erklärung, an/aus. Je Plan:
   - **Fahrplan** – alle Linien (U, S, Regionalzüge mit Halt in Wien, Bim, Bus, Nachtbus) mit Halten, Fahrzeiten,
     Abfahrten je Tagestyp und Takt; direkt änderbar (Fahrzeit, Halt auslassen/einfügen, Abfahrten streichen/dazu,
-    Takt je Zeitraum). Änderungen stehen direkt im Fahrplan (neu grün, weggefallen durchgestrichen, Fahrzeit mit
+    Takt je Zeitraum – vorbelegt mit dem Takt, der jetzt fährt). Änderungen stehen direkt im Fahrplan (neu grün, weggefallen durchgestrichen, Fahrzeit mit
     „vorher“, je Linie Liste mit „↺ rückgängig“); „Original anzeigen“ zeigt den Fahrplan ohne Änderungen.
   - **Änderungen** – verlängern, kürzen, Fahrzeit, Stationen anlegen/umbenennen/verschieben/entfernen, Linien
     anlegen/entfernen, Takt, Zusatzfahrten auf Teilstrecken (z.B. jede 2. S1 nach Hütteldorf), Halt einfügen/auslassen.

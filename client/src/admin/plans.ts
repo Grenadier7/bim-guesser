@@ -4,7 +4,7 @@
 // Probe-Abfrage mit allen Details, Versionen.
 import L from 'leaflet';
 import type { GameConfig } from '../../../shared/config.ts';
-import type { CurrentNetInfo, DayType, LineEdit, Mode, NetworkPlan, RouteOption, RoutingAdminState, RoutingParams, ServiceBand, SlotId, TimetableLineInfo, TimetableLineView } from '../../../shared/types.ts';
+import type { CurrentLine, CurrentNetInfo, DayType, LineEdit, Mode, NetworkPlan, RouteOption, RoutingAdminState, RoutingParams, ServiceBand, SlotId, TimetableLineInfo, TimetableLineView, TrafficInfo } from '../../../shared/types.ts';
 import { lineColor, MODE_LABEL, NET_MODES, TIME_SLOTS } from '../../../shared/rules.ts';
 import { NetGraph } from '../netgraph.ts';
 import { NetMapLayer, netView } from '../netmap.ts';
@@ -53,6 +53,32 @@ const slug = (s: string) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 24) || 'plan';
+
+const toMin = (s: string) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
+  return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+};
+
+/** Takt in einem Zeitraum aus den Abfahrten: meistens (Median), kürzester/längster Abstand (ohne Ausreißer) */
+export function taktIn(deps: number[], from: string, to: string): { n: number; main: number | null; lo: number | null; hi: number | null } {
+  const a = toMin(from);
+  const b = toMin(to);
+  const xs = deps.filter((t) => t >= a && t < b).sort((x, y) => x - y);
+  if (xs.length < 2) return { n: xs.length, main: null, lo: null, hi: null };
+  const gaps = xs
+    .slice(1)
+    .map((t, i) => t - xs[i])
+    .sort((x, y) => x - y);
+  const q = (f: number) => gaps[Math.min(gaps.length - 1, Math.floor(f * gaps.length))];
+  return { n: xs.length, main: q(0.5), lo: q(0.1), hi: q(0.9) };
+}
+
+/** „alle 5 min (24 Fahrten)“ bzw. „alle 4–8 min, meist 5“ */
+export function taktText(t: ReturnType<typeof taktIn>): string {
+  if (t.main == null) return t.n ? '1 Fahrt' : 'keine Fahrten';
+  const range = t.lo != null && t.hi != null && t.hi - t.lo > 1 ? `${t.lo}–${t.hi} min, meist ${t.main}` : `${t.main} min`;
+  return `alle ${range} (${t.n} Fahrten)`;
+}
 
 export interface Tab {
   html(): Promise<string>;
@@ -271,25 +297,84 @@ export function plansTab(rerender: () => void): Tab {
   function currentHtml(c: CurrentNetInfo, cfg: GameConfig['netModes']): string {
     const fmt = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' });
     const age = Math.floor((Date.now() - Date.parse(c.generatedAt)) / 864e5);
-    const chips = (ls: CurrentNetInfo['onlyCurrent']) => (ls.length ? ls.map((l) => lineChip(l.mode, l.id, l.color)).join(' ') : '<small class="muted">keine</small>');
     const stat = (n: number, label: string, cls: string) => `<div class="adm-live-stat ${cls}"><b>${n}</b><span>${label}</span></div>`;
     return `<div class="adm-live">
       <div class="adm-live-head"><span class="adm-live-badge big"><i></i>LIVE</span><div><h3>${esc(cfg.current.label)}</h3>
         <p>Gespielt wird am <b>nächsten echten Tag</b> – mit Baustellen, Sperren und Ersatzverkehr. Die Verbindungen kommen live aus der Fahrplanauskunft. Anders als die Netzpläne lässt sich dieses Netz nicht bearbeiten: Es fährt immer so, wie es gerade wirklich fährt.</p></div></div>
       <div class="adm-live-days">${DAYS.map(([d, l]) => `<div><small>${l}</small><b>${fmt(c.days[d])}</b><small class="muted">Regulär: ${fmt(c.regularDays[d].date)}</small></div>`).join('')}</div>
       <div class="adm-live-stats">${stat(c.onlyCurrent.length, 'nur aktuell – z.B. Ersatzverkehr', 'new')}${stat(c.changed.length, 'fahren anders', 'chg')}${stat(c.missing.length, 'fahren nicht', 'gone')}${stat(c.lobbies, `offene Lobby${c.lobbies === 1 ? '' : 's'} damit`, '')}</div>
-      <div class="adm-live-lines">
-        <div><h4><span class="adm-tag new">nur aktuell</span></h4>${chips(c.onlyCurrent)}</div>
-        <div><h4><span class="adm-tag chg">fahren anders</span></h4>${chips(c.changed)}</div>
-        <div><h4><span class="adm-tag gone">fahren nicht</span></h4>${chips(c.missing)}</div>
-      </div>
-      <p class="muted">Linienverläufe: Stand ${new Date(c.generatedAt).toLocaleDateString('de-AT')}${age > 14 ? ` <b class="adm-was">– ${age} Tage alt, beim nächsten Update der Netzdaten neu</b>` : ''}.</p>
+      ${currentLinesHtml(c)}
+      <p class="muted">Wie die Linien fahren: laut Fahrplandaten, Stand ${new Date(c.generatedAt).toLocaleDateString('de-AT')}${age > 14 ? ` <b class="adm-was">– ${age} Tage alt, beim nächsten Update der Netzdaten neu</b>` : ''}. Meldungen und Zeiträume: live von den Wiener Linien${c.infoAt ? `, Stand ${new Date(c.infoAt).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' })}` : ''}${c.infoError ? ' <b class="adm-was">– gerade nicht erreichbar</b>' : ''}.</p>
       <div class="adm-box adm-meta"><h4>In der Lobby</h4>
         <label class="check"><input type="checkbox" id="cu-on" ${cfg.current.enabled ? 'checked' : ''}> in der Lobby unter „Netz“ wählbar</label>
         <label class="field"><span>Name</span><input id="cu-label" maxlength="20" value="${esc(cfg.current.label)}"></label>
         <label class="field"><span>Erklärung (Tooltip)</span><input id="cu-hint" maxlength="200" value="${esc(cfg.current.hint)}"></label>
         <div class="adm-row"><button class="btn btn-primary" id="cu-save">Speichern</button></div></div>
     </div>`;
+  }
+
+  /** Zeitraum einer Meldung: „28.09. – 07.11.2026 · noch 7 Tage“, „ab 23.11.“, „seit 28.09., Ende offen“ */
+  function periodText(start: number | null, end: number | null): string {
+    const now = Date.now();
+    const d = (t: number, year = false) => new Date(t).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', ...(year ? { year: 'numeric' } : {}) });
+    const hm = (t: number) => new Date(t).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' });
+    const days = (t: number) => Math.max(1, Math.ceil((t - now) / 864e5));
+    // höchstens einen Tag lang: Datum mit Uhrzeiten
+    if (start && end && end - start <= 864e5) return `${new Date(start).toDateString() === new Date(now).toDateString() ? 'heute' : d(start)} ${hm(start)}–${hm(end)}`;
+    if (start && start > now) return `ab ${d(start)}${end ? ` bis ${d(end, true)} (${days(end) - days(start) + 1} Tage)` : ''}`;
+    if (end) return `${start ? `${d(start)} – ` : 'bis '}${d(end, true)} · <b>noch ${days(end) === 1 ? '1 Tag' : `${days(end)} Tage`}</b>`;
+    return start ? `seit ${d(start)}, Ende offen` : 'Zeitraum unbekannt';
+  }
+
+  /** wie eine Linie anders fährt – in Worten */
+  function howText(l: CurrentLine, kind: 'only' | 'missing' | 'changed'): string {
+    const list = (xs: string[]) => `${xs.slice(0, 8).map(esc).join(', ')}${xs.length > 8 ? ` <small>+${xs.length - 8}</small>` : ''}`;
+    const ends = (t: [string, string] | null) => (t ? `${esc(t[0])} – ${esc(t[1])}` : '');
+    if (kind === 'missing') return `<b>fährt nicht</b>${l.wasTermini ? ` <small class="muted">(sonst ${ends(l.wasTermini)})</small>` : ''}`;
+    if (kind === 'only') return `<b>fährt nur aktuell</b>: ${ends(l.termini)} <small class="muted">– z.B. Ersatzverkehr</small>`;
+    const parts: string[] = [];
+    if (l.termini && l.wasTermini && (l.termini[0] !== l.wasTermini[0] || l.termini[1] !== l.wasTermini[1])) parts.push(`fährt <b>${ends(l.termini)}</b> statt ${ends(l.wasTermini)}`);
+    if (l.without.length) parts.push(`<span class="adm-tag gone">hält nicht</span> ${list(l.without)}`);
+    if (l.extra.length) parts.push(`<span class="adm-tag new">zusätzlich</span> ${list(l.extra)}`);
+    return parts.length ? parts.join('<br>') : 'gleiche Halte, aber andere Fahrten (z.B. mehr oder weniger Kurzführungen)';
+  }
+
+  /** alle Linien, die aktuell anders fahren: wie (Fahrplandaten) und wie lange (Meldungen der Wiener Linien) */
+  function currentLinesHtml(c: CurrentNetInfo): string {
+    const all: (readonly [CurrentLine, 'only' | 'missing' | 'changed'])[] = [...c.missing.map((l) => [l, 'missing'] as const), ...c.onlyCurrent.map((l) => [l, 'only'] as const), ...c.changed.map((l) => [l, 'changed'] as const)];
+    const infosFor = (id: string) => c.infos.filter((i) => i.lines.includes(id));
+    const real = (l: CurrentLine, k: string) => k !== 'changed' || l.without.length || l.extra.length || (l.termini?.join() !== l.wasTermini?.join());
+    // zuerst Linien mit Meldung, dann mit anderen Halten; „nur andere Fahrten“ gesammelt am Ende
+    const main = all.filter(([l, k]) => infosFor(l.id).length || real(l, k)).sort(([a, ka], [b, kb]) => Number(!infosFor(a.id).length) - Number(!infosFor(b.id).length) || Number(!real(a, ka)) - Number(!real(b, kb)));
+    const minor = all.filter(([l, k]) => !infosFor(l.id).length && !real(l, k));
+    const shown = new Set(all.map(([l]) => l.id));
+    const other = c.infos.filter((i) => !i.lines.some((x) => shown.has(x)));
+    const chip = (l: { id: string; mode: Mode; color: string }) => lineChip(l.mode, l.id, l.color);
+    const info = (i: TrafficInfo) => `<div class="adm-info ${i.kind}"><b>${esc(i.title)}</b> <small>${periodText(i.start, i.end)}</small>${i.text && i.text !== i.title ? `<p>${esc(i.text)}</p>` : ''}</div>`;
+    /** Meldungen einer Linie: längere ausführlich, kurzfristige (oft nur „Busse halten …“) gesammelt und eingeklappt */
+    const infosHtml = (list: TrafficInfo[]) => {
+      const seen = new Set<string>();
+      const uniq = list.filter((i) => !seen.has(i.title + i.text) && seen.add(i.title + i.text));
+      const long = uniq.filter((i) => i.kind === 'long');
+      const short = uniq.filter((i) => i.kind === 'short');
+      return `${long.map(info).join('')}${
+        short.length
+          ? `<details class="adm-info-short"><summary>${short.length} kurzfristige${short.length === 1 ? 'r' : ''} Hinweis${short.length === 1 ? '' : 'e'}</summary><ul>${short
+              .map((i) => `<li>${esc(i.title)}${i.text && i.text !== i.title ? ` – ${esc(i.text)}` : ''} <small class="muted">${periodText(i.start, i.end)}</small></li>`)
+              .join('')}</ul></details>`
+          : ''
+      }`;
+    };
+    return `<div class="adm-live-table">
+        <h4>Wie und wie lange sie anders fahren <small class="muted">${main.length} Linien</small></h4>
+        ${main
+          .map(([l, k]) => `<div class="adm-cl"><div class="adm-cl-line">${chip(l)}</div><div class="adm-cl-how">${howText(l, k)}${infosHtml(infosFor(l.id)) || '<br><small class="muted">keine aktuelle Meldung der Wiener Linien</small>'}</div></div>`)
+          .join('')}
+        ${minor.length ? `<details class="adm-cl-minor"><summary>${minor.length} Linien mit gleichen Halten, aber anderen Fahrten</summary><div>${minor.map(([l]) => chip(l)).join(' ')}</div></details>` : ''}
+        ${other.length ? `<h4>Weitere Meldungen der Wiener Linien <small class="muted">${other.length}</small></h4>${[...Map.groupBy(other, (i) => i.lines.join(' ')).entries()]
+          .map(([ls, is]) => `<div class="adm-cl"><div class="adm-cl-line">${ls.split(' ').filter(Boolean).map((x) => lineChip(net?.lines.get(x)?.mode ?? 'B', x, net?.lines.get(x)?.color ?? lineColor(net?.lines.get(x)?.mode ?? 'B', x))).join(' ')}</div><div class="adm-cl-how">${infosHtml(is)}</div></div>`)
+          .join('')}` : ''}
+      </div>`;
   }
 
   function versionsHtml(): string {
@@ -314,13 +399,17 @@ export function plansTab(rerender: () => void): Tab {
   /** erste Änderung des Plans, auf die das zutrifft (Index zum Rückgängigmachen) */
   const editIdx = (pred: (e: LineEdit) => boolean) => plan().edits.findIndex(pred);
   const undoBtn = (i: number) => (i < 0 ? '' : `<button class="link adm-undo" data-rmedit="${i}" title="Diese Änderung rückgängig machen">↺ rückgängig</button>`);
-  /** Takt-Felder einer Haltefolge: Entwurf, sonst die gespeicherte Takt-Änderung, sonst Vorschlag */
+  /** Abfahrten einer Haltefolge am gewählten Tag (Plan bzw. Original) */
+  const depsOf = (v: TimetableLineView | null, key: string, day: DayType = ttDay) => v?.patterns.find((p) => p.key === key)?.deps[day].filter((t) => t >= 0) ?? [];
+  /** Takt-Felder einer Haltefolge: Entwurf, sonst die gespeicherte Takt-Änderung, sonst der Takt, der jetzt fährt */
   const hwOf = (key: string) => {
     const draft = hwDraft.get(key);
     if (draft) return draft;
     const back = key.split('>').reverse().join('>');
     const e = plan().edits.find((x) => x.kind === 'headway' && x.line === ttLine && x.day === ttDay && (x.pattern === key || x.pattern === back)) as Extract<LineEdit, { kind: 'headway' }> | undefined;
-    return e ? { from: e.from, to: e.to, every: e.every } : { from: '06:00', to: '20:00', every: lineInfo(ttLine)?.every ?? 10 };
+    if (e) return { from: e.from, to: e.to, every: e.every };
+    const now = taktIn(depsOf(lineView, key), '06:00', '20:00');
+    return { from: '06:00', to: '20:00', every: now.main ?? lineInfo(ttLine)?.every ?? 10 };
   };
 
   const sid = (s: Stop) => s.station ?? `?${s.name}`;
@@ -484,6 +573,14 @@ export function plansTab(rerender: () => void): Tab {
       }`;
   }
 
+  /** „jetzt: alle 5 min (24 Fahrten) · Original: alle 10 min“ für eine Haltefolge und einen Zeitraum */
+  function hwNowText(key: string, b: Pat | null, from: string, to: string): string {
+    const now = taktIn(depsOf(lineView, key), from, to);
+    const orig = b ? taktIn(b.deps[ttDay].filter((t) => t >= 0), from, to) : null;
+    const changed = orig && (orig.main !== now.main || orig.n !== now.n);
+    return `jetzt: <b>${taktText(now)}</b>${changed ? ` · Original: ${taktText(orig)}` : ''}`;
+  }
+
   function patternHtml(v: TimetableLineView, p: Pat, b: Pat | null, compare: boolean, dayName: string, strip: (h: number[]) => string, sum: (xs: number[]) => number): string {
     const id = v.line;
     const ro = asBuilt;
@@ -561,7 +658,8 @@ export function plansTab(rerender: () => void): Tab {
         ${ro ? '' : `<div class="adm-row"><input class="adm-hhmm" data-depadd="${esc(p.key)}" placeholder="HH:MM" maxlength="5"><button class="btn btn-ghost btn-small" data-depaddbtn="${esc(p.key)}">Abfahrt hinzufügen</button>
           ${dd ? `<button class="btn btn-primary btn-small" data-depsave="${esc(p.key)}">Speichern</button><button class="link" data-depcancel="${esc(p.key)}">Verwerfen</button>` : ''}</div>`}
       </details>
-      ${ro ? '' : `<div class="adm-hw"><b>Takt ${dayName}</b> von <input class="adm-hhmm" data-hw="${esc(p.key)}|from" value="${hw.from}" maxlength="5"> bis <input class="adm-hhmm" data-hw="${esc(p.key)}|to" value="${hw.to}" maxlength="5"> alle <input type="number" min="2" max="120" data-hw="${esc(p.key)}|every" value="${hw.every}"> min <button class="btn btn-ghost btn-small" data-hwsave="${esc(p.key)}">Übernehmen</button><small class="muted">gilt für beide Richtungen</small></div>`}
+      ${ro ? '' : `<div class="adm-hw"><b>Takt ${dayName}</b> von <input class="adm-hhmm" data-hw="${esc(p.key)}|from" value="${hw.from}" maxlength="5"> bis <input class="adm-hhmm" data-hw="${esc(p.key)}|to" value="${hw.to}" maxlength="5"> alle <input type="number" min="2" max="120" data-hw="${esc(p.key)}|every" value="${hw.every}"> min <button class="btn btn-ghost btn-small" data-hwsave="${esc(p.key)}">Übernehmen</button><small class="muted">gilt für beide Richtungen</small>
+        <small class="adm-hwnow" data-hwnow="${esc(p.key)}">${hwNowText(p.key, b, hw.from, hw.to)}</small></div>`}
     </div>`;
   }
 
@@ -683,8 +781,10 @@ export function plansTab(rerender: () => void): Tab {
   /** Takt ändern: Haltefolge (beide Richtungen), Tag, Zeitraum, alle X Minuten */
   function headwayHtml(): string {
     const keys = [...new Map(lineView?.patterns.map((p) => [p.key.split('>').sort().join('>'), p]) ?? []).values()];
-    const cur = lineInfo(form.line);
-    return `${cur?.every ? `<p class="muted">Bisher Mo–Fr tagsüber etwa alle ${cur.every} min.</p>` : ''}
+    // ohne Auswahl: die meistbefahrene Haltefolge als Anhaltspunkt
+    const main = form.pattern || [...(lineView?.patterns ?? [])].sort((a, b) => b.deps[form.day].length - a.deps[form.day].length)[0]?.key || '';
+    const now = main ? taktIn(depsOf(lineView, main, form.day), form.from, form.to) : null;
+    return `${now ? `<p class="adm-hwnow">Jetzt ${DAYS.find((d) => d[0] === form.day)![1]} ${esc(form.from)}–${esc(form.to)}: <b>${taktText(now)}</b>${form.pattern ? '' : ' <small class="muted">(meistbefahrene Haltefolge)</small>'}</p>` : ''}
       <label class="field"><span>Haltefolge</span><select data-f="pattern"><option value="">alle der Linie</option>${keys
         .map((p) => `<option value="${esc(p.key)}" ${form.pattern === p.key ? 'selected' : ''}>${esc(p.stops[0].name)} ↔ ${esc(p.stops[p.stops.length - 1].name)}</option>`)
         .join('')}</select></label>
@@ -840,6 +940,8 @@ export function plansTab(rerender: () => void): Tab {
           return void run(async () => {
             ttLine = id;
             await loadLineView(id);
+            const main = [...(lineView?.patterns ?? [])].sort((a, b) => b.deps[form.day].length - a.deps[form.day].length)[0];
+            form.every = (main && taktIn(depsOf(lineView, main.key, form.day), form.from, form.to).main) || form.every;
           });
       } else if (key === 'station') {
         form.station = id;
@@ -1158,6 +1260,15 @@ export function plansTab(rerender: () => void): Tab {
         if (f === 'every') cur.every = Number(el.value);
         else cur[f as 'from' | 'to'] = el.value.trim();
         hwDraft.set(key, cur);
+      }),
+    );
+    root.querySelectorAll<HTMLInputElement>('[data-hw$="|from"], [data-hw$="|to"]').forEach((el) =>
+      el.addEventListener('input', () => {
+        const key = el.dataset.hw!.split('|')[0];
+        const val = (f: string) => root.querySelector<HTMLInputElement>(`[data-hw="${CSS.escape(`${key}|${f}`)}"]`)!.value;
+        const out = root.querySelector<HTMLElement>(`[data-hwnow="${CSS.escape(key)}"]`);
+        const b = baseView ? matchBase(lineView!.patterns, baseView.patterns).match[lineView!.patterns.findIndex((p) => p.key === key)] : null;
+        if (out && !Number.isNaN(toMin(val('from'))) && !Number.isNaN(toMin(val('to')))) out.innerHTML = hwNowText(key, b, val('from'), val('to'));
       }),
     );
     root.querySelectorAll<HTMLButtonElement>('[data-hwsave]').forEach((b) =>

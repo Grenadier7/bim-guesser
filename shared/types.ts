@@ -739,6 +739,31 @@ export interface TimetableLineView {
   }[];
 }
 
+/** Betriebsmeldung der Wiener Linien (Störung, Bauarbeiten) */
+export interface TrafficInfo {
+  /** long = länger dauernd (meist Bauarbeiten), short = kurzfristige Störung */
+  kind: 'long' | 'short';
+  title: string;
+  text: string;
+  lines: string[];
+  /** Zeitraum (ms), null = unbekannt */
+  start: number | null;
+  end: number | null;
+}
+
+/** Linie im Netz „Aktuell“ und wie sie anders fährt als regulär (laut Fahrplandaten) */
+export interface CurrentLine {
+  id: string;
+  mode: Mode;
+  color: string;
+  /** Endstellen der längsten Fahrt – aktuell und regulär (null = fährt dort nicht) */
+  termini: [string, string] | null;
+  wasTermini: [string, string] | null;
+  /** Halte, die aktuell nicht bedient werden bzw. nur aktuell dazukommen */
+  without: string[];
+  extra: string[];
+}
+
 /** Admin: Netz „Aktuell“ – welche echten Tage gespielt werden und was anders ist als im regulären Netz */
 export interface CurrentNetInfo {
   generatedAt: string;
@@ -746,11 +771,15 @@ export interface CurrentNetInfo {
   days: Record<DayType, string>;
   regularDays: Record<DayType, ReferenceDay>;
   /** nur im aktuellen Fahrplan (z.B. Ersatzverkehr) */
-  onlyCurrent: { id: string; mode: Mode; color: string }[];
+  onlyCurrent: CurrentLine[];
   /** fahren aktuell nicht */
-  missing: { id: string; mode: Mode; color: string }[];
+  missing: CurrentLine[];
   /** fahren aktuell anders (andere Haltefolgen, z.B. kurzgeführt) */
-  changed: { id: string; mode: Mode; color: string }[];
+  changed: CurrentLine[];
+  /** Meldungen der Wiener Linien (live), Stand und ob der Abruf gerade fehlschlug */
+  infos: TrafficInfo[];
+  infoAt: number | null;
+  infoError: boolean;
   /** offene Lobbys mit „Aktuell“ */
   lobbies: number;
 }

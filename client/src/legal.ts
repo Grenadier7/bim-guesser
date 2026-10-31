@@ -128,7 +128,7 @@ function datenschutz(l: LegalInfo, email: string | null, mailOn: boolean): strin
     <p>Die Kartenbilder lädt dein Browser direkt von Esri (Environmental Systems Research Institute, Redlands, USA; Kartendaten u.a. © OpenStreetMap). Dabei erhält Esri technisch deine IP-Adresse und welcher Kartenausschnitt geladen wird. Rechtsgrundlage: berechtigtes Interesse an einer funktionierenden Karte (Art. 6 Abs. 1 lit. f DSGVO). Dabei können Daten in die USA übermittelt werden.</p>
 
     <h4>7. Fahrplanauskunft</h4>
-    <p>Für Verbindungen fragt der Server bei Bedarf die offene Fahrplanauskunft der Wiener Linien ab – nur mit Haltestellen und Uhrzeit, ohne Daten über dich.</p>
+    <p>Für Verbindungen fragt der Server bei Bedarf die offene Fahrplanauskunft der Wiener Linien ab, für die Spielleitung außerdem deren Betriebsmeldungen – nur mit Haltestellen, Uhrzeit bzw. ohne weitere Angaben, nie mit Daten über dich.</p>
 
     <h4>8. Hosting</h4>
     <p>${esc(l.hosting || DEFAULT_HOSTING)}</p>
@@ -158,7 +158,7 @@ function regeln(email: string | null): string {
 function quellen(): string {
   return `<h3>Quellen & Lizenzen</h3>
     <ul class="legal-rules">
-      <li><b>Haltestellen, Linien und Live-Auskunft:</b> Wiener Linien – <a href="https://www.wienerlinien.at/open-data" target="_blank" rel="noopener">Open Data</a>, Lizenz CC BY 4.0.</li>
+      <li><b>Haltestellen, Linien, Live-Auskunft und Betriebsmeldungen:</b> Wiener Linien – <a href="https://www.wienerlinien.at/open-data" target="_blank" rel="noopener">Open Data</a>, Lizenz CC BY 4.0.</li>
       <li><b>Fahrplan:</b> Datenquelle: Mobilitätsverbünde Österreich OG – <a href="https://data.mobilitaetsverbuende.at" target="_blank" rel="noopener">data.mobilitaetsverbuende.at</a> (für das Spiel verarbeitet).</li>
       <li><b>Adressen und Bezirksgrenzen:</b> Stadt Wien – <a href="https://data.wien.gv.at" target="_blank" rel="noopener">data.wien.gv.at</a>, Lizenz CC BY 4.0.</li>
       <li><b>Karte:</b> Esri, HERE, Garmin, © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende.</li>

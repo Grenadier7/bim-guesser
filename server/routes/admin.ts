@@ -9,7 +9,7 @@
 import type { Express, NextFunction, Request, Response } from 'express';
 import type { GameConfigSection } from '../../shared/config.ts';
 import { defaultGameConfig } from '../../shared/config.ts';
-import type { AdminOverview, CurrentNetInfo, DayType, Line, LineEdit, NetworkPlan, RoutingAdminState, RoutingParams, SlotId } from '../../shared/types.ts';
+import type { AdminOverview, CurrentNetInfo, DayType, LineEdit, NetworkPlan, RoutingAdminState, RoutingParams, SlotId } from '../../shared/types.ts';
 import { slotOr } from '../../shared/rules.ts';
 import type { AccountAdmin, AccountUser, Accounts } from '../accounts.ts';
 import type { GameConfigStore } from '../gameconfig.ts';
@@ -23,6 +23,7 @@ import { DEFAULT_PARAMS, sanitizeEdits, sanitizeParams, type PlanStore } from '.
 import { topRoutes } from '../routing.ts';
 import { rateLimit } from '../security.ts';
 import { nextTypicalDay, slotTime } from '../timeslots.ts';
+import { trafficInfos } from '../trafficinfo.ts';
 import { timetableInfo, timetableLines, timetableView } from '../timetable.ts';
 import { jsonOnly, resetBase, sessionToken } from './accounts.ts';
 
@@ -341,18 +342,47 @@ export function adminRoutes(app: Express, d: AdminDeps) {
   // „Aktuell“: nächster echter Tag – was im aktuellen Fahrplan anders ist als im regulären (Stand der Netzdaten)
   app.get(
     '/api/admin/routing/current',
-    h((req): CurrentNetInfo => {
+    h(async (req): Promise<CurrentNetInfo> => {
       admin(req);
       const n = d.runtime.planNet('__base') ?? d.net;
-      const ref = (l: Line) => ({ id: l.id, mode: l.mode, color: l.color });
-      const out: CurrentNetInfo = { generatedAt: n.data.generatedAt, days: { wd: '', sa: '', su: '' }, regularDays: n.data.regularDays, onlyCurrent: [], missing: [], changed: [], lobbies: 0 };
+      const live = await trafficInfos();
+      const out: CurrentNetInfo = {
+        generatedAt: n.data.generatedAt,
+        days: { wd: '', sa: '', su: '' },
+        regularDays: n.data.regularDays,
+        onlyCurrent: [],
+        missing: [],
+        changed: [],
+        lobbies: 0,
+        infos: live.infos,
+        infoAt: live.at,
+        infoError: live.error,
+      };
+      const nameOf = (id: string) => n.stations.get(id)?.name ?? id;
       for (const l of n.lines.values()) {
-        const of = (flag: string) => l.patterns.filter((_, i) => l.nets[i].includes(flag)).map((p) => p.join(','));
+        const of = (flag: string) => l.patterns.filter((_, i) => l.nets[i].includes(flag));
         const c = of('c');
         const r = of('r');
-        if (c.length && !r.length) out.onlyCurrent.push(ref(l));
-        else if (r.length && !c.length) out.missing.push(ref(l));
-        else if (c.length !== r.length || c.some((x) => !r.includes(x))) out.changed.push(ref(l));
+        const key = (ps: string[][]) => ps.map((p) => p.join(','));
+        // wie anders: Endstellen der längsten Fahrt, Halte ohne Bedienung bzw. nur aktuell
+        const ends = (ps: string[][]): [string, string] | null => {
+          const p = [...ps].sort((a, b) => b.length - a.length)[0];
+          return p ? [nameOf(p[0]), nameOf(p[p.length - 1])] : null;
+        };
+        const cs = new Set(c.flat());
+        const rs = new Set(r.flat());
+        const how = {
+          id: l.id,
+          mode: l.mode,
+          color: l.color,
+          termini: ends(c),
+          wasTermini: ends(r),
+          without: [...rs].filter((s) => !cs.has(s)).map(nameOf),
+          extra: [...cs].filter((s) => !rs.has(s)).map(nameOf),
+        };
+        if (c.length && !r.length) out.onlyCurrent.push(how);
+        else if (r.length && !c.length) out.missing.push(how);
+        else if (c.length !== r.length || key(c).some((x) => !key(r).includes(x))) out.changed.push(how);
       }
       for (const t of ['wd', 'sa', 'su'] as DayType[]) out.days[t] = nextTypicalDay(t).toISOString().slice(0, 10);
       out.lobbies = d.games.list().filter((g) => (g.state() as { settings?: { network?: string } }).settings?.network === 'current').length;
