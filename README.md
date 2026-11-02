@@ -100,17 +100,18 @@ Gäste spielen auch, ihr Ergebnis bleibt im Browser.
 
 Die Strecke wird nicht einfach zufällig gezogen (`server/daily.ts`):
 
-1. Start und Ziel sind U- oder S-Bahn-Stationen, 3–12 km auseinander – mit U + S kommt jeder hin.
+1. Start und Ziel sind U- oder S-Bahn-Stationen, 3–12 km auseinander.
 2. Die schnellste Verbindung hat mindestens einen Umstieg.
-3. Perfekt ist nicht offensichtlich: nur mit U-Bahn und S-Bahn gibt es höchstens 800 Punkte (die beste Verbindung
+3. Perfekt ist nicht offensichtlich: nur mit **bekannten Linien** – U-Bahn, S-Bahn-Stammstrecke (S1–S4, S7), S45, S80;
+   wenig bekannte S-Bahnen wie S40/S50/S60 zählen wie eine Bim (`isWellKnownLine`) – gibt es höchstens 800 Punkte (die beste Verbindung
    nimmt eine Bim/einen Bus oder eine geschickte Kombination).
-4. Trotzdem machbar: nur mit U-Bahn und S-Bahn gibt es mindestens 350 Punkte.
+4. Trotzdem machbar: nur mit bekannten Linien gibt es mindestens 350 Punkte.
 5. Abwechslung: Stationen der letzten 7 Tage kommen nicht dran.
 
 Erfüllt nach 60 Versuchen keine Strecke alles, gilt die nächstbeste. **Testen:** lokal mit `npm run dev` unter
 `http://localhost:5173/#daily-test` – zieht beliebig oft neu (ohne zu speichern) und zeigt Start, Ziel, beste
-Verbindung, die nur mit U + S und alle Versuche mit Begründung. Die Strecke je Tag steht in
-`STATE_DIR/daily.json` (bleibt nach einem Neustart gleich); die Auflösung zeigt zum Vergleich die Zeit nur mit U + S.
+Verbindung, die nur mit bekannten Linien und alle Versuche mit Begründung. Die Strecke je Tag steht in
+`STATE_DIR/daily.json` (bleibt nach einem Neustart gleich); die Auflösung zeigt zum Vergleich die Zeit nur mit bekannten Linien.
 
 ## Fortschritt & Motivation
 
@@ -128,11 +129,21 @@ Verbindung, die nur mit U + S und alle Versuche mit Begründung. Die Strecke je 
   Einstellungen, sofort los), allein: Vorschlag der nächsten Stufe (≥ 70 %) bzw. einer leichteren (< 25 %).
   „Spiel beenden“ mitten im Spiel zeigt den Endstand der gespielten Runden.
 - **Tages-Challenges** in der Routenjagd-Lobby (`shared/challenges.ts`, `client/src/challenges.ts`): ein niedriges
-  Banner unter „Einstellungen“, mit ‹ › blätterbar – jeden Tag 3 andere aus dem Katalog (für alle gleich) plus
-  🏘️ Bezirk der Woche. Katalog: Kaffeepause, Blitzrunde (1 min), Ohne U-Bahn, Schienen-Tag (ohne Bus), Bim-Tour,
-  Direkt-Profi (max. 1 Umstieg), Umsteige-Profi, Profi-Sprint, Hindernislauf, Blindflug, Ohne Namen, Ortskenner
-  („Wo liegt das?“ + Ein-/Ausstieg ohne Vorschläge), Tür zu Tür (Adressen), Innere Stadt, Nachtschicht, Stoßzeit,
-  Gemütlich (ohne Zeitlimit, „Umstiege vermeiden“) – die letzten drei nur, wenn es die Uhrzeit bzw. Wertung gibt.
+  Banner unter „Einstellungen“, mit ‹ › blätterbar – jeden Tag **4** (für alle gleich, die erste ist der Vorschlag).
+  **Rotation:** alle stehen in einer Reihenfolge, jeden Tag sind die nächsten 4 dran, nach jedem Durchlauf wird leicht
+  umgestellt – jede kommt gleich oft, in fast gleichem Abstand (Anzahl/4 Tage ±2), nie an zwei Tagen hintereinander und
+  nicht immer mit denselben Partnern; 🏘️ Bezirk der Woche läuft mit (≈ einmal pro Woche). Katalog (30):
+  - Tempo & Format: Kaffeepause, Blitzrunde (1 min), Sekundenkrimi (40 s), Marathon (10 Runden), Profi-Sprint,
+    Puristen-Runde (keine Joker, kein Limit), Gemütlich (Umstiege vermeiden – nur wenn verfügbar)
+  - Netz-Regeln je Linie: Ohne U-Bahn, Schienen-Tag (ohne Bus), Bim-Tour, **Insider** (keine U-Bahn und keine bekannte
+    S-Bahn), Direkt-Profi (max. 1 Umstieg), Umsteige-Profi, Hindernislauf
+  - Routen-Regeln für die ganze Route: S-Bahn-Fan (mind. eine S-Bahn), Busfahrer (mind. ein Bus), Eine U reicht
+    (höchstens 1× U-Bahn), Bunt gemischt (≥ 2 Verkehrsmittel), Nie zweimal dasselbe (kein Umstieg zwischen gleichen
+    Verkehrsmitteln), Bim-Hüpfer (≥ 2× Bim) – der Baukasten sagt vor dem Abgeben, wenn die Regel noch fehlt; die
+    Auflösung zeigt nur Verbindungen, die sie einhalten
+  - Wahrnehmung: Blindflug, Ohne Namen, Ortskenner („Wo liegt das?“ + Ein-/Ausstieg ohne Vorschläge)
+  - Ort & Zeit: Tür zu Tür (Adressen), Innere Stadt, Stadtrand-Tour (6–16 km), Fahrplan-Fuchs (echte Abfahrten),
+    Nachtschicht, Stoßzeit, Sonntagsausflug (nur mit passender Uhrzeit)
   „Spielen“ setzt alle Einstellungen auf Standard + die der Challenge, klappt „Erweitert“ zu und graut alles aus (auch
   am Server gesperrt); eigener Start-Knopf; beim Start sehen alle ein Fenster mit Icon, Name und Beschreibung.
   „✕ Beenden“ → wieder alles Standard. Einstellungen einer Challenge werden nicht für die nächste Lobby gemerkt.
@@ -140,7 +151,8 @@ Verbindung, die nur mit U + S und alle Versuche mit Begründung. Die Strecke je 
 - **Tastatur**: Linie tippen, ← → (↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt sie – der Fokus steht
   beim Ausstieg (hält die Linie woanders: beim Einstieg, mit Fußweg-Hinweis). Enter öffnet die Liste, ↑ ↓ wählt den
   Halt, Enter übernimmt; bei zugeklappter Liste wechseln ↑ ↓ zwischen Ein- und Ausstieg. Entf verwirft die angefangene
-  Linie, Escape = Liste zu bzw. andere Linie, **Strg + Enter** gibt die Route ab – Routen ganz ohne Maus.
+  Linie, Escape = Liste zu bzw. andere Linie, **Strg + Enter** gibt die Route ab (überall auf der Seite; am Ziel steht
+  der Fokus auf „Route abgeben“) – Routen ganz ohne Maus.
 - **Dunkelmodus**: startet immer hell; Knopf oben (☀️ hell · 🌙 dunkel · 🌗 wie das System), Karte mit dunklen Kacheln. Die dunklen Farben
   erzeugt `npm run build:dark` aus `style.css` (`client/src/dark.css`, nach CSS-Änderungen neu ausführen).
 - Bestätigungen (Spiel beenden, Spieler entfernen …) als eigener Dialog statt Browser-Popup; das Tutorial ist über

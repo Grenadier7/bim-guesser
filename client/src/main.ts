@@ -284,11 +284,15 @@ async function init() {
     return;
   }
   // geteilter Einstellungs-Link → Startseite (legt die Lobby an) statt in die alte Lobby zurück
-  // geteilter Link zur Strecke des Tages (/#daily)
-  if (location.hash === '#daily' || location.hash === '#daily-test') {
+  // geteilter Link zur Strecke des Tages (/#daily) bzw. Testwerkzeug (/#daily-test) – auch bei schon offener Seite
+  const fromHash = () => {
+    if (location.hash !== '#daily' && location.hash !== '#daily-test') return false;
     app.view = location.hash === '#daily' ? 'daily' : 'dailytest';
     history.replaceState(null, '', location.pathname + location.search);
-  }
+    return true;
+  };
+  fromHash();
+  window.addEventListener('hashchange', () => !app.session && fromHash() && render());
   if (new URLSearchParams(location.search).has('settings') || !(await restoreSession())) render();
   setInterval(tick, 250);
   startVisitorPing();

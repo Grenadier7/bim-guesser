@@ -167,20 +167,23 @@ test('Tages-Challenge: Banner blättern, Spielen legt die Einstellungen fest (au
   await p.goto(app.base);
   await p.locator('.mode-route').click();
   await p.locator('.challenge-bar').waitFor();
-  const first = await p.locator('.challenge-bar .cb-text b').innerText();
+  // 4 Challenges heute: ‹ › blättert durch, nach 4× wieder die erste
+  const title = () => p.locator('.challenge-bar .cb-text b').innerText();
+  const first = await title();
+  const seen = new Set([first]);
+  for (let i = 0; i < 3; i++) {
+    await p.locator('[data-cb="1"]').click();
+    seen.add(await title());
+  }
+  assert.equal(seen.size, 4);
   await p.locator('[data-cb="1"]').click();
-  assert.notEqual(await p.locator('.challenge-bar .cb-text b').innerText(), first);
-  // ganz nach hinten: Bezirk der Woche
-  await p.locator('[data-cb="-1"]').click();
-  await p.locator('[data-cb="-1"]').click();
-  assert.match(await p.locator('.challenge-bar .cb-text b').innerText(), /Bezirk der Woche/);
+  assert.equal(await title(), first);
   await p.locator('#cb-go').click();
   await p.locator('.lobby.challenge-on .challenge-bar.on').waitFor();
   assert.ok(await p.locator('button[data-k=rounds]').first().isDisabled(), 'Einstellungen fest');
   const s = await p.evaluate(() => JSON.parse(sessionStorage.getItem('oeffi-guesser-session')!));
   const st = (await (await fetch(`${app.base}/api/games/${s.code}?token=${s.token}`)).json()).state;
-  assert.match(st.settings.challenge, /^district-\d+$/);
-  assert.ok(st.settings.focus);
+  assert.ok(st.settings.challenge);
   // Einstellungen ändern geht nicht (auch nicht am Server vorbei)
   const r = await fetch(`${app.base}/api/games/${s.code}/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: s.token, settings: { rounds: 10 } }) });
   assert.equal(r.status, 400);

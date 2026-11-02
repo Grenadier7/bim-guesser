@@ -389,6 +389,14 @@ export const RESTRICTIONS: Record<Restriction, { label: string; hint: string; ic
   oneTransfer: { label: 'Max. 1 Umstieg', hint: 'Höchstens zwei Linien – also maximal ein Umstieg.', icon: '1️⃣' },
   banLines: { label: 'Linie gesperrt', hint: 'Eine Linie der schnellsten Verbindung ist gesperrt – finde eine Alternative.', icon: '⛔' },
   onlyTram: { label: 'Nur Bim', hint: 'Nur mit der Bim (und zu Fuß).', icon: '🚋' },
+  needS: { label: 'Mit S-Bahn', hint: 'Deine Route muss mindestens ein Stück S-Bahn enthalten.', icon: '🚆' },
+  needTram: { label: 'Mit Bim', hint: 'Deine Route muss mindestens ein Stück Bim enthalten.', icon: '🚋' },
+  maxOneU: { label: 'Höchstens 1× U-Bahn', hint: 'Höchstens eine U-Bahn-Fahrt – von U-Bahn zu U-Bahn umsteigen geht nicht.', icon: '☝️' },
+  needBus: { label: 'Mit Bus', hint: 'Deine Route muss mindestens ein Stück Bus enthalten.', icon: '🚌' },
+  mixModes: { label: 'Bunt gemischt', hint: 'Mindestens zwei verschiedene Verkehrsmittel (z.B. U-Bahn und Bim).', icon: '🎨' },
+  noSameMode: { label: 'Nie zweimal dasselbe', hint: 'Kein Umstieg zwischen gleichen Verkehrsmitteln – nach der U-Bahn keine U-Bahn, nach der Bim keine Bim.', icon: '🔁' },
+  twoTrams: { label: 'Bim-Hüpfer', hint: 'Mindestens zwei Fahrten mit der Bim.', icon: '🚋' },
+  insider: { label: 'Insider', hint: 'Keine U-Bahn und keine bekannte S-Bahn (S1–S4, S7, S45, S80) – nur Bim, Bus und die übrigen S-Bahnen.', icon: '🕵️' },
 };
 
 /** Varianten: gelten für jede Runde (in der Lobby unter „Varianten“) */
@@ -398,6 +406,14 @@ export const VARIANTS: { id: Variant; label: string; icon: string; restriction: 
   { id: 'noBus', label: 'Ohne Bus', icon: '🚫🚌', restriction: 'noBus' },
   { id: 'tram', label: 'Nur Bim', icon: '🚋', restriction: 'onlyTram' },
   { id: 'one', label: 'Max. 1 Umstieg', icon: '1️⃣', restriction: 'oneTransfer' },
+  { id: 'needS', label: 'Mit S-Bahn', icon: '🚆', restriction: 'needS' },
+  { id: 'needTram', label: 'Mit Bim', icon: '🚋', restriction: 'needTram' },
+  { id: 'maxOneU', label: 'Höchstens 1× U-Bahn', icon: '☝️', restriction: 'maxOneU' },
+  { id: 'needBus', label: 'Mit Bus', icon: '🚌', restriction: 'needBus' },
+  { id: 'mixModes', label: 'Bunt gemischt', icon: '🎨', restriction: 'mixModes' },
+  { id: 'noSameMode', label: 'Nie zweimal dasselbe', icon: '🔁', restriction: 'noSameMode' },
+  { id: 'twoTrams', label: 'Bim-Hüpfer', icon: '🚋', restriction: 'twoTrams' },
+  { id: 'insider', label: 'Insider', icon: '🕵️', restriction: 'insider' },
 ];
 
 export const RESTRICTION_FREQUENCIES: { id: RestrictionFrequency; label: string }[] = [
@@ -411,7 +427,7 @@ export const RESTRICTION_CHANCE = 0.3;
 /** Einschränkungs-Runden haben doppelte Zeit, aber höchstens 2:30 mehr … */
 export const RESTRICTION_EXTRA_MAX_SEC = 150;
 /** … schwere Einschränkungen (ohne U-Bahn) bekommen fix 4 Minuten mehr */
-export const HARD_RESTRICTIONS: Restriction[] = ['noU', 'onlyTram'];
+export const HARD_RESTRICTIONS: Restriction[] = ['noU', 'onlyTram', 'insider'];
 export const HARD_RESTRICTION_EXTRA_SEC = 240;
 
 export function roundLimitSec(base: number | null, restriction: Restriction | null): number | null {
@@ -429,6 +445,7 @@ export function restrictionLabel(r: Restriction, banned: string[]): string {
 
 export function restrictionAllowsLine(r: Restriction | null, banned: string[], line: { id: string; mode: Mode }): boolean {
   if (r === 'banLines' && banned.includes(line.id)) return false;
+  if (r === 'insider' && isWellKnownLine(line)) return false;
   return restrictionAllowsMode(r, line.mode);
 }
 
@@ -436,8 +453,30 @@ export function restrictionAllowsMode(r: Restriction | null, mode: Mode): boolea
   if (r === 'noU') return mode !== 'U';
   if (r === 'noBus') return mode !== 'B' && mode !== 'N';
   if (r === 'onlyTram') return mode === 'T' || mode === 'W';
+  if (r === 'insider') return mode !== 'U';
   return true;
 }
+
+/** Regeln für die ganze Route (nicht je Linie): mind. eine S-Bahn/Bim/Bus, höchstens eine U-Bahn-Fahrt, gemischt … */
+export function restrictionAllowsRoute(r: Restriction | null, legs: { mode: Mode }[]): boolean {
+  const n = (m: Mode) => legs.filter((l) => l.mode === m).length;
+  if (r === 'needS') return n('S') > 0;
+  if (r === 'needTram') return n('T') > 0;
+  if (r === 'needBus') return n('B') + n('N') > 0;
+  if (r === 'maxOneU') return n('U') <= 1;
+  if (r === 'twoTrams') return n('T') >= 2;
+  if (r === 'mixModes') return new Set(legs.map((l) => (l.mode === 'N' ? 'B' : l.mode))).size >= 2;
+  if (r === 'noSameMode') return legs.every((l, i) => i === 0 || l.mode !== legs[i - 1].mode);
+  return true;
+}
+
+/**
+ * Bekanntheit: Diese Linien kennt „jeder“ – U-Bahn, S-Bahn-Stammstrecke (S1–S4, S7), S45 und S80. Wenig bekannte
+ * S-Bahnen (S40, S50, S60 …) zählen wie eine Bim. Strecke des Tages: Mit diesen Linien allein soll man Punkte holen,
+ * die volle Punktzahl gibt's nur mit Insiderwissen.
+ */
+export const WELL_KNOWN_S = ['S1', 'S2', 'S3', 'S4', 'S7', 'S45', 'S80'];
+export const isWellKnownLine = (l: { id: string; mode: Mode }) => l.mode === 'U' || (l.mode === 'S' && WELL_KNOWN_S.includes(l.id));
 
 export function restrictionMaxLegs(r: Restriction | null): number {
   return r === 'oneTransfer' ? 2 : 8;

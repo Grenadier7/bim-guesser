@@ -4,7 +4,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { DailyBoard, DailyResult, DailyRound, GameSettings, RouteOption, Station, StationRef } from '../shared/types.ts';
-import { scoreRoute } from '../shared/rules.ts';
+import { isWellKnownLine, scoreRoute } from '../shared/rules.ts';
 import { viennaDay, weekStart } from '../shared/career.ts';
 import type { Accounts } from './accounts.ts';
 import { GameError } from './lobby.ts';
@@ -19,11 +19,12 @@ const FIRST_DAY = '2026-11-02';
 
 /**
  * Kriterien – nicht einfach zufällig:
- * 1. Start und Ziel sind U-Bahn- oder S-Bahn-Stationen, 3–12 km auseinander → mit U + S kommt jeder hin.
+ * 1. Start und Ziel sind U-Bahn- oder S-Bahn-Stationen, 3–12 km auseinander.
  * 2. Die schnellste Verbindung hat mindestens einen Umstieg.
- * 3. Perfekt ist nicht offensichtlich: Nur mit U-Bahn und S-Bahn gibt es höchstens RAIL_MAX Punkte – die beste
- *    Verbindung nimmt also eine Bim oder einen Bus, oder eine geschickte Kombination ist klar schneller.
- * 4. Trotzdem machbar: Nur mit U-Bahn und S-Bahn gibt es mindestens RAIL_MIN Punkte.
+ * 3. Perfekt ist nicht offensichtlich: Nur mit bekannten Linien (U-Bahn, S-Bahn-Stammstrecke, S45, S80 – siehe
+ *    isWellKnownLine) gibt es höchstens RAIL_MAX Punkte – die beste Verbindung nimmt also eine Bim, einen Bus oder eine
+ *    wenig bekannte S-Bahn, oder eine geschickte Kombination ist klar schneller.
+ * 4. Trotzdem machbar: Nur mit bekannten Linien gibt es mindestens RAIL_MIN Punkte.
  * 5. Abwechslung: Start und Ziel waren in den letzten 7 Tagen nicht schon dran.
  * Erfüllt nach vielen Versuchen keine Strecke alles, gilt die, die den Kriterien am nächsten kommt.
  */
@@ -107,10 +108,14 @@ export class DailyService {
     return sanitizeSettings({ difficulty: 'medium', stations: ['U', 'S'], distance: 'medium', minTransfers: 1 });
   }
 
-  /** schnellste Verbindung nur mit U-Bahn und S-Bahn (null = so nicht erreichbar) */
+  /**
+   * schnellste Verbindung nur mit bekannten Linien – U-Bahn, S-Bahn-Stammstrecke, S45, S80 (null = so nicht erreichbar).
+   * Wenig bekannte S-Bahnen (S40, S50, S60 …) zählen wie eine Bim: Insiderwissen.
+   */
   private async railRoute(from: string, to: string, time: number, q: RouteQuery): Promise<RouteOption | null> {
-    const r = await topRoutes(this.net, from, to, time, { ...q, onlyModes: ['U', 'S'] });
-    return r.find((x) => x.key !== 'walk') ?? null;
+    const obscure = [...this.net.lines.values()].filter((l) => l.mode === 'S' && !isWellKnownLine(l)).map((l) => l.id);
+    const r = await topRoutes(this.net, from, to, time, { ...q, onlyModes: ['U', 'S'], banned: obscure });
+    return r.find((x) => x.key !== 'walk' && x.legs.every((l) => l.mode === 'W' || !l.line || l.line.split('/').some((id) => !obscure.includes(id)))) ?? null;
   }
 
   private async railMin(from: string, to: string, time: number, q: RouteQuery): Promise<number | null> {
@@ -205,7 +210,7 @@ export class DailyService {
       const penalty = dailyPenalty(railPoints);
       Object.assign(entry, { railMin, railPoints, penalty });
       entry.result =
-        railPoints == null ? 'mit U + S nicht erreichbar' : railPoints > RAIL_MAX ? 'zu leicht (U + S fast perfekt)' : railPoints < RAIL_MIN ? 'zu schwer (U + S kaum Punkte)' : 'passt ✓';
+        railPoints == null ? 'mit bekannten Linien nicht erreichbar' : railPoints > RAIL_MAX ? 'zu leicht (bekannte Linien fast perfekt)' : railPoints < RAIL_MIN ? 'zu schwer (bekannte Linien kaum Punkte)' : 'passt ✓';
       if (!best || penalty < best.penalty) best = { day, from, to, time, settings, routes, railMin, penalty };
     }
     return best;

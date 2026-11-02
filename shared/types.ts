@@ -124,10 +124,23 @@ export interface FocusArea {
 }
 
 /** Einschränkungs-Runden */
-export type Restriction = 'noU' | 'noBus' | 'oneTransfer' | 'banLines' | 'onlyTram';
+export type Restriction =
+  | 'noU'
+  | 'noBus'
+  | 'oneTransfer'
+  | 'banLines'
+  | 'onlyTram'
+  | 'needS'
+  | 'needTram'
+  | 'needBus'
+  | 'maxOneU'
+  | 'mixModes'
+  | 'noSameMode'
+  | 'twoTrams'
+  | 'insider';
 
 /** Spielvariante für alle Runden (Tages-Challenges): ohne U-Bahn, ohne Bus, nur Bim, max. 1 Umstieg */
-export type Variant = 'none' | 'noU' | 'noBus' | 'tram' | 'one';
+export type Variant = 'none' | 'noU' | 'noBus' | 'tram' | 'one' | 'needS' | 'needTram' | 'needBus' | 'maxOneU' | 'mixModes' | 'noSameMode' | 'twoTrams' | 'insider';
 
 /** Wie oft Einschränkungs-Runden vorkommen */
 export type RestrictionFrequency = 'never' | 'sometimes' | 'always';

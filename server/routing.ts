@@ -12,7 +12,7 @@
 //     Ein zufällig perfekter Anschluss (an um 16:32, S-Bahn um 16:34) bringt so keinen Vorteil mehr –
 //     eine S-Bahn alle 15 min kostet im Schnitt 7,5 min Warten, eine U-Bahn alle 4 min nur 2.
 import type { LatLon, Mode, NetMode, Restriction, RouteLeg, RouteOption, RouteStep, UserLeg } from '../shared/types.ts';
-import { lineColor, lineGroupLabel, regionalTrains, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
+import { lineColor, lineGroupLabel, regionalTrains, lineKey, restrictionAllowsLine, restrictionAllowsRoute, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
 import * as efa from './efa.ts';
 import { distM, type Network } from './network.ts';
 import { currentPlan, isCancelled, withPlan } from './plancontext.ts';
@@ -127,6 +127,7 @@ function restrictionQuery(r: Restriction | null): { mots?: number[]; maxChanges?
   if (r === 'noU') return { mots: [1, 3, 4, 5] };
   if (r === 'noBus') return { mots: [1, 2, 3, 4] };
   if (r === 'onlyTram') return { mots: [3, 4] };
+  if (r === 'insider') return { mots: [1, 3, 4, 5] }; // ohne U-Bahn; bekannte S-Bahnen sperrt die Abfrage (banned)
   if (r === 'oneTransfer') return { maxChanges: 1 };
   return {};
 }
@@ -630,6 +631,8 @@ export function validateLegs(net: Network, legs: UserLeg[], mode: NetMode, restr
     if (!net.servesInOrder(l.line, l.from, l.to, mode))
       return `Linie ${l.line} fährt nicht von ${net.station(l.from).name} nach ${net.station(l.to).name}.`;
   }
+  if (!restrictionAllowsRoute(restriction, legs.map((l) => net.lines.get(l.line)!)))
+    return `Einschränkung „${restrictionLabel(restriction!, banned)}“ nicht eingehalten.`;
   return null;
 }
 

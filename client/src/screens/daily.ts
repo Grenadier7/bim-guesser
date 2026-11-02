@@ -77,7 +77,7 @@ export function dailyScreen(panel: HTMLElement, onBack: () => void): Screen {
         <div class="od"><div class="od-row"><span class="pin-dot a">A</span><b>${esc(r.from.name)}</b></div>
           <div class="od-row"><span class="pin-dot b">B</span><b>${esc(r.to.name)}</b></div></div>
         <p class="muted">🕒 ${esc(r.when)} · inkl. Wartezeit · ohne Zeitlimit und ohne Hilfen. Für alle dieselbe Strecke – <b>ein Versuch</b> am Tag.</p>
-        <p class="muted">Mit U-Bahn und S-Bahn kommst du sicher hin und holst Punkte – die volle Punktzahl gibt’s nur mit der schlauesten Verbindung.</p>
+        <p class="muted">Mit U-Bahn und den bekannten S-Bahnen kommst du sicher hin und holst Punkte – die volle Punktzahl gibt’s nur mit Insiderwissen.</p>
         ${account.me ? '' : '<p class="muted">Tipp: Mit Account kommst du in die Bestenliste.</p>'}
         <button class="btn btn-primary btn-big" id="go">Los geht’s</button>
       </div>`;
@@ -159,7 +159,7 @@ export function dailyScreen(panel: HTMLElement, onBack: () => void): Screen {
           <div class="mine">
             ${res.route ? `<div class="chainline">${chain(res.route.legs)}<b>${Math.round(res.durationMin ?? 0)} min</b></div>` : ''}
             ${verdict}
-            ${res.railMin != null ? `<small class="muted">Zum Vergleich – nur mit U-Bahn und S-Bahn: ${Math.round(res.railMin)} min (${scoreRoute(res.railMin, res.bestMin)} Punkte)</small>` : ''}
+            ${res.railMin != null ? `<small class="muted">Zum Vergleich – nur mit bekannten Linien (U-Bahn, S-Bahn-Stammstrecke, S45, S80): ${Math.round(res.railMin)} min (${scoreRoute(res.railMin, res.bestMin)} Punkte)</small>` : ''}
             ${res.rank ? `<p>🏅 Platz <b>${res.rank}</b> von ${res.players} heute</p>` : ''}
           </div>
         </div>

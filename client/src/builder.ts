@@ -1,6 +1,6 @@
 // Routen-Eingabe: Linie wählen -> Einstieg (auto, ggf. Fußweg) -> Ausstieg -> nächste Linie …
 import type { Line, Restriction, Station, UserLeg } from '../../shared/types.ts';
-import { restrictionAllowsLine, restrictionLabel, restrictionMaxLegs } from '../../shared/rules.ts';
+import { RESTRICTIONS, restrictionAllowsLine, restrictionAllowsRoute, restrictionLabel, restrictionMaxLegs } from '../../shared/rules.ts';
 import { distM, fmtDist, type NetIndex } from './net.ts';
 import { smoothPath } from './netmap.ts';
 import { esc, h, lineChip } from './ui.ts';
@@ -74,12 +74,17 @@ export class RouteBuilder {
     this.dest = dest;
     this.onChange = onChange;
     this.onSubmit = onSubmit;
-    // Strg+Enter (Mac: ⌘+Enter): Route abgeben
-    this.el.addEventListener('keydown', (e) => {
-      if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey)) return;
+    // Strg+Enter (Mac: ⌘+Enter): Route abgeben – auf der ganzen Seite, solange dieser Baukasten zu sehen ist (auch wenn
+    // der Fokus nach dem letzten Ausstieg nirgends mehr steht)
+    const onKey = (e: KeyboardEvent) => {
+      // nicht (mehr) zu sehen, z.B. alte Runde: nichts tun
+      if (!this.el.isConnected) return;
+      if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || document.querySelector('dialog[open]')) return;
       e.preventDefault();
+      e.stopPropagation();
       if (this.legs.length && !this.locked) this.onSubmit();
-    });
+    };
+    queueMicrotask(() => document.addEventListener('keydown', onKey, true));
     this.render();
   }
 
@@ -194,10 +199,14 @@ export class RouteBuilder {
     if (this.legs.length) {
       const endWalk = arrived || hideD ? '' : `<div class="walk">🚶 ${walkText(distM(pos, this.dest))} zum Ziel</div>`;
       const far = !arrived && !hideD && distM(pos, this.dest) > WALK_WARN_M ? '<div class="warn">Ziemlich weiter Fußweg – sicher?</div>' : '';
-      const foot = h('div', { class: 'submit-row' }, `${endWalk}${far}<button class="btn btn-primary" data-act="submit">Route abgeben</button><small class="kbd-hint">Strg + Enter</small>`);
+      // Regel für die ganze Route (mind. eine S-Bahn …) noch nicht erfüllt → vor dem Abgeben sagen
+      const rule = !restrictionAllowsRoute(this.restriction, this.legs.map((l) => l.line)) ? `<div class="warn">${RESTRICTIONS[this.restriction!].icon} ${esc(RESTRICTIONS[this.restriction!].hint)}</div>` : '';
+      const foot = h('div', { class: 'submit-row' }, `${endWalk}${far}${rule}<button class="btn btn-primary" data-act="submit">Route abgeben</button><small class="kbd-hint">Strg + Enter</small>`);
       foot.querySelector('button')!.disabled = this.locked;
       foot.querySelector('button')!.addEventListener('click', () => this.onSubmit());
       this.el.append(foot);
+      // am Ziel: Fokus auf „Route abgeben“ (Enter gibt ab)
+      if (arrived && !this.locked) queueMicrotask(() => foot.querySelector('button')!.focus());
     }
     this.onChange();
   }

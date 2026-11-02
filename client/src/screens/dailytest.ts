@@ -1,5 +1,5 @@
 // Testwerkzeug für die Strecke des Tages (nur lokal: /#daily-test, Server mit --dev): beliebig oft neu ziehen –
-// Start, Ziel, beste Verbindung, nur U + S und alle Versuche mit Begründung. Speichert nichts.
+// Start, Ziel, beste Verbindung, nur bekannte Linien und alle Versuche mit Begründung. Speichert nichts.
 import { viennaDay } from '../../../shared/career.ts';
 import { call } from '../account.ts';
 import { netLayer, netView, smoothRoute } from '../netmap.ts';
@@ -39,17 +39,17 @@ export function dailyTestScreen(panel: HTMLElement, onBack: () => void): Screen 
           <div class="od"><div class="od-row"><span class="pin-dot a">A</span><b>${esc(p.from.name)}</b></div><div class="od-row"><span class="pin-dot b">B</span><b>${esc(p.to.name)}</b></div></div>
           <p>${p.criteriaMet ? '✓ alle Kriterien erfüllt' : '⚠️ nächstbeste Strecke – nicht alle Kriterien erfüllt'} · ${esc(p.when)}</p>
           <p><b>Beste Verbindung:</b> <span class="chainline">${chain(best.legs)}</span> <b>${best.medianMin} min</b></p>
-          <p><b>Nur U + S:</b> ${p.rail ? `<span class="chainline">${chain(p.rail.legs)}</span> <b>${p.rail.medianMin} min</b> → ${p.railPoints} Punkte` : 'nicht erreichbar'}
+          <p><b>Nur bekannte Linien</b> <small class="muted">(U-Bahn, S-Stammstrecke, S45, S80)</small>: ${p.rail ? `<span class="chainline">${chain(p.rail.legs)}</span> <b>${p.rail.medianMin} min</b> → ${p.railPoints} Punkte` : 'nicht erreichbar'}
             <small class="muted">(Ziel: ${p.rules.railMin}–${p.rules.railMax})</small></p>
         </div></div>
         <h3>Versuche (${p.attempts.length} von max. ${p.rules.attempts})</h3>
-        <div class="dt-table"><table><thead><tr><th>Start → Ziel</th><th>beste</th><th>U+S</th><th>Pkt.</th><th>Ergebnis</th></tr></thead><tbody>${p.attempts
+        <div class="dt-table"><table><thead><tr><th>Start → Ziel</th><th>beste</th><th>bekannt</th><th>Pkt.</th><th>Ergebnis</th></tr></thead><tbody>${p.attempts
           .map(
             (a) => `<tr class="${a.result.includes('✓') ? 'ok' : ''}"><td>${esc(a.from)} → ${esc(a.to)}</td><td>${a.bestMin ?? '–'}${a.legs ? ` <small>(${a.legs - 1} Umst.)</small>` : ''}</td>
               <td>${a.railMin ?? '–'}</td><td>${a.railPoints ?? '–'}</td><td>${esc(a.result)}</td></tr>`,
           )
           .join('')}</tbody></table></div>
-        <p class="muted">Kriterien: Start und Ziel an U-/S-Bahn, 3–12 km, mindestens ein Umstieg, nur mit U + S ${p.rules.railMin}–${p.rules.railMax} Punkte, Stationen der letzten ${p.rules.varietyDays} Tage ausgelassen.</p>
+        <p class="muted">Kriterien: Start und Ziel an U-/S-Bahn, 3–12 km, mindestens ein Umstieg, nur mit bekannten Linien ${p.rules.railMin}–${p.rules.railMax} Punkte, Stationen der letzten ${p.rules.varietyDays} Tage ausgelassen.</p>
       </div>`;
     panel.querySelector('#back')!.addEventListener('click', onBack);
     panel.querySelector('#again')!.addEventListener('click', () => void load());

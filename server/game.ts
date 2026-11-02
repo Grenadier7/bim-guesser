@@ -29,6 +29,9 @@ import {
   scoreRoute,
   linePatterns,
   VARIANTS,
+  restrictionAllowsRoute,
+  restrictionAllowsLine,
+  WELL_KNOWN_S,
 } from '../shared/rules.ts';
 import { distM, NoPairError, type Network, type PastPair } from './network.ts';
 import { EfaUnavailableError, evaluateUserRoute, topRoutes, type RouteQuery } from './routing.ts';
@@ -210,7 +213,9 @@ export class Game extends Lobby {
   }
 
   private query(round: Round): RouteQuery {
-    return { countWait: this.settings.countWait, avgWait: this.settings.avgWait, restriction: round.restriction, banned: round.bannedLines };
+    // Insider: auch die bekannten S-Bahnen sind gesperrt
+    const banned = round.restriction === 'insider' ? [...round.bannedLines, ...WELL_KNOWN_S] : round.bannedLines;
+    return { countWait: this.settings.countWait, avgWait: this.settings.avgWait, restriction: round.restriction, banned };
   }
 
   /** Für "Linie gesperrt": eine Linie der schnellsten Verbindung sperren (U-Bahn bevorzugt) */
@@ -278,6 +283,18 @@ export class Game extends Lobby {
         // Mindest-Umstiege schon nach den Stichproben prüfen (nach vielen Versuchen gelockert, siehe unten)
         const minTransfers = attempt < 12 ? wanted : 0;
         routes = sortRoutes(await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), minTransfers }), this.settings);
+        // Regeln für die ganze Route (mind. eine S-Bahn …): nur Verbindungen, die sie einhalten – sonst anderes Paar
+        // und Linien-Regeln: die Auflösung soll keine Bestzeit mit einer verbotenen Linie zeigen (Insider: keine S1)
+        const lineOk = (id: string) => {
+          const line = this.net.lines.get(id);
+          return !line || restrictionAllowsLine(round.restriction, round.bannedLines, line);
+        };
+        routes = routes.filter(
+          (r) =>
+            r.key === 'walk' ||
+            (restrictionAllowsRoute(round.restriction, r.legs.filter((l) => l.mode !== 'W')) &&
+              r.legs.every((l) => l.mode === 'W' || !l.line || l.line.split('/').some(lineOk))),
+        );
       } catch (e) {
         if (e instanceof CancelledError) throw e;
         if (e instanceof EfaUnavailableError) throw new GameError('Die Runde konnte gerade nicht vorbereitet werden – bitte in einer Minute nochmal starten.', 503);

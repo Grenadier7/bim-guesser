@@ -44,13 +44,18 @@ test('Routenjagd mit Adressen: Start/Ziel sind Adressen, Route über die nächst
   // Linie der nächsten Haltestelle wählen: neutraler Fußweg-Hinweis, kein „fährt/hält nicht hier“ (Nachtrag 3)
   const pickNear = async (pt: { lat: number; lon: number }) => {
     // unter 700 m (WALK_LOUD_M): weiter weg warnt die App zu Recht, wenn es eine viel nähere Haltestelle gibt
-    const near = net.stations.filter((x) => distM(x, pt) < 650).sort((a, b) => distM(a, pt) - distM(b, pt));
+    // liegt die Adresse weiter weg (zufällig gezogen), die nächsten Haltestellen nehmen – Hinweis dann je nach Entfernung
+    const sorted = net.stations.filter((x) => x.lines.length).sort((a, b) => distM(a, pt) - distM(b, pt));
+    const close = sorted.filter((x) => distM(x, pt) < 650);
+    const near = close.length ? close : sorted.slice(0, 3);
     for (const id of [...new Set(near.flatMap((x) => x.lines))].filter((l) => !/^N/.test(l))) {
       await p.locator('.line-input').fill(id);
       await p.locator('.line-input').press('Enter');
       if (await p.locator('.leg-form .alight-select').isVisible({ timeout: 800 }).catch(() => false)) {
-        assert.equal(await p.locator('.walk-alert').count(), 0, `kein Warnhinweis für ${id} (nächste Haltestelle)`);
-        await p.locator('.walk-note', { hasText: 'zur Haltestelle' }).waitFor();
+        if (close.length) {
+          assert.equal(await p.locator('.walk-alert').count(), 0, `kein Warnhinweis für ${id} (nächste Haltestelle)`);
+          await p.locator('.walk-note', { hasText: 'zur Haltestelle' }).waitFor();
+        }
         const v = await p.locator('.leg-form .alight-select option:not([disabled])').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value).filter(Boolean));
         await p.locator('.leg-form .alight-select').selectOption(v[v.length - 1]);
         return true;

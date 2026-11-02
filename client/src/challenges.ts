@@ -11,7 +11,9 @@ const hhmm = (id: string) => SLOT_TIME[id].map((n) => String(n).padStart(2, '0')
 function context(): ChallengeContext {
   const night = TIME_SLOTS.find((t) => isNightSlot(t.id));
   const rush = TIME_SLOTS.find((t) => SLOT_DAYTYPE[t.id] === 'wd' && SLOT_TIME[t.id][0] >= 16 && SLOT_TIME[t.id][0] <= 19);
-  return { night: night ? { id: night.id, time: hhmm(night.id) } : null, rush: rush ? { id: rush.id, time: hhmm(rush.id) } : null, avoid: AVOID_TRANSFERS.enabled };
+  const sunday = TIME_SLOTS.find((t) => SLOT_DAYTYPE[t.id] === 'su' && !isNightSlot(t.id));
+  const at = (t: { id: string } | undefined) => (t ? { id: t.id, time: hhmm(t.id) } : null);
+  return { night: at(night), rush: at(rush), sunday: at(sunday), avoid: AVOID_TRANSFERS.enabled };
 }
 
 /** Mittelpunkt eines Bezirks = Schwerpunkt seiner Haltestellen */
@@ -20,11 +22,11 @@ export function districtCenter(id: number): [number, number] {
   return [sts.reduce((a, x) => a + x.lat, 0) / sts.length, sts.reduce((a, x) => a + x.lon, 0) / sts.length];
 }
 
-/** heute: 3 Challenges + Bezirk der Woche (für alle gleich) */
+/** heute: 4 Challenges (für alle gleich), der Bezirk der Woche läuft in der Rotation mit */
 export function todaysChallenges(): Challenge[] {
   const d = districtOfWeek();
   const name = app.net.data.districts.find((x) => x.id === d)?.name ?? `${d}. Bezirk`;
-  return [...dailyChallenges(viennaDay(), context()), districtChallenge(d, name, districtCenter(d))];
+  return dailyChallenges(viennaDay(), context(), districtChallenge(d, name, districtCenter(d)));
 }
 
 export const findChallenge = (id: string | null) => (id ? (todaysChallenges().find((c) => c.id === id) ?? null) : null);

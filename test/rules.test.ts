@@ -152,3 +152,21 @@ test('Adressen ⇄ Schwierigkeit: Adressen → „Eigene“, eine Schnellwahl �
   // geteilte Einstellungen mit beidem: Adressen gewinnen
   assert.equal(sanitizeSettings({ difficulty: 'easy', endpoints: 'addresses' }, DEFAULT_SETTINGS).difficulty, 'custom');
 });
+
+test('Routen-Regeln der Tages-Challenges: mind. S-Bahn/Bim/Bus, höchstens 1× U, gemischt, nie zweimal dasselbe, Insider', async () => {
+  const { restrictionAllowsRoute: ok, restrictionAllowsLine, isWellKnownLine } = await import('../shared/rules.ts');
+  const r = (...modes: string[]) => modes.map((mode) => ({ mode: mode as 'U' }));
+  assert.ok(ok('needS', r('U', 'S')) && !ok('needS', r('U', 'T')));
+  assert.ok(ok('needTram', r('T')) && !ok('needTram', r('U')));
+  assert.ok(ok('needBus', r('N')) && !ok('needBus', r('U', 'S')));
+  assert.ok(ok('maxOneU', r('U', 'T', 'S')) && !ok('maxOneU', r('U', 'U')));
+  assert.ok(ok('mixModes', r('U', 'T')) && !ok('mixModes', r('U', 'U')));
+  assert.ok(ok('noSameMode', r('U', 'T', 'U')) && !ok('noSameMode', r('T', 'T', 'U')));
+  assert.ok(ok('twoTrams', r('T', 'U', 'T')) && !ok('twoTrams', r('T', 'U')));
+  assert.ok(ok(null, r('U', 'U')));
+  // Insider: keine U-Bahn, keine bekannte S-Bahn – S60 schon
+  assert.ok(isWellKnownLine({ id: 'S45', mode: 'S' }) && !isWellKnownLine({ id: 'S60', mode: 'S' }));
+  assert.ok(!restrictionAllowsLine('insider', [], { id: 'U1', mode: 'U' }));
+  assert.ok(!restrictionAllowsLine('insider', [], { id: 'S1', mode: 'S' }));
+  assert.ok(restrictionAllowsLine('insider', [], { id: 'S60', mode: 'S' }) && restrictionAllowsLine('insider', [], { id: '43', mode: 'T' }));
+});
