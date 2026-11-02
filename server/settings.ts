@@ -75,6 +75,8 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   else if (r === true) out.restrictions = 'sometimes';
   else if (r === false) out.restrictions = 'never';
   if (VARIANTS.some((v) => v.id === s.variant)) out.variant = s.variant!;
+  if (s.challenge === null) out.challenge = null;
+  else if (typeof s.challenge === 'string' && /^[a-z0-9-]{1,24}$/.test(s.challenge)) out.challenge = s.challenge;
   // Nur Bim: Start und Ziel an Bim-Stationen (sonst gäbe es oft gar keine Verbindung)
   if (out.variant === 'tram') {
     out.stations = ['T'];

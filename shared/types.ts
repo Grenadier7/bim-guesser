@@ -162,8 +162,10 @@ export interface GameSettings {
   tips: TipLevel;
   /** Start und Ziel: Haltestellen oder zufällige Adressen (Punkt 13) */
   endpoints: 'stations' | 'addresses';
-  /** Variante für alle Runden (ohne U-Bahn / nur Bim) */
+  /** Variante für alle Runden (ohne U-Bahn / nur Bim) – kommt aus einer Tages-Challenge */
   variant: Variant;
+  /** aktive Tages-Challenge (shared/challenges.ts): Einstellungen sind dann fest */
+  challenge: string | null;
 }
 
 // ---------------------------------------------------------------- Routen

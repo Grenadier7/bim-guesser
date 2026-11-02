@@ -1,4 +1,4 @@
-// Hell/Dunkel: folgt dem System oder fest gewählt (Knopf in der Kopfzeile). Setzt data-theme auf <html> –
+// Hell/Dunkel: startet hell; dunkel oder „wie das System“ per Knopf in der Kopfzeile. Setzt data-theme auf <html> –
 // dark.css (erzeugt aus style.css) färbt danach um; die Karte tauscht die Kacheln (map.ts hört auf 'themechange').
 export type ThemePref = 'auto' | 'light' | 'dark';
 
@@ -8,9 +8,9 @@ const media = typeof matchMedia === 'function' ? matchMedia('(prefers-color-sche
 export function themePref(): ThemePref {
   try {
     const v = localStorage.getItem(KEY);
-    return v === 'light' || v === 'dark' ? v : 'auto';
+    return v === 'auto' || v === 'dark' ? v : 'light';
   } catch {
-    return 'auto';
+    return 'light';
   }
 }
 
@@ -25,14 +25,14 @@ export function applyTheme() {
   window.dispatchEvent(new Event('themechange'));
 }
 
-const NEXT: Record<ThemePref, ThemePref> = { auto: 'dark', dark: 'light', light: 'auto' };
+const NEXT: Record<ThemePref, ThemePref> = { light: 'dark', dark: 'auto', auto: 'light' };
 const LABEL: Record<ThemePref, [string, string]> = {
-  auto: ['🌗', 'Darstellung: wie das System – antippen für dunkel'],
-  dark: ['🌙', 'Darstellung: dunkel – antippen für hell'],
-  light: ['☀️', 'Darstellung: hell – antippen für automatisch'],
+  light: ['☀️', 'Darstellung: hell – antippen für dunkel'],
+  dark: ['🌙', 'Darstellung: dunkel – antippen für „wie das System“'],
+  auto: ['🌗', 'Darstellung: wie das System – antippen für hell'],
 };
 
-/** Knopf für die Kopfzeile: automatisch → dunkel → hell → automatisch */
+/** Knopf für die Kopfzeile: hell → dunkel → wie das System → hell */
 export function themeButton(): HTMLButtonElement {
   const b = document.createElement('button');
   b.className = 'theme-btn';

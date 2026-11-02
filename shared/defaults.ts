@@ -43,6 +43,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
   /** Einschränkungs-Runden: 'never' · 'sometimes' · 'always' */
   restrictions: 'never',
   variant: 'none',
+  challenge: null,
   /** Start/Ziel: 'stations' Haltestellen · 'addresses' zufällige Adressen */
   endpoints: 'stations',
   /** Tipps: 'off' (keine) · 'cheap' (günstig) · 'expensive' (teuer – bei X-treme automatisch) */
@@ -50,7 +51,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
 };
 
 /** Diese Einstellungen werden NICHT für die nächste Lobby gemerkt – sie starten immer mit dem Standard */
-export const NOT_REMEMBERED: (keyof GameSettings)[] = ['network', 'focus', 'variant'];
+export const NOT_REMEMBERED: (keyof GameSettings)[] = ['network', 'focus', 'variant', 'challenge'];
 
 // ---------------------------------------------------------------- 🧠 Quiz (Lobby)
 

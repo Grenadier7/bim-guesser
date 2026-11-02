@@ -125,13 +125,15 @@ Erfüllt nach 30 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strec
 - **Endstand** (Routenjagd und Quiz gleich): Punkte mit Balken und Urteil bzw. Siegertreppchen, 🔁 **Revanche** (gleiche
   Einstellungen, sofort los), allein: Vorschlag der nächsten Stufe (≥ 70 %) bzw. einer leichteren (< 25 %).
   „Spiel beenden“ mitten im Spiel zeigt den Endstand der gespielten Runden.
-- **Varianten** in der Routenjagd-Lobby: Ohne U-Bahn, Nur Bim (Start/Ziel an Bim-Stationen) – für jede Runde, mit
-  Extrazeit. **Ideen**: ☕ Kaffeepause (3 Runden à 2 min, leicht), 🌙 Nachts, 🙈 Blindflug (X-treme ohne Karte),
-  📍 Bezirk der Woche (Start/Ziel meist im Bezirk, jede Kalenderwoche ein anderer).
+- **Tages-Challenges** in der Routenjagd-Lobby (`shared/challenges.ts`): ein niedriges Banner, mit ‹ › blätterbar –
+  jeden Tag 3 andere aus dem Katalog (für alle gleich: Kaffeepause, Ohne U-Bahn, Bim-Tour, Nachtschicht, Blindflug,
+  Profi-Sprint, Umsteige-Profi, Tür zu Tür, Ortskenner, Hindernislauf) plus 🏘️ Bezirk der Woche. „Spielen“ setzt alle
+  Einstellungen auf Standard + die der Challenge und graut sie aus (auch am Server gesperrt); „✕ Beenden“ → wieder
+  alles Standard. Einstellungen einer Challenge werden nicht für die nächste Lobby gemerkt.
 - **Chat**: Schnell-Reaktionen 👏 😂 😮 🔥 🚋 GG und 🎲 (= `/ez`).
-- **Tastatur**: Linie tippen, ← → (↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt sie und klappt den
-  Ausstieg auf, ↑ ↓ wählt den Halt, Enter übernimmt, Escape = andere Linie – Routen ganz ohne Maus.
-- **Dunkelmodus**: Knopf oben (🌗 wie das System · 🌙 dunkel · ☀️ hell), Karte mit dunklen Kacheln. Die dunklen Farben
+- **Tastatur**: Linie tippen, ← → (↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt sie und öffnet die
+  Ausstiegsliste, ↑ ↓ wählt den Halt, Enter übernimmt, Escape = zu bzw. andere Linie – Routen ganz ohne Maus.
+- **Dunkelmodus**: startet immer hell; Knopf oben (☀️ hell · 🌙 dunkel · 🌗 wie das System), Karte mit dunklen Kacheln. Die dunklen Farben
   erzeugt `npm run build:dark` aus `style.css` (`client/src/dark.css`, nach CSS-Änderungen neu ausführen).
 - Bestätigungen (Spiel beenden, Spieler entfernen …) als eigener Dialog statt Browser-Popup; das Tutorial ist über
   „Tutorial wiederholen“ unten auf der Startseite jederzeit erreichbar; Datum im Spiel nur „Dienstag, 12:00“.

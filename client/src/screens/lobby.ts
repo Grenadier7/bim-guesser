@@ -27,7 +27,6 @@ import {
   TIME_BONUS_REF_SEC,
   TIME_LIMITS,
   TIME_SLOTS,
-  VARIANTS,
   isNightSlot,
   TIPS,
   difficultyMultiplier,
@@ -44,6 +43,8 @@ import { inviteButton } from '../accountui.ts';
 import { deferWhileEditing, infoTip, patchQueue, seg, toggleInfo } from '../widgets.ts';
 import { bindKick, kickButton } from './host.ts';
 import type { Screen } from './screen.ts';
+import { dailyChallenges, districtOfWeek, type Challenge } from '../../../shared/challenges.ts';
+import { viennaDay } from '../../../shared/career.ts';
 import { openSettingsDialog } from '../settingsShare.ts';
 
 /**
@@ -103,12 +104,6 @@ function inPool(st: Station, kinds: StationKind[]): boolean {
   return inStationKinds(st, kinds, (id) => app.net.lines.get(id));
 }
 
-/** Bezirk der Woche: jede Kalenderwoche ein anderer der 23 Bezirke (für alle gleich) */
-export function districtOfWeek(t = Date.now()): number {
-  const week = Math.floor((t / 86_400_000 + 3) / 7); // Wochen seit Montag, 5.1.1970
-  return (week % 23) + 1;
-}
-
 /** Mittelpunkt eines Bezirks = Schwerpunkt seiner Haltestellen */
 function districtCenter(id: number): [number, number] {
   const sts = app.net.data.stations.filter((x) => x.district === id);
@@ -129,10 +124,13 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     try {
       const st = (await api.settings(app.session!, patch)) as GameState;
       // Netz und Fokus-Kreis nicht für die nächste Lobby merken – die starten immer mit dem Standard
-      const keep: Partial<GameSettings> = { ...st.settings };
-      for (const k of NOT_REMEMBERED) delete keep[k];
-      app.prefs.settings = keep;
-      savePrefs();
+      // Einstellungen einer Tages-Challenge nicht als eigene merken
+      if (!st.settings.challenge) {
+        const keep: Partial<GameSettings> = { ...st.settings };
+        for (const k of NOT_REMEMBERED) delete keep[k];
+        app.prefs.settings = keep;
+        savePrefs();
+      }
     } catch (e) {
       toast((e as Error).message);
     }
@@ -144,33 +142,67 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     send({ focus: { ...cur, ...patch } });
   }
 
-  /** Schnellstart-Ideen: setzen mehrere Einstellungen auf einmal */
-  function presetsHtml(st: GameSettings): string {
+  // -------------------------------------------------------------- Tages-Challenges
+
+  /** heute: 3 Challenges + Bezirk der Woche (für alle gleich) */
+  function todaysChallenges(): Challenge[] {
     const night = TIME_SLOTS.find((t) => isNightSlot(t.id));
+    const list = dailyChallenges(viennaDay(), !!night).map((c) => (c.id === 'night' ? { ...c, settings: { ...c.settings, slot: night!.id } } : c));
     const d = districtOfWeek();
-    return `<div class="presets" role="group" aria-label="Schnellstart"><small>Ideen:</small>
-      <button data-preset="coffee" title="3 Runden, je 2 Minuten, leicht">☕ Kaffeepause</button>
-      ${night ? `<button data-preset="night" title="${esc(night.label)}" class="${st.slot === night.id ? 'on' : ''}">🌙 Nachts</button>` : ''}
-      <button data-preset="blind" class="${st.xtreme === 'noMap' ? 'on' : ''}" title="X-treme ohne Karte: nur die Namen von Start und Ziel">🙈 Blindflug</button>
-      <button data-preset="district" title="Start und Ziel meist im ${d}. Bezirk – jede Woche ein anderer">📍 Bezirk der Woche: ${d}.</button></div>`;
+    const name = app.net.data.districts.find((x) => x.id === d)?.name ?? `${d}. Bezirk`;
+    const [lat, lon] = districtCenter(d);
+    list.push({
+      id: `district-${d}`,
+      icon: '🏘️',
+      title: `Bezirk der Woche: ${name}`,
+      text: 'Start und Ziel meist im Bezirk – kurze Strecken',
+      settings: { difficulty: 'medium', distance: 'short', focus: { lat, lon, radiusM: 2500, share: 0.9 }, rounds: 5 },
+    });
+    return list;
+  }
+  let challengeIdx = 0;
+
+  /** niedriges Banner: ‹ eine Challenge › mit „Spielen“ – aktiv: Name und „Beenden“ (dann wieder alles Standard) */
+  function challengeBanner(st: GameSettings, host: boolean): string {
+    const list = todaysChallenges();
+    const active = st.challenge ? list.find((c) => c.id === st.challenge) : null;
+    if (st.challenge)
+      return `<div class="challenge-bar on" role="status"><span class="cb-icon">${active?.icon ?? '🎯'}</span>
+        <span class="cb-text"><b>${esc(active?.title ?? 'Tages-Challenge')}</b><small>Tages-Challenge aktiv · Einstellungen fest</small></span>
+        ${host ? '<button class="btn btn-ghost cb-end" id="cb-end">✕ Beenden</button>' : ''}</div>`;
+    if (!host) return '';
+    const c = list[challengeIdx % list.length];
+    return `<div class="challenge-bar" role="group" aria-label="Tages-Challenges">
+      <button class="cb-nav" data-cb="-1" aria-label="vorige Challenge">‹</button>
+      <span class="cb-icon">${c.icon}</span>
+      <span class="cb-text" title="${esc(`${c.title} – ${c.text}`)}"><b>${esc(c.title)}</b><small>${esc(c.text)}</small></span>
+      <span class="cb-dots" aria-hidden="true">${list.map((_, i) => `<i class="${i === challengeIdx % list.length ? 'on' : ''}"></i>`).join('')}</span>
+      <button class="btn btn-primary cb-go" id="cb-go">Spielen</button>
+      <button class="cb-nav" data-cb="1" aria-label="nächste Challenge">›</button></div>`;
   }
 
-  function applyPreset(id: string) {
-    const st = routeState().settings;
-    if (id === 'coffee') send({ difficulty: 'easy', rounds: 3, roundTimeLimitSec: 120, xtreme: 'off', variant: 'none' });
-    else if (id === 'night') send({ slot: TIME_SLOTS.find((t) => isNightSlot(t.id))!.id });
-    else if (id === 'blind') send({ xtreme: st.xtreme === 'noMap' ? 'off' : 'noMap' });
-    else if (id === 'district') {
-      const [lat, lon] = districtCenter(districtOfWeek());
-      send({ distance: 'short', focus: { lat, lon, radiusM: 2500, share: 0.9 } });
-    }
+  function bindChallenge() {
+    panel.querySelectorAll<HTMLButtonElement>('[data-cb]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const n = todaysChallenges().length;
+        challengeIdx = (challengeIdx + Number(b.dataset.cb) + n) % n;
+        render();
+      }),
+    );
+    panel.querySelector('#cb-go')?.addEventListener('click', () => {
+      const c = todaysChallenges()[challengeIdx];
+      // von den Standard-Einstellungen aus – so passt nichts aus vorherigen Runden dazwischen
+      send({ ...DEFAULT_SETTINGS, focus: null, ...c.settings, challenge: c.id });
+    });
+    panel.querySelector('#cb-end')?.addEventListener('click', () => send({ ...DEFAULT_SETTINGS, focus: null, challenge: null }));
   }
 
   function render() {
     const s = routeState();
     const host = isHost();
-    const ro = !host;
     const st = s.settings;
+    // aktive Tages-Challenge: alle Einstellungen fest (ausgegraut)
+    const ro = !host || !!st.challenge;
     const code = s.id;
     const scroll = panel.scrollTop;
     const players = s.players
@@ -297,7 +329,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     }
 
     panel.innerHTML = `
-      <div class="lobby">
+      <div class="lobby ${st.challenge ? 'challenge-on' : ''}">
         <div class="lobby-code">
           <div><small>🏁 Routenjagd · Lobby-Code</small><div class="code">${code}</div></div>
           <div class="code-actions"><button class="btn btn-ghost btn-icon" id="copy">${icon('link')}<span>Link kopieren</span></button>${inviteButton()}</div>
@@ -305,14 +337,12 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         <h3>Spieler <small>(${s.players.length})</small></h3>
         <ul class="players">${players}</ul>
 
-        <h3>Einstellungen ${ro ? '<small>– nur der Host kann sie ändern</small>' : ''}</h3>
+        ${challengeBanner(st, host)}
+        <h3>Einstellungen ${!host ? '<small>– nur der Host kann sie ändern</small>' : ''}</h3>
         <div class="setting"><span>Schwierigkeit</span>
           ${seg('difficulty', [...DIFFICULTY_PRESETS.map((d) => ({ value: d.id, label: d.label })), ...(st.difficulty === 'custom' ? [{ value: 'custom', label: 'Eigene' }] : [])], st.difficulty, ro)}
           <small class="hint">${st.endpoints === 'addresses' ? `${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} Adressen` : `${poolCount(st.stations)} Haltestellen`}${st.distance !== 'medium' ? ` · ${DISTANCES.find((d) => d.id === st.distance)!.label}` : ''}${st.minTransfers ? ` · mind. ${st.minTransfers} Umstieg${st.minTransfers > 1 ? 'e' : ''}` : ''} · <b>Punkte ×${mult.toLocaleString('de-AT')}</b> ${st.endpoints === 'addresses' ? '' : infoTip(esc(stationsText(st.stations)))}</small></div>
         <div class="setting"><span>Runden</span>${seg('rounds', [3, 5, 7, 10].map((n) => ({ value: String(n), label: String(n) })), String(st.rounds), ro)}</div>
-        <div class="setting"><span>Variante ${infoTip('Gilt für jede Runde: <b>Ohne U-Bahn</b> oder <b>Nur Bim</b> (Start und Ziel an Bim-Stationen). Mit mehr Zeit pro Runde.')}</span>
-          ${seg('variant', VARIANTS.map((v) => ({ value: v.id, label: `${v.icon} ${v.label}`.trim() })), st.variant, ro)}</div>
-        ${host ? presetsHtml(st) : ''}
 
         <div class="setting"><span>${icon('clock', 15)} Zeitlimit ${infoTip(
           `Pro Runde, inkl. „Wo liegt das?“. Nach Ablauf wird abgegeben, was eingegeben ist. Wer schnell ist, bekommt bis zu +10 % Zeitbonus.<br><b>Ohne:</b> kein Zeitdruck – der Zeitbonus wird an ${fmtDuration(TIME_BONUS_REF_SEC)} gemessen.`,
@@ -431,7 +461,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
       const [lat, lon] = districtCenter(id);
       sendFocus({ lat, lon });
     });
-    panel.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset!)));
+    bindChallenge();
     panel.querySelector('#shareSettings')?.addEventListener('click', () =>
       openSettingsDialog(
         'route',

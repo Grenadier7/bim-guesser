@@ -519,6 +519,10 @@
   background: hsl(0 45% 20%);
 }
 
+[data-theme='dark'] .challenge-bar.on {
+  background: hsl(0 45% 20%);
+}
+
 [data-theme='dark'] .round-tip {
   background: hsl(43 45% 20%);
   color: hsl(42 75% 87%);

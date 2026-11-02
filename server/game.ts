@@ -98,6 +98,9 @@ export class Game extends Lobby {
   updateSettings(token: string, s: unknown) {
     this.requireHost(token);
     if (this.phase !== 'lobby') throw new GameError('Einstellungen nur in der Lobby änderbar.');
+    // Tages-Challenge aktiv: Einstellungen sind fest – nur Challenge beenden/wechseln geht
+    if (this.settings.challenge && !(s && typeof s === 'object' && 'challenge' in s))
+      throw new GameError('Während einer Tages-Challenge sind die Einstellungen fest – erst die Challenge beenden.');
     this.settings = sanitizeSettings(s as Partial<GameSettings>, this.settings);
     this.touch();
     this.emitState();

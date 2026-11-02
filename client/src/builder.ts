@@ -273,6 +273,8 @@ export class RouteBuilder {
         if (found.length > 1 && ((e.key === 'ArrowRight' && atEnd) || e.key === 'ArrowDown')) return move(1);
         if (found.length > 1 && ((e.key === 'ArrowLeft' && active > 0) || e.key === 'ArrowUp')) return move(-1);
         if (e.key !== 'Enter') return;
+        // sonst landet das Enter (keypress) beim gleich fokussierten Ausstiegsfeld und öffnet die Browser-Liste
+        e.preventDefault();
         const pick = found[active] ?? this.net.searchLines(input.value, this.restriction, this.banned)[0];
         if (pick) {
           // mit der Tastatur gewählt → Ausstiegsliste gleich offen (Pfeiltasten + Enter)
@@ -354,7 +356,7 @@ export class RouteBuilder {
       this.resetForm();
     };
     alightSel.addEventListener('change', commit);
-    keyboardList(alightSel, commit, () => this.resetForm());
+    const kb = keyboardList(alightSel, commit, () => this.resetForm());
     const alightRow = h('label', { class: 'field' }, '<span>Ausstieg</span>');
     alightRow.append(alightSel);
     form.append(alightRow);
@@ -362,7 +364,7 @@ export class RouteBuilder {
     this.openPicker = false;
     queueMicrotask(() => {
       alightSel.focus();
-      if (open) expandList(alightSel);
+      if (open) kb.open();
     });
     return form;
   }
@@ -465,47 +467,92 @@ export class RouteBuilder {
   }
 }
 
-/** Liste im Formular aufklappen (statt des Browser-Fensters – das lässt sich nicht überall per Tastatur steuern) */
-function expandList(sel: HTMLSelectElement) {
-  sel.size = Math.min(12, sel.options.length + sel.querySelectorAll('optgroup').length);
-  sel.classList.add('expanded');
-  sel.options[sel.selectedIndex]?.scrollIntoView({ block: 'center' });
-}
-
-function collapseList(sel: HTMLSelectElement) {
-  sel.size = 0;
-  sel.classList.remove('expanded');
-}
-
 /**
- * Ausstieg nur mit der Tastatur: ↑ ↓ wandert durch die Halte (ohne schon zu übernehmen), Enter übernimmt bzw.
- * klappt die Liste auf, Escape klappt zu bzw. wählt eine andere Linie. Mausklick übernimmt wie gewohnt (change).
+ * Ausstieg nur mit der Tastatur: eine eigene Liste unter dem Auswahlfeld (das Browser-Fenster lässt sich nicht
+ * überall per Tastatur steuern). ↑ ↓ wandert durch die Halte (ohne schon zu übernehmen), Enter übernimmt bzw.
+ * klappt auf, Escape klappt zu bzw. wählt eine andere Linie. Mit der Maus bleibt alles wie gewohnt.
  */
-function keyboardList(sel: HTMLSelectElement, commit: () => void, cancel: () => void) {
+let pointerDown = false;
+if (typeof document !== 'undefined') {
+  document.addEventListener('pointerdown', () => (pointerDown = true), true);
+  document.addEventListener('pointerup', () => (pointerDown = false), true);
+}
+
+function keyboardList(sel: HTMLSelectElement, commit: () => void, cancel: () => void): { open: () => void } {
+  let pop: HTMLElement | null = null;
+  const rows = () => [...(pop?.querySelectorAll<HTMLElement>('[data-i]') ?? [])];
+  const mark = () => {
+    for (const r of rows()) {
+      const on = Number(r.dataset.i) === sel.selectedIndex;
+      r.classList.toggle('active', on);
+      r.setAttribute('aria-selected', String(on));
+      if (on) r.scrollIntoView({ block: 'nearest' });
+    }
+  };
+  const close = () => {
+    pop?.remove();
+    pop = null;
+    sel.setAttribute('aria-expanded', 'false');
+  };
+  const open = () => {
+    if (pop) return;
+    pop = h('div', { class: 'kb-list', role: 'listbox', 'aria-label': 'Ausstieg' });
+    let i = 0;
+    for (const el of sel.children) {
+      if (el instanceof HTMLOptGroupElement) pop.append(h('div', { class: 'kb-group' }, esc(el.label)));
+      else {
+        const o = el as HTMLOptionElement;
+        pop.append(h('div', { class: `kb-opt${o.disabled ? ' here' : ''}`, 'data-i': String(i), role: 'option' }, esc(o.text)));
+        i++;
+      }
+    }
+    // Klick in der Liste: übernehmen, ohne dass das Auswahlfeld den Fokus verliert
+    pop.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const r = (e.target as HTMLElement).closest<HTMLElement>('[data-i]');
+      if (!r || r.classList.contains('here')) return;
+      sel.selectedIndex = Number(r.dataset.i);
+      close();
+      commit();
+    });
+    sel.after(pop);
+    sel.setAttribute('aria-expanded', 'true');
+    mark();
+    rows().find((r) => r.classList.contains('active'))?.scrollIntoView({ block: 'center' });
+  };
   const move = (d: 1 | -1) => {
     for (let i = sel.selectedIndex + d; i >= 0 && i < sel.options.length; i += d)
       if (!sel.options[i].disabled) {
         sel.selectedIndex = i;
-        sel.options[i].scrollIntoView({ block: 'nearest' });
-        return;
+        return mark();
       }
   };
   sel.addEventListener('keydown', (e) => {
-    const open = sel.classList.contains('expanded');
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      if (!open) expandList(sel);
+      open();
       move(e.key === 'ArrowDown' ? 1 : -1);
     } else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      if (open && sel.value) commit();
-      else expandList(sel);
+      if (pop && sel.value) {
+        close();
+        commit();
+      } else open();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      if (open) collapseList(sel);
+      if (pop) close();
       else cancel();
     }
   });
+  // Fokus weg: zu. Bei einem Mausklick erst danach – sonst rutscht der Inhalt (Liste weg) zwischen Drücken und
+  // Loslassen, und der Klick (z.B. auf „andere Linie“) landet ins Leere
+  sel.addEventListener('blur', () => {
+    if (!pointerDown) return close();
+    document.addEventListener('pointerup', () => setTimeout(close), { once: true });
+  });
+  // Maus: das gewohnte Auswahlfenster – die eigene Liste dann zu
+  sel.addEventListener('mousedown', close);
+  return { open };
 }
 
 /** Eine gemeinsame Vorschlagsliste mit allen Stationsnamen (einmal pro Seite) */

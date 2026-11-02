@@ -10,7 +10,7 @@ after(async () => app?.close());
 
 const noErrors = (t: TestPage) => assert.deepEqual(t.errors, []);
 
-test('Route nur mit der Tastatur: ← → zwischen Vorschlägen, Enter klappt den Ausstieg auf, ↓ + Enter übernimmt', async () => {
+test('Route nur mit der Tastatur: ← → zwischen Vorschlägen, Enter öffnet die Ausstiegsliste, ↓ + Enter übernimmt', async () => {
   const t = await app.page();
   const p = t.page;
   await p.goto(app.base);
@@ -29,7 +29,8 @@ test('Route nur mit der Tastatur: ← → zwischen Vorschlägen, Enter klappt de
   await p.keyboard.press('Enter');
   await p.locator('.picked .chip', { hasText: opts[1]! }).waitFor();
   const sel = p.locator('.leg-form .alight-select');
-  assert.ok(await sel.evaluate((s) => s === document.activeElement && s.classList.contains('expanded')), 'Ausstieg aufgeklappt und im Fokus');
+  assert.ok(await sel.evaluate((s) => s === document.activeElement), 'Ausstieg im Fokus');
+  await p.locator('.leg-form .kb-list').waitFor();
   // ↓ wählt nur aus – noch keine Teilstrecke
   await p.keyboard.press('ArrowDown');
   if (!(await sel.inputValue())) await p.keyboard.press('ArrowUp'), await p.keyboard.press('ArrowUp');
@@ -41,7 +42,7 @@ test('Route nur mit der Tastatur: ← → zwischen Vorschlägen, Enter klappt de
   // Escape im Ausstieg = andere Linie
   await p.keyboard.type(opts[0]!);
   await p.keyboard.press('Enter');
-  await p.locator('.leg-form .alight-select.expanded').waitFor();
+  await p.locator('.leg-form .kb-list').waitFor();
   await p.keyboard.press('Escape');
   await p.keyboard.press('Escape');
   await p.locator('.line-input').waitFor();
@@ -77,13 +78,13 @@ test('Strecke des Tages: spielen, Ergebnis zum Teilen, Bestenliste; danach Start
   noErrors(t);
 });
 
-test('Dunkelmodus: Knopf schaltet um, Einstellung bleibt nach Neuladen', async () => {
+test('Dunkelmodus: startet hell (auch bei dunklem System), Knopf schaltet um, Einstellung bleibt nach Neuladen', async () => {
   const t = await app.page();
   const p = t.page;
-  await p.emulateMedia({ colorScheme: 'light' });
+  await p.emulateMedia({ colorScheme: 'dark' });
   await p.goto(app.base);
   assert.equal(await p.evaluate(() => document.documentElement.dataset.theme), 'light');
-  await p.locator('.theme-btn').click(); // automatisch → dunkel
+  await p.locator('.theme-btn').click(); // hell → dunkel
   assert.equal(await p.evaluate(() => document.documentElement.dataset.theme), 'dark');
   const bg = await p.evaluate(() => getComputedStyle(document.body).backgroundColor);
   assert.notEqual(bg, 'rgb(238, 240, 243)', 'Hintergrund dunkel');
@@ -115,5 +116,36 @@ test('Spiel beenden nach einer Runde → Endstand mit Hinweis und Revanche (eige
   await p.locator('.ask-dlg [data-v="1"]').click();
   await p.locator('.final .early-end', { hasText: 'nach Runde 1 von 3' }).waitFor();
   await p.locator('#rematch').waitFor();
+  noErrors(t);
+});
+
+test('Tages-Challenge: Banner blättern, Spielen legt die Einstellungen fest (ausgegraut), Beenden → wieder Standard', async () => {
+  const t = await app.page();
+  const p = t.page;
+  await p.goto(app.base);
+  await p.locator('.mode-route').click();
+  await p.locator('.challenge-bar').waitFor();
+  const first = await p.locator('.challenge-bar .cb-text b').innerText();
+  await p.locator('[data-cb="1"]').click();
+  assert.notEqual(await p.locator('.challenge-bar .cb-text b').innerText(), first);
+  // ganz nach hinten: Bezirk der Woche
+  await p.locator('[data-cb="-1"]').click();
+  await p.locator('[data-cb="-1"]').click();
+  assert.match(await p.locator('.challenge-bar .cb-text b').innerText(), /Bezirk der Woche/);
+  await p.locator('#cb-go').click();
+  await p.locator('.lobby.challenge-on .challenge-bar.on').waitFor();
+  assert.ok(await p.locator('button[data-k=rounds]').first().isDisabled(), 'Einstellungen fest');
+  const s = await p.evaluate(() => JSON.parse(sessionStorage.getItem('oeffi-guesser-session')!));
+  const st = (await (await fetch(`${app.base}/api/games/${s.code}?token=${s.token}`)).json()).state;
+  assert.match(st.settings.challenge, /^district-\d+$/);
+  assert.ok(st.settings.focus);
+  // Einstellungen ändern geht nicht (auch nicht am Server vorbei)
+  const r = await fetch(`${app.base}/api/games/${s.code}/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: s.token, settings: { rounds: 10 } }) });
+  assert.equal(r.status, 400);
+  await p.locator('#cb-end').click();
+  await p.locator('.lobby:not(.challenge-on)').waitFor();
+  const st2 = (await (await fetch(`${app.base}/api/games/${s.code}?token=${s.token}`)).json()).state;
+  assert.equal(st2.settings.challenge, null);
+  assert.equal(st2.settings.focus, null);
   noErrors(t);
 });

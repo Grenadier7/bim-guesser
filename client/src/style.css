@@ -6602,34 +6602,90 @@ details.adm-linechg li {
   text-align: center;
 }
 
-/* ---------------------------------------------------------------- Lobby: Varianten & Ideen */
+/* ---------------------------------------------------------------- Lobby: Tages-Challenges */
 
-.presets {
+.challenge-bar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
-  margin: -2px 0 12px;
-}
-.presets small {
-  color: var(--muted);
-}
-.presets button {
-  padding: 5px 10px;
+  gap: 8px;
+  margin: 4px 0 10px;
+  padding: 6px 6px 6px 8px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 12px;
   background: var(--panel);
-  color: var(--ink);
-  font: inherit;
-  font-size: 13px;
+  min-height: 48px;
+}
+.challenge-bar.on {
+  border-color: var(--accent);
+  background: #fdf0f0;
+}
+.cb-icon {
+  font-size: 20px;
+  flex: none;
+}
+.cb-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  line-height: 1.25;
+}
+.cb-text b,
+.cb-text small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cb-text small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.cb-nav {
+  flex: none;
+  width: 28px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
   cursor: pointer;
 }
-.presets button:hover {
-  border-color: var(--muted);
+.cb-nav:hover {
+  background: var(--bg);
+  color: var(--ink);
 }
-.presets button.on {
-  border-color: var(--accent);
-  font-weight: 700;
+.cb-dots {
+  display: flex;
+  gap: 3px;
+  flex: none;
+}
+.cb-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.cb-dots i.on {
+  background: var(--accent);
+}
+.cb-go,
+.cb-end {
+  flex: none;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+@media (max-width: 420px) {
+  .cb-dots {
+    display: none;
+  }
+}
+/* aktive Challenge: Einstellungen ausgegraut */
+.lobby.challenge-on .setting,
+.lobby.challenge-on .toggles,
+.lobby.challenge-on details.advanced {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 /* ---------------------------------------------------------------- Endstand & Auflösung */
@@ -6887,12 +6943,47 @@ details.adm-linechg li {
   cursor: pointer;
 }
 
-/* Ausstieg per Tastatur: Liste im Formular aufgeklappt */
-.alight-select.expanded {
-  height: auto;
-  padding: 4px;
-  overflow-y: auto;
+/* Ausstieg per Tastatur: eigene Liste unter dem Auswahlfeld */
+.leg-form .field {
+  position: relative;
 }
-.alight-select.expanded option {
-  padding: 3px 6px;
+.kb-list {
+  position: absolute;
+  z-index: 60;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  max-height: min(320px, 50vh);
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.kb-opt {
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.kb-opt:hover {
+  background: var(--bg);
+}
+.kb-opt.active {
+  background: var(--accent);
+  color: #fff;
+}
+.kb-opt.here,
+.kb-opt.here.active {
+  background: transparent;
+  color: var(--muted);
+  font-style: italic;
+  cursor: default;
+}
+.kb-group {
+  padding: 8px 10px 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
 }
