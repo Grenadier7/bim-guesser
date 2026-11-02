@@ -1,6 +1,7 @@
 import './style.css';
 import './dark.css';
 import { themeButton } from './theme.ts';
+import { findChallenge, showChallengeIntro } from './challenges.ts';
 import { fmtDuration } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import { account, startPolling } from './account.ts';
@@ -25,6 +26,7 @@ import { adminScreen } from './screens/admin.ts';
 import { tutorialScreen } from './screens/tutorial.ts';
 import { dailyScreen } from './screens/daily.ts';
 import { meScreen } from './screens/me.ts';
+import { dailyTestScreen } from './screens/dailytest.ts';
 import { ChatWidget } from './chat.ts';
 import { hideIdle, idleCheck } from './idle.ts';
 import { app, currentRound, inviteLink, isHost, me, openTimer, restoreSession, serverNow, setMapBig, setMobileMap } from './store.ts';
@@ -164,6 +166,7 @@ function mount(key: string): Screen {
   if (key === 'tutorial') return tutorialScreen(panel, back);
   if (key === 'daily') return dailyScreen(panel, back);
   if (key === 'me') return meScreen(panel, back);
+  if (key === 'dailytest') return dailyTestScreen(panel, back);
   if (key === 'admin') return adminScreen(panel, back);
   if (key === 'lobby') return lobbyScreen(panel);
   if (key === 'final') return finalScreen(panel);
@@ -189,6 +192,10 @@ function render() {
   renderInvites(inviteHost);
   const key = keyFor();
   if (key !== screenKey) {
+    // Spielstart mit Tages-Challenge (aus der Lobby, nicht beim Neuladen mitten im Spiel): Fenster mit Name und Text
+    const st = app.state;
+    if ((screenKey === 'lobby' || screenKey === 'final') && st?.mode === 'route' && st.phase === 'playing' && st.settings.challenge)
+      showChallengeIntro(findChallenge(st.settings.challenge));
     screen?.destroy?.();
     screenKey = key;
     screen = mount(key);
@@ -278,8 +285,8 @@ async function init() {
   }
   // geteilter Einstellungs-Link → Startseite (legt die Lobby an) statt in die alte Lobby zurück
   // geteilter Link zur Strecke des Tages (/#daily)
-  if (location.hash === '#daily') {
-    app.view = 'daily';
+  if (location.hash === '#daily' || location.hash === '#daily-test') {
+    app.view = location.hash === '#daily' ? 'daily' : 'dailytest';
     history.replaceState(null, '', location.pathname + location.search);
   }
   if (new URLSearchParams(location.search).has('settings') || !(await restoreSession())) render();

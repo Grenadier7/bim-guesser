@@ -50,15 +50,22 @@ export class NetGraph {
     for (const line of this.lines) {
       const kind = kindOf(line)!;
       const ends = new Map<string, string>();
-      const longest = Math.max(...patternsOf(line).map((p) => p.length));
-      for (const p of patternsOf(line)) {
-        const seq = p.filter((id, i) => id !== p[i - 1]);
-        if (seq.length < 2) continue;
+      // Endstation = Ende einer Fahrt, an dem keine andere Fahrt der Linie weiterfährt (Kurzführungen wie S1 bis
+      // Praterstern zählen nicht) und das viele Fahrten anfahren (Depotfahrten wie 18 → Winckelmannstraße zählen
+      // nicht) – echte Äste bleiben
+      const lineSeqs = patternsOf(line)
+        .map((p) => p.filter((id, i) => id !== p[i - 1]))
+        .filter((s) => s.length >= 2);
+      const interior = new Set(lineSeqs.flatMap((s) => s.slice(1, -1)));
+      const visits = new Map<string, number>();
+      for (const sq of lineSeqs) for (const id of new Set(sq)) visits.set(id, (visits.get(id) ?? 0) + 1);
+      const cands = lineSeqs.flatMap((sq) => [sq[0], sq[sq.length - 1]]).filter((id) => !interior.has(id));
+      const most = Math.max(0, ...cands.map((id) => visits.get(id)!));
+      const isEnd = (id: string) => !interior.has(id) && visits.get(id)! >= most * 0.5;
+      for (const seq of lineSeqs) {
         seqs.push({ line, kind, seq });
-        if (seq.length >= longest * 0.75) {
-          ends.set(seq[0], seq[1]);
-          ends.set(seq[seq.length - 1], seq[seq.length - 2]);
-        }
+        if (isEnd(seq[0])) ends.set(seq[0], seq[1]);
+        if (isEnd(seq[seq.length - 1])) ends.set(seq[seq.length - 1], seq[seq.length - 2]);
         for (const id of seq) {
           if (!this.xy.has(id)) {
             const s = net.station(id);
@@ -67,6 +74,11 @@ export class NetGraph {
           if (!this.nodeLines.has(id)) this.nodeLines.set(id, new Set());
           this.nodeLines.get(id)!.add(line.id);
         }
+      }
+      // Ring oder lauter Überlappungen: dann die Enden der längsten Fahrt
+      if (!ends.size && lineSeqs.length) {
+        const l = lineSeqs.reduce((a, b) => (b.length > a.length ? b : a));
+        ends.set(l[0], l[1]).set(l[l.length - 1], l[l.length - 2]);
       }
       this.terminals.set(line.id, ends);
     }

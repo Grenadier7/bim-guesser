@@ -395,7 +395,9 @@ export const RESTRICTIONS: Record<Restriction, { label: string; hint: string; ic
 export const VARIANTS: { id: Variant; label: string; icon: string; restriction: Restriction | null }[] = [
   { id: 'none', label: 'Normal', icon: '', restriction: null },
   { id: 'noU', label: 'Ohne U-Bahn', icon: '🚫🚇', restriction: 'noU' },
+  { id: 'noBus', label: 'Ohne Bus', icon: '🚫🚌', restriction: 'noBus' },
   { id: 'tram', label: 'Nur Bim', icon: '🚋', restriction: 'onlyTram' },
+  { id: 'one', label: 'Max. 1 Umstieg', icon: '1️⃣', restriction: 'oneTransfer' },
 ];
 
 export const RESTRICTION_FREQUENCIES: { id: RestrictionFrequency; label: string }[] = [

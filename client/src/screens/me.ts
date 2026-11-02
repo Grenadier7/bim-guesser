@@ -42,7 +42,7 @@ export function meScreen(panel: HTMLElement, onBack: () => void): Screen {
 
   // Karte: benutzte Linien kräftig, alles andere blass; benutzte Stationen als Punkte
   app.map.clear();
-  netLayer().render(netView({ focus: new Set([...used].filter((id) => net.lines.has(id))), hubs: false, labels: used.size < 40 }));
+  netLayer().render(netView({ focus: new Set([...used].filter((id) => net.lines.has(id))), hubs: false, labels: used.size < 40, bothEnds: true }));
   app.map.showMarkedStops(
     stationsUsed.slice(0, 1500).map((id) => net.station(id)),
     getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#e3000f',
@@ -81,7 +81,9 @@ export function meScreen(panel: HTMLElement, onBack: () => void): Screen {
             <div class="chips">${x.mine.length ? x.mine.map((l) => lineChip(l.mode, l.id, l.color)).join('') : '<small class="muted">noch keine</small>'}</div></details>`,
         )
         .join('')}</div>
-      <small class="muted">Zählt bei Routenjagd, Training und Strecke des Tages – jede gültige eigene Route.</small>
+      <p class="me-legend"><span class="ml-line"></span> farbig: Linien, mit denen du schon gefahren bist ·
+        <span class="ml-dot"></span> Stationen, die du dabei befahren hast (Ein-, Aus- und Durchfahrt) – nur der Abschnitt, den du selbst gefahren bist.
+        Zählt bei Routenjagd, Training und Strecke des Tages, jede gültige eigene Route.</p>
       ${medalsHtml(p.medals)}
     </div>`;
   panel.querySelector('#back')!.addEventListener('click', onBack);

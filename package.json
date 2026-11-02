@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "concurrently -k -n server,client -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",
-    "dev:server": "node --watch server/index.ts",
+    "dev:server": "node --watch server/index.ts --dev",
     "dev:client": "vite",
     "start": "node scripts/host.ts",
     "serve": "node server/index.ts",

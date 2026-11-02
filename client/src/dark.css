@@ -551,3 +551,7 @@
   background: hsl(47 45% 20%);
   color: hsl(42 75% 87%);
 }
+
+[data-theme='dark'] .me-legend .ml-dot {
+  background: var(--panel);
+}

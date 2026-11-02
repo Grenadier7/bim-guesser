@@ -63,3 +63,13 @@ test('Endstationen ohne Kurzführungen (S1 endet nicht am Praterstern)', () => {
   assert.ok(ends.includes('Süßenbrunn') && ends.includes('Liesing'), ends.join(', '));
   assert.ok(!ends.includes('Praterstern'), ends.join(', '));
 });
+
+test('nur die absoluten Endstationen: ohne Kurzführungen und Depotfahrten (18 nicht bis Winckelmannstraße), jede Linie hat Endstationen', () => {
+  const names = (id: string) => [...(g.terminals.get(id)?.keys() ?? [])].map((s) => g.station(s).name).sort();
+  for (const [line, want] of [['18', ['Burggasse-Stadthalle', 'Stadion']], ['O', ['Bruno-Marek-Allee', 'Raxstraße']], ['S1', ['Süßenbrunn', 'Liesing']]] as const) {
+    const ends = names(line);
+    for (const w of want) assert.ok(ends.some((e) => e.startsWith(w.split('/')[0])), `${line}: ${ends.join(', ')}`);
+    assert.equal(ends.length, 2, `${line}: ${ends.join(', ')}`);
+  }
+  for (const l of g.lines) assert.ok((g.terminals.get(l.id)?.size ?? 0) >= 1, `${l.id} ohne Endstation`);
+});

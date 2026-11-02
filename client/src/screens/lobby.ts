@@ -27,7 +27,6 @@ import {
   TIME_BONUS_REF_SEC,
   TIME_LIMITS,
   TIME_SLOTS,
-  isNightSlot,
   TIPS,
   difficultyMultiplier,
   fmtDuration,
@@ -43,8 +42,7 @@ import { inviteButton } from '../accountui.ts';
 import { deferWhileEditing, infoTip, patchQueue, seg, toggleInfo } from '../widgets.ts';
 import { bindKick, kickButton } from './host.ts';
 import type { Screen } from './screen.ts';
-import { dailyChallenges, districtOfWeek, type Challenge } from '../../../shared/challenges.ts';
-import { viennaDay } from '../../../shared/career.ts';
+import { districtCenter, findChallenge, todaysChallenges } from '../challenges.ts';
 import { openSettingsDialog } from '../settingsShare.ts';
 
 /**
@@ -104,11 +102,6 @@ function inPool(st: Station, kinds: StationKind[]): boolean {
   return inStationKinds(st, kinds, (id) => app.net.lines.get(id));
 }
 
-/** Mittelpunkt eines Bezirks = Schwerpunkt seiner Haltestellen */
-function districtCenter(id: number): [number, number] {
-  const sts = app.net.data.stations.filter((x) => x.district === id);
-  return [sts.reduce((a, x) => a + x.lat, 0) / sts.length, sts.reduce((a, x) => a + x.lon, 0) / sts.length];
-}
 
 const fmtKm = (m: number) => `${(m / 1000).toLocaleString('de-AT')} km`;
 
@@ -144,28 +137,23 @@ export function lobbyScreen(panel: HTMLElement): Screen {
 
   // -------------------------------------------------------------- Tages-Challenges
 
-  /** heute: 3 Challenges + Bezirk der Woche (für alle gleich) */
-  function todaysChallenges(): Challenge[] {
-    const night = TIME_SLOTS.find((t) => isNightSlot(t.id));
-    const list = dailyChallenges(viennaDay(), !!night).map((c) => (c.id === 'night' ? { ...c, settings: { ...c.settings, slot: night!.id } } : c));
-    const d = districtOfWeek();
-    const name = app.net.data.districts.find((x) => x.id === d)?.name ?? `${d}. Bezirk`;
-    const [lat, lon] = districtCenter(d);
-    list.push({
-      id: `district-${d}`,
-      icon: '🏘️',
-      title: `Bezirk der Woche: ${name}`,
-      text: 'Start und Ziel meist im Bezirk – kurze Strecken',
-      settings: { difficulty: 'medium', distance: 'short', focus: { lat, lon, radiusM: 2500, share: 0.9 }, rounds: 5 },
-    });
-    return list;
+  /** Standard + Challenge; gibt die Challenge eine Schwierigkeit vor, gelten deren Regler (nicht die des Standards) */
+  function challengeSettings(patch: Partial<GameSettings>, id: string): Partial<GameSettings> {
+    const base: Partial<GameSettings> = { ...DEFAULT_SETTINGS, focus: null };
+    if (patch.difficulty) {
+      delete base.stations;
+      delete base.distance;
+      delete base.minTransfers;
+    }
+    return { ...base, ...patch, challenge: id };
   }
+
   let challengeIdx = 0;
 
   /** niedriges Banner: ‹ eine Challenge › mit „Spielen“ – aktiv: Name und „Beenden“ (dann wieder alles Standard) */
   function challengeBanner(st: GameSettings, host: boolean): string {
     const list = todaysChallenges();
-    const active = st.challenge ? list.find((c) => c.id === st.challenge) : null;
+    const active = findChallenge(st.challenge);
     if (st.challenge)
       return `<div class="challenge-bar on" role="status"><span class="cb-icon">${active?.icon ?? '🎯'}</span>
         <span class="cb-text"><b>${esc(active?.title ?? 'Tages-Challenge')}</b><small>Tages-Challenge aktiv · Einstellungen fest</small></span>
@@ -191,8 +179,10 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     );
     panel.querySelector('#cb-go')?.addEventListener('click', () => {
       const c = todaysChallenges()[challengeIdx];
+      // erweiterte Einstellungen zu – die sind jetzt ohnehin fest
+      advancedOpen = false;
       // von den Standard-Einstellungen aus – so passt nichts aus vorherigen Runden dazwischen
-      send({ ...DEFAULT_SETTINGS, focus: null, ...c.settings, challenge: c.id });
+      send(challengeSettings(c.settings, c.id));
     });
     panel.querySelector('#cb-end')?.addEventListener('click', () => send({ ...DEFAULT_SETTINGS, focus: null, challenge: null }));
   }
@@ -337,8 +327,8 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         <h3>Spieler <small>(${s.players.length})</small></h3>
         <ul class="players">${players}</ul>
 
+        <h3 class="settings-head">Einstellungen ${!host ? '<small>– nur der Host kann sie ändern</small>' : ''}</h3>
         ${challengeBanner(st, host)}
-        <h3>Einstellungen ${!host ? '<small>– nur der Host kann sie ändern</small>' : ''}</h3>
         <div class="setting"><span>Schwierigkeit</span>
           ${seg('difficulty', [...DIFFICULTY_PRESETS.map((d) => ({ value: d.id, label: d.label })), ...(st.difficulty === 'custom' ? [{ value: 'custom', label: 'Eigene' }] : [])], st.difficulty, ro)}
           <small class="hint">${st.endpoints === 'addresses' ? `${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} Adressen` : `${poolCount(st.stations)} Haltestellen`}${st.distance !== 'medium' ? ` · ${DISTANCES.find((d) => d.id === st.distance)!.label}` : ''}${st.minTransfers ? ` · mind. ${st.minTransfers} Umstieg${st.minTransfers > 1 ? 'e' : ''}` : ''} · <b>Punkte ×${mult.toLocaleString('de-AT')}</b> ${st.endpoints === 'addresses' ? '' : infoTip(esc(stationsText(st.stations)))}</small></div>
@@ -384,7 +374,9 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         <p class="maxpts">Max. <b>${maxRoundPoints(st).toLocaleString('de-AT')}</b> Punkte pro Runde <small>(bis ${maxRoundPointsWithBonus(st).toLocaleString('de-AT')} mit einer Route, die schneller ist als die beste Verbindung)</small></p>
         ${
           host
-            ? st.xtreme !== 'off'
+            ? st.challenge
+              ? `<button class="btn btn-big btn-challenge" id="start"><span class="bc-icon">${findChallenge(st.challenge)?.icon ?? '🎯'}</span><span>Challenge starten<small>${esc(findChallenge(st.challenge)?.title ?? 'Tages-Challenge')}${s.players.length > 1 ? ` · ${s.players.length} Spieler` : ''}</small></span></button>`
+              : st.xtreme !== 'off'
               ? `<button class="btn btn-big btn-xtreme" id="start">⚡ X-TREME starten <small>${esc(XTREME_LEVELS.find((x) => x.id === st.xtreme)!.label)}${s.players.length > 1 ? ` · ${s.players.length} Spieler` : ''}</small></button>`
               : `<button class="btn btn-primary btn-big" id="start">${s.players.length > 1 ? `Spiel starten (${s.players.length} Spieler)` : 'Spiel starten'}</button>`
             : `<div class="waiting-host">Warte, bis ${esc(s.players.find((p) => p.isHost)?.name ?? 'der Host')} startet …</div>`

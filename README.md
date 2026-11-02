@@ -102,12 +102,14 @@ Die Strecke wird nicht einfach zufällig gezogen (`server/daily.ts`):
 
 1. Start und Ziel sind U- oder S-Bahn-Stationen, 3–12 km auseinander – mit U + S kommt jeder hin.
 2. Die schnellste Verbindung hat mindestens einen Umstieg.
-3. Perfekt ist nicht offensichtlich: nur mit U-Bahn und S-Bahn gibt es höchstens 900 Punkte (die beste Verbindung
+3. Perfekt ist nicht offensichtlich: nur mit U-Bahn und S-Bahn gibt es höchstens 800 Punkte (die beste Verbindung
    nimmt eine Bim/einen Bus oder eine geschickte Kombination).
 4. Trotzdem machbar: nur mit U-Bahn und S-Bahn gibt es mindestens 350 Punkte.
 5. Abwechslung: Stationen der letzten 7 Tage kommen nicht dran.
 
-Erfüllt nach 30 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strecke je Tag steht in
+Erfüllt nach 60 Versuchen keine Strecke alles, gilt die nächstbeste. **Testen:** lokal mit `npm run dev` unter
+`http://localhost:5173/#daily-test` – zieht beliebig oft neu (ohne zu speichern) und zeigt Start, Ziel, beste
+Verbindung, die nur mit U + S und alle Versuche mit Begründung. Die Strecke je Tag steht in
 `STATE_DIR/daily.json` (bleibt nach einem Neustart gleich); die Auflösung zeigt zum Vergleich die Zeit nur mit U + S.
 
 ## Fortschritt & Motivation
@@ -125,16 +127,20 @@ Erfüllt nach 30 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strec
 - **Endstand** (Routenjagd und Quiz gleich): Punkte mit Balken und Urteil bzw. Siegertreppchen, 🔁 **Revanche** (gleiche
   Einstellungen, sofort los), allein: Vorschlag der nächsten Stufe (≥ 70 %) bzw. einer leichteren (< 25 %).
   „Spiel beenden“ mitten im Spiel zeigt den Endstand der gespielten Runden.
-- **Tages-Challenges** in der Routenjagd-Lobby (`shared/challenges.ts`): ein niedriges Banner, mit ‹ › blätterbar –
-  jeden Tag 3 andere aus dem Katalog (für alle gleich: Kaffeepause, Ohne U-Bahn, Bim-Tour, Nachtschicht, Blindflug,
-  Profi-Sprint, Umsteige-Profi, Tür zu Tür, Ortskenner, Hindernislauf) plus 🏘️ Bezirk der Woche. „Spielen“ setzt alle
-  Einstellungen auf Standard + die der Challenge und graut sie aus (auch am Server gesperrt); „✕ Beenden“ → wieder
-  alles Standard. Einstellungen einer Challenge werden nicht für die nächste Lobby gemerkt.
+- **Tages-Challenges** in der Routenjagd-Lobby (`shared/challenges.ts`, `client/src/challenges.ts`): ein niedriges
+  Banner unter „Einstellungen“, mit ‹ › blätterbar – jeden Tag 3 andere aus dem Katalog (für alle gleich) plus
+  🏘️ Bezirk der Woche. Katalog: Kaffeepause, Blitzrunde (1 min), Ohne U-Bahn, Schienen-Tag (ohne Bus), Bim-Tour,
+  Direkt-Profi (max. 1 Umstieg), Umsteige-Profi, Profi-Sprint, Hindernislauf, Blindflug, Ohne Namen, Ortskenner
+  („Wo liegt das?“ + Ein-/Ausstieg ohne Vorschläge), Tür zu Tür (Adressen), Innere Stadt, Nachtschicht, Stoßzeit,
+  Gemütlich (ohne Zeitlimit, „Umstiege vermeiden“) – die letzten drei nur, wenn es die Uhrzeit bzw. Wertung gibt.
+  „Spielen“ setzt alle Einstellungen auf Standard + die der Challenge, klappt „Erweitert“ zu und graut alles aus (auch
+  am Server gesperrt); eigener Start-Knopf; beim Start sehen alle ein Fenster mit Icon, Name und Beschreibung.
+  „✕ Beenden“ → wieder alles Standard. Einstellungen einer Challenge werden nicht für die nächste Lobby gemerkt.
 - **Chat**: Schnell-Reaktionen 👏 😂 😮 🔥 🚋 GG und 🎲 (= `/ez`).
-- **Tastatur**: Linie tippen, ← → (↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt sie. Hält sie hier,
-  geht gleich die Ausstiegsliste auf (↑ ↓ wählt den Halt, Enter übernimmt); hält sie woanders, steht der Fokus beim
-  Einstieg (Fußweg ansehen). Entf verwirft die angefangene Linie, Escape = Liste zu bzw. andere Linie – Routen ganz
-  ohne Maus.
+- **Tastatur**: Linie tippen, ← → (↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt sie – der Fokus steht
+  beim Ausstieg (hält die Linie woanders: beim Einstieg, mit Fußweg-Hinweis). Enter öffnet die Liste, ↑ ↓ wählt den
+  Halt, Enter übernimmt; bei zugeklappter Liste wechseln ↑ ↓ zwischen Ein- und Ausstieg. Entf verwirft die angefangene
+  Linie, Escape = Liste zu bzw. andere Linie, **Strg + Enter** gibt die Route ab – Routen ganz ohne Maus.
 - **Dunkelmodus**: startet immer hell; Knopf oben (☀️ hell · 🌙 dunkel · 🌗 wie das System), Karte mit dunklen Kacheln. Die dunklen Farben
   erzeugt `npm run build:dark` aus `style.css` (`client/src/dark.css`, nach CSS-Änderungen neu ausführen).
 - Bestätigungen (Spiel beenden, Spieler entfernen …) als eigener Dialog statt Browser-Popup; das Tutorial ist über

@@ -126,8 +126,8 @@ export interface FocusArea {
 /** Einschränkungs-Runden */
 export type Restriction = 'noU' | 'noBus' | 'oneTransfer' | 'banLines' | 'onlyTram';
 
-/** Spielvariante für alle Runden: ohne U-Bahn, nur Bim */
-export type Variant = 'none' | 'noU' | 'tram';
+/** Spielvariante für alle Runden (Tages-Challenges): ohne U-Bahn, ohne Bus, nur Bim, max. 1 Umstieg */
+export type Variant = 'none' | 'noU' | 'noBus' | 'tram' | 'one';
 
 /** Wie oft Einschränkungs-Runden vorkommen */
 export type RestrictionFrequency = 'never' | 'sometimes' | 'always';

@@ -74,6 +74,12 @@ export class RouteBuilder {
     this.dest = dest;
     this.onChange = onChange;
     this.onSubmit = onSubmit;
+    // Strg+Enter (Mac: ⌘+Enter): Route abgeben
+    this.el.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      if (this.legs.length && !this.locked) this.onSubmit();
+    });
     this.render();
   }
 
@@ -115,7 +121,7 @@ export class RouteBuilder {
 
   /** Hinweis, nachdem eine frühere Teilstrecke geändert wurde (z.B. „ab hier neu wählen“) */
   private notice = '';
-  /** Linie per Tastatur gewählt → Ausstiegsliste gleich aufklappen (wenn hier eingestiegen wird) */
+  /** Linie per Tastatur gewählt → Fokus beim Ausstieg bzw. (hält woanders) beim Einstieg */
   private openPicker = false;
   /** Einstieg gerade geändert → Fokus bleibt dort */
   private focusBoard = false;
@@ -188,7 +194,7 @@ export class RouteBuilder {
     if (this.legs.length) {
       const endWalk = arrived || hideD ? '' : `<div class="walk">🚶 ${walkText(distM(pos, this.dest))} zum Ziel</div>`;
       const far = !arrived && !hideD && distM(pos, this.dest) > WALK_WARN_M ? '<div class="warn">Ziemlich weiter Fußweg – sicher?</div>' : '';
-      const foot = h('div', { class: 'submit-row' }, `${endWalk}${far}<button class="btn btn-primary" data-act="submit">Route abgeben</button>`);
+      const foot = h('div', { class: 'submit-row' }, `${endWalk}${far}<button class="btn btn-primary" data-act="submit">Route abgeben</button><small class="kbd-hint">Strg + Enter</small>`);
       foot.querySelector('button')!.disabled = this.locked;
       foot.querySelector('button')!.addEventListener('click', () => this.onSubmit());
       this.el.append(foot);
@@ -274,7 +280,7 @@ export class RouteBuilder {
         };
         if (found.length > 1 && ((e.key === 'ArrowRight' && atEnd) || e.key === 'ArrowDown')) return move(1);
         if (found.length > 1 && ((e.key === 'ArrowLeft' && active > 0) || e.key === 'ArrowUp')) return move(-1);
-        if (e.key !== 'Enter') return;
+        if (e.key !== 'Enter' || e.ctrlKey || e.metaKey) return;
         // sonst landet das Enter (keypress) beim gleich fokussierten Ausstiegsfeld und öffnet die Browser-Liste
         e.preventDefault();
         const pick = found[active] ?? this.net.searchLines(input.value, this.restriction, this.banned)[0];
@@ -360,7 +366,17 @@ export class RouteBuilder {
       this.resetForm();
     };
     alightSel.addEventListener('change', commit);
-    const kb = keyboardList(alightSel, commit, () => this.resetForm());
+    keyboardList(alightSel, commit, () => this.resetForm(), { up: () => boardSel.focus() });
+    // Einstieg per Tastatur: gleiche Liste; übernommen → weiter zum Ausstieg
+    keyboardList(
+      boardSel,
+      () => {
+        this.board = boardSel.value;
+        this.render();
+      },
+      () => this.resetForm(),
+      { down: () => alightSel.focus() },
+    );
     const alightRow = h('label', { class: 'field' }, '<span>Ausstieg</span>');
     alightRow.append(alightSel);
     form.append(alightRow);
@@ -370,17 +386,13 @@ export class RouteBuilder {
       e.preventDefault();
       this.resetForm();
     });
-    // per Tastatur gewählt: Ausstiegsliste nur gleich offen, wenn hier eingestiegen wird – sonst erst zum Einstieg
-    // (Fußweg ansehen, ggf. andere Haltestelle wählen)
+    // per Tastatur gewählt: Fokus beim Ausstieg (Enter öffnet die Liste) – hält die Linie nicht hier, erst beim
+    // Einstieg (Fußweg ansehen, ggf. andere Haltestelle wählen)
     const keyboard = this.openPicker;
     const stay = this.focusBoard;
     this.openPicker = this.focusBoard = false;
     const here = this.board === pos.id;
-    queueMicrotask(() => {
-      if (stay || (keyboard && !here)) return boardSel.focus();
-      alightSel.focus();
-      if (keyboard) kb.open();
-    });
+    queueMicrotask(() => (stay || (keyboard && !here) ? boardSel : alightSel).focus());
     return form;
   }
 
@@ -448,7 +460,7 @@ export class RouteBuilder {
       this.resetForm();
     };
     fields.querySelector('[data-act=add]')!.addEventListener('click', add);
-    alight.addEventListener('keydown', (e) => e.key === 'Enter' && add());
+    alight.addEventListener('keydown', (e) => e.key === 'Enter' && !e.ctrlKey && !e.metaKey && add());
     form.append(fields);
     queueMicrotask(() => (showPos ? alight : board).focus());
     return form;
@@ -483,9 +495,10 @@ export class RouteBuilder {
 }
 
 /**
- * Ausstieg nur mit der Tastatur: eine eigene Liste unter dem Auswahlfeld (das Browser-Fenster lässt sich nicht
- * überall per Tastatur steuern). ↑ ↓ wandert durch die Halte (ohne schon zu übernehmen), Enter übernimmt bzw.
- * klappt auf, Escape klappt zu bzw. wählt eine andere Linie. Mit der Maus bleibt alles wie gewohnt.
+ * Ein-/Ausstieg nur mit der Tastatur: eine eigene Liste unter dem Auswahlfeld (das Browser-Fenster lässt sich nicht
+ * überall per Tastatur steuern). Enter klappt auf, ↑ ↓ wandert durch die Halte (ohne schon zu übernehmen), Enter
+ * übernimmt, Escape klappt zu bzw. wählt eine andere Linie. Zugeklappt wechseln ↑ ↓ zwischen den Feldern.
+ * Mit der Maus bleibt alles wie gewohnt.
  */
 let pointerDown = false;
 if (typeof document !== 'undefined') {
@@ -493,7 +506,7 @@ if (typeof document !== 'undefined') {
   document.addEventListener('pointerup', () => (pointerDown = false), true);
 }
 
-function keyboardList(sel: HTMLSelectElement, commit: () => void, cancel: () => void): { open: () => void } {
+function keyboardList(sel: HTMLSelectElement, commit: () => void, cancel: () => void, nav: { up?: () => void; down?: () => void } = {}): { open: () => void } {
   let pop: HTMLElement | null = null;
   const rows = () => [...(pop?.querySelectorAll<HTMLElement>('[data-i]') ?? [])];
   const mark = () => {
@@ -543,9 +556,12 @@ function keyboardList(sel: HTMLSelectElement, commit: () => void, cancel: () => 
       }
   };
   sel.addEventListener('keydown', (e) => {
+    // Strg+Enter = Route abgeben (RouteBuilder)
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      open();
+      // zu: ↑ ↓ wechselt zwischen Einstieg und Ausstieg; offen: durch die Halte
+      if (!pop) return void (e.key === 'ArrowUp' ? nav.up : nav.down)?.();
       move(e.key === 'ArrowDown' ? 1 : -1);
     } else if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();

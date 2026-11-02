@@ -10,7 +10,7 @@ after(async () => app?.close());
 
 const noErrors = (t: TestPage) => assert.deepEqual(t.errors, []);
 
-test('Route nur mit der Tastatur: ← → zwischen Vorschlägen, Ausstiegsliste nur bei Einstieg hier, Entf verwirft die Linie', async () => {
+test('Route nur mit der Tastatur: ← → zwischen Vorschlägen, Enter öffnet die Liste, ↑ ↓ zwischen Ein- und Ausstieg, Entf verwirft, Strg+Enter gibt ab', async () => {
   const t = await app.page();
   const p = t.page;
   await p.goto(app.base);
@@ -33,11 +33,22 @@ test('Route nur mit der Tastatur: ← → zwischen Vorschlägen, Ausstiegsliste 
   const depsHere = () => p.locator('.deps .line-opt').evaluateAll((bs) => bs.map((b) => (b as HTMLElement).dataset.line!));
   const sel = p.locator('.leg-form .alight-select');
 
-  // Linie hält hier → Enter öffnet gleich die Ausstiegsliste; ↓ wählt nur aus, Enter übernimmt
+  // Linie hält hier → Fokus beim Ausstieg (Liste noch zu); ↑ springt zum Einstieg, ↓ zurück; Enter öffnet,
+  // ↓ wählt nur aus, Enter übernimmt
   await p.keyboard.type((await depsHere())[0]);
   await p.keyboard.press('Enter');
-  await p.locator('.leg-form .kb-list').waitFor();
+  await p.waitForTimeout(100);
   assert.ok(await sel.evaluate((s) => s === document.activeElement), 'Ausstieg im Fokus');
+  assert.equal(await p.locator('.leg-form .kb-list').count(), 0, 'Liste erst nach Enter');
+  await p.keyboard.press('ArrowUp');
+  assert.ok(await p.locator('.leg-form .board-select').evaluate((s) => s === document.activeElement), '↑ → Einstieg');
+  await p.keyboard.press('Enter');
+  await p.locator('.leg-form .kb-list').waitFor();
+  await p.keyboard.press('Escape');
+  await p.keyboard.press('ArrowDown');
+  assert.ok(await sel.evaluate((s) => s === document.activeElement), '↓ → Ausstieg');
+  await p.keyboard.press('Enter');
+  await p.locator('.leg-form .kb-list').waitFor();
   await p.keyboard.press('ArrowDown');
   if (!(await sel.inputValue())) await p.keyboard.press('ArrowUp'), await p.keyboard.press('ArrowUp');
   assert.ok(await sel.inputValue(), 'ein Halt gewählt');
@@ -48,6 +59,7 @@ test('Route nur mit der Tastatur: ← → zwischen Vorschlägen, Ausstiegsliste 
 
   // Entf: angefangene Linie weg, fertige Teilstrecke bleibt
   await p.keyboard.type((await depsHere())[0]);
+  await p.keyboard.press('Enter');
   await p.keyboard.press('Enter');
   await p.locator('.leg-form .kb-list').waitFor();
   await p.keyboard.press('Delete');
@@ -66,6 +78,10 @@ test('Route nur mit der Tastatur: ← → zwischen Vorschlägen, Ausstiegsliste 
   assert.equal(await p.locator('.leg-form .kb-list').count(), 0);
   await p.keyboard.press('Delete');
   await input.waitFor();
+  // Strg+Enter gibt die Route ab
+  await input.focus();
+  await p.keyboard.press('Control+Enter');
+  await p.locator('.training h2', { hasText: 'Auswertung' }).waitFor({ timeout: 60_000 });
   noErrors(t);
 });
 
@@ -81,6 +97,7 @@ test('Strecke des Tages: spielen, Ergebnis zum Teilen, Bestenliste; danach Start
   const line = net.lines.find((l: { patterns: string[][] }) => l.patterns.some((pt) => pt.slice(0, -1).includes(day.from.id))).id;
   await p.locator('.line-input').fill(line);
   await p.locator('.line-input').press('Enter');
+  await p.keyboard.press('Enter');
   await p.locator('.leg-form .kb-list').waitFor();
   await p.keyboard.press('ArrowDown');
   if (!(await p.locator('.leg-form .alight-select').inputValue())) await p.keyboard.press('ArrowUp'), await p.keyboard.press('ArrowUp');
