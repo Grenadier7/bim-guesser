@@ -582,7 +582,8 @@ small {
 }
 
 .line-opt:hover .chip,
-.line-opt:focus .chip {
+.line-opt:focus .chip,
+.line-opt.active .chip {
   outline: 2px solid var(--ink);
   outline-offset: 1px;
 }
@@ -3812,6 +3813,10 @@ details.fine > summary {
   overflow: hidden;
 }
 
+.chat[hidden] {
+  display: none;
+}
+
 .chat.closed {
   width: auto;
   border: 0;
@@ -6500,4 +6505,394 @@ details.adm-linechg li {
   border: 1px solid var(--line);
   color: var(--muted);
   font-size: 14px;
+}
+
+/* ---------------------------------------------------------------- Bestätigungsdialog (statt confirm()) */
+
+.ask-dlg {
+  width: min(400px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.25);
+}
+.ask-dlg::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+.ask-dlg h3 {
+  margin: 0 0 8px;
+}
+.ask-dlg p {
+  margin: 0 0 18px;
+  line-height: 1.45;
+}
+.ask-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------- Startseite: Fortschritt, Strecke des Tages */
+
+.progress-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  width: 100%;
+  margin: 4px 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.progress-strip:hover {
+  border-color: var(--muted);
+}
+.progress-strip small {
+  color: var(--muted);
+}
+.ps-lvl {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #0f6b3a;
+  color: #fff;
+  font-weight: 700;
+}
+.ps-more {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 600;
+}
+.daily-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 14px 18px;
+  border: 0;
+  border-left: 6px solid #f0a020;
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.daily-card > span:nth-child(2) {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+.daily-card small {
+  color: var(--muted);
+}
+.home-links {
+  margin-top: 18px;
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------- Lobby: Varianten & Ideen */
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: -2px 0 12px;
+}
+.presets small {
+  color: var(--muted);
+}
+.presets button {
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.presets button:hover {
+  border-color: var(--muted);
+}
+.presets button.on {
+  border-color: var(--accent);
+  font-weight: 700;
+}
+
+/* ---------------------------------------------------------------- Endstand & Auflösung */
+
+.end-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+.early-end {
+  margin: 0 0 10px;
+}
+.q-log {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 14px;
+  padding: 0;
+  list-style: none;
+}
+.q-log li {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--panel);
+  border-left: 4px solid var(--line);
+}
+.q-log li.right {
+  border-left-color: var(--good);
+}
+.q-log li.part {
+  border-left-color: var(--warn);
+}
+.q-log li.wrong {
+  border-left-color: var(--err);
+}
+.q-log .ql-mark {
+  font-weight: 800;
+  text-align: center;
+}
+.q-log li.right .ql-mark {
+  color: var(--good);
+}
+.q-log li.wrong .ql-mark {
+  color: var(--err);
+}
+.q-log .ql-text small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+}
+.practice-box {
+  margin: 4px 0 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+.practice-box p {
+  margin: 0 0 8px;
+}
+.round-tip {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff8e6;
+  color: #6b4b00;
+  line-height: 1.6;
+}
+.mistakes {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fde8e8;
+}
+
+/* ---------------------------------------------------------------- Strecke des Tages */
+
+.share-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 6px;
+}
+.share-preview {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  font: 13px/1.5 ui-monospace, Consolas, monospace;
+  white-space: pre-wrap;
+}
+.board-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.podium.board li.gap {
+  justify-content: center;
+  color: var(--muted);
+}
+.daily .od {
+  margin: 10px 0;
+}
+
+/* ---------------------------------------------------------------- Mein Wien */
+
+.me-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0;
+}
+.me-card {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.me-card .big {
+  font-size: 26px;
+}
+.guest-hint {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #e3f4e8;
+  color: #14572b;
+}
+.me-modes {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+.me-mode summary {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.me-mode .chips {
+  padding: 8px 4px;
+}
+@media (max-width: 520px) {
+  .me-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------- Medaillen in Stufen */
+
+.medal .tier-name {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+.medal.tier-1 {
+  border-top: 3px solid #b0773a;
+}
+.medal.tier-1 .tier-name {
+  background: #f3e1cc;
+  color: #6b3d00;
+}
+.medal.tier-2 {
+  border-top: 3px solid #9aa3ad;
+}
+.medal.tier-2 .tier-name {
+  background: #e6e9ed;
+  color: #3a3f47;
+}
+.medal.tier-3 {
+  border-top: 3px solid #e0a100;
+}
+.medal.tier-3 .tier-name {
+  background: #fff4cc;
+  color: #6b4b00;
+}
+.medal-prog {
+  display: block;
+  width: 80%;
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.medal-prog i {
+  display: block;
+  height: 100%;
+  background: var(--good);
+}
+
+/* ---------------------------------------------------------------- Chat: Schnell-Reaktionen */
+
+.chat-reactions {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px 0;
+  overflow-x: auto;
+}
+.chat-reactions button {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.chat-reactions button:hover {
+  border-color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- Startseite am Handy: Beitreten weiter oben */
+
+@media (max-width: 760px) {
+  .home {
+    display: flex;
+    flex-direction: column;
+  }
+  .home > .home-bottom {
+    order: -1;
+    margin: 0 0 14px;
+  }
+  .home > .hero {
+    order: -2;
+  }
+}
+
+/* ---------------------------------------------------------------- Theme-Knopf */
+
+.theme-btn {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 999px;
+  width: 34px;
+  height: 34px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+/* Ausstieg per Tastatur: Liste im Formular aufgeklappt */
+.alight-select.expanded {
+  height: auto;
+  padding: 4px;
+  overflow-y: auto;
+}
+.alight-select.expanded option {
+  padding: 3px 6px;
 }

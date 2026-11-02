@@ -15,7 +15,7 @@ const PAGES: [LegalPage, string][] = [
   ['quellen', 'Quellen & Lizenzen'],
 ];
 /** Stand der Datenschutzerklärung – bei inhaltlichen Änderungen anpassen */
-const PRIVACY_DATE = '31. Oktober 2026';
+const PRIVACY_DATE = '2. November 2026';
 
 const sheet = h('div', { class: 'acct-sheet legal-sheet', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Rechtliches' });
 sheet.hidden = true;
@@ -113,9 +113,9 @@ function datenschutz(l: LegalInfo, email: string | null, mailOn: boolean): strin
     <ul>
       <li>Benutzername und Passwort – das Passwort nur als nicht umkehrbarer Hash, niemand kann es lesen.</li>
       <li>E-Mail-Adresse (freiwillig) – nur für „Passwort vergessen“, für andere nie sichtbar.</li>
-      <li>Spielstand (Lernfortschritt, Einstellungen, Tutorial), Statistik (Spiele, Punkte, Medaillen, Lieblingslinien), Freundschaften und Einladungen, Zeitpunkt der letzten Aktivität.</li>
+      <li>Spielstand (Lernfortschritt, Einstellungen, Tutorial, Serie und Sammelkarte), Statistik (Spiele, Punkte, Medaillen, Lieblingslinien, Strecke des Tages), Freundschaften und Einladungen, Zeitpunkt der letzten Aktivität.</li>
     </ul>
-    <p>Sichtbar für alle: Name, Level, Medaillen und seit wann du dabei bist. Nur für Freunde: Statistik, Lieblingslinien und ob du online bist.</p>
+    <p>Sichtbar für alle: Name, Level, Medaillen und seit wann du dabei bist – und, wenn du die Strecke des Tages spielst, dein Name mit Punkten in deren Bestenliste. Nur für Freunde: Statistik, Lieblingslinien und ob du online bist.</p>
     <p>Rechtsgrundlage: Nutzungsvertrag (Art. 6 Abs. 1 lit. b DSGVO). Speicherdauer: bis du den Account löschst (Account-Fenster → ⚙️ → „Account löschen“) – dann ist alles sofort weg. Anmeldungen laufen nach 180 Tagen ab, Einladungen nach 2 Stunden.</p>
 
     <h4>4. „Passwort vergessen“</h4>

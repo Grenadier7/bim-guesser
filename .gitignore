@@ -11,3 +11,4 @@ data/accounts.db*
 data/mails.jsonl
 data/routing-overrides.json
 data/config/
+data/daily.json

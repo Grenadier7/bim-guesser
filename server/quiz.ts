@@ -130,6 +130,20 @@ export class QuizGame extends Lobby {
     this.emitState();
   }
 
+  endGame(token: string) {
+    this.requireHost(token);
+    const played = this.current + (this.status === 'revealed' ? 1 : 0);
+    if (this.phase !== 'playing' || played <= 0) return this.backToLobby(token);
+    this.clearTimer();
+    this.questions = this.questions.slice(0, played);
+    this.current = played - 1;
+    this.status = null;
+    this.reveal = null;
+    this.finishGame();
+    this.touch();
+    this.emitState();
+  }
+
   private open(i: number) {
     this.current = i;
     this.status = 'open';

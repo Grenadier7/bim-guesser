@@ -8,6 +8,9 @@ import type { FriendsList, Me, Profile, UserListItem } from '../../shared/types.
 import { ApiError } from './api.ts';
 import { loadJson, onSaveJson, saveJson } from './storage.ts';
 import { mergeProgress } from '../../shared/progress.ts';
+import { reachedKeys } from '../../shared/career.ts';
+
+export const SEEN_MEDALS = 'oeffi-seen-medals';
 
 /** synchronisierte Schlüssel: 'merge' = beim Anmelden zusammenführen, 'account' = Account gewinnt */
 const SYNC: Record<string, 'merge' | 'account'> = {
@@ -16,10 +19,11 @@ const SYNC: Record<string, 'merge' | 'account'> = {
   'oeffi-my-lines-v1': 'merge',
   'oeffi-progress-v1': 'merge',
   'oeffi-training-memory-v1': 'merge',
+  'oeffi-mistakes-v1': 'account',
+  'oeffi-career-v1': 'merge',
   'oeffi-training-config-v1': 'account',
   'oeffi-guesser-prefs-v2': 'account',
 };
-const SEEN_MEDALS = 'oeffi-seen-medals';
 const POLL_MS = 20_000;
 
 export const account = {
@@ -140,7 +144,8 @@ export async function signedIn(me: Me) {
     upload['oeffi-guesser-prefs-v2'] = { ...prefs, name: me.name };
   }
   if (Object.keys(upload).length) await accountApi.saveData(upload).catch(() => {});
-  saveJson(SEEN_MEDALS, me.medals.filter((m) => m.at).map((m) => m.id));
+  // Medaillen vom Server (inkl. der als Gast erspielten) nicht als „neu“ melden – nur, was ab jetzt dazukommt
+  saveJson(SEEN_MEDALS, [...new Set([...loadJson<string[]>(SEEN_MEDALS, []), ...reachedKeys(me.medals)])]);
   if (changedLocal) location.reload();
   else changed();
 }
@@ -175,8 +180,8 @@ export async function deleteAccount(password: string) {
 /** neue Medaillen seit dem letzten Mal (und merken) */
 export function newMedals(me: Me) {
   const seen = new Set(loadJson<string[]>(SEEN_MEDALS, []));
-  const fresh = me.medals.filter((m) => m.at && !seen.has(m.id));
-  if (fresh.length) saveJson(SEEN_MEDALS, [...seen, ...fresh.map((m) => m.id)]);
+  const fresh = me.medals.filter((m) => m.tier && !seen.has(`${m.id}:${m.tier}`));
+  if (fresh.length) saveJson(SEEN_MEDALS, [...seen, ...reachedKeys(fresh)]);
   return fresh;
 }
 

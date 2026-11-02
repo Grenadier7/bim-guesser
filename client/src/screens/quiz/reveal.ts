@@ -8,6 +8,7 @@ import { app, isHost, quizState } from '../../store.ts';
 import { esc, h, lineChip, toast } from '../../ui.ts';
 import { hostBar } from '../host.ts';
 import type { Screen } from '../screen.ts';
+import { addMistakes } from '../../mistakes.ts';
 import { chip, drawLinesColored, sketchEnds, linesAt, drawLine, areaOf } from './common.ts';
 
 // ---------------------------------------------------------------- Auflösung
@@ -139,6 +140,28 @@ export function quizRevealScreen(panel: HTMLElement): Screen {
     } else panel.append(h('div', { class: 'waiting-host' }, 'Warte auf den Host …'));
   }
 
+  // eigenes Ergebnis für den Endstand merken (bei Frage 1 beginnt die Liste neu)
+  {
+    const r = st0.reveal;
+    if (r) {
+      if (st0.current === 0) app.quizLog.clear();
+      const mine = r.results.find((x) => x.playerId === myId);
+      const correct = new Set(Array.isArray(r.correct) && typeof r.correct[0] === 'string' ? (r.correct as string[]) : typeof r.correct === 'string' ? [r.correct] : []);
+      // gemeint ist die Lösung (bei „Welche Linie verbindet U3 und U6?“ die 9 – nicht U3 und U6)
+      const lines = new Set((q.options ?? []).filter((o) => o.lineId && correct.has(o.id)).map((o) => o.lineId!));
+      if (!lines.size && r.revealLineId) lines.add(r.revealLineId);
+      if (!lines.size) for (const id of r.drawLines ?? []) lines.add(id);
+      app.quizLog.set(st0.current, {
+        icon: QUIZ_TYPES[q.type].icon,
+        prompt: q.prompt,
+        base: r.cancelled ? null : (mine?.base ?? 0),
+        points: mine?.points ?? 0,
+        explanation: r.explanation,
+        lines: [...lines],
+      });
+      if (!r.cancelled && (mine?.base ?? 0) < 0.99) addMistakes(lines);
+    }
+  }
   drawMap();
   render();
   let wasHost = isHost();

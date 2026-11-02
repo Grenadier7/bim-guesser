@@ -1,5 +1,5 @@
 import type { Evaluation, RoundReveal } from '../../../shared/types.ts';
-import { MODE_LABEL, RESTRICTIONS, TIPS, fmtTimeLeft, maxRoundPoints, restrictionLabel, routeCostOf, scoringUnit, transferPenalty, transfersOf } from '../../../shared/rules.ts';
+import { MODE_LABEL, RESTRICTIONS, TIPS, isNightSlot, fmtTimeLeft, maxRoundPoints, restrictionLabel, routeCostOf, scoringUnit, transferPenalty, transfersOf } from '../../../shared/rules.ts';
 import { api } from '../api.ts';
 import type { PlayerRoute } from '../map.ts';
 import { netLayer, netView, smoothRoute } from '../netmap.ts';
@@ -7,6 +7,9 @@ import { app, routeState, currentRound, getReveal, isHost } from '../store.ts';
 import { starMini } from '../learn/model.ts';
 import { chain, esc, h, makeExpandable, routeDetails, toast, viaText } from '../ui.ts';
 import { hostBar } from './host.ts';
+import { XP } from '../../../shared/career.ts';
+import { record } from '../career.ts';
+import { addMistakes } from '../mistakes.ts';
 import { loadingHtml, type Screen } from './screen.ts';
 
 function fmt(n: number): string {
@@ -133,7 +136,10 @@ export function revealScreen(panel: HTMLElement): Screen {
       panel.append(h('div', { class: 'restriction' }, `${RESTRICTIONS[round.restriction].icon} ${esc(restrictionLabel(round.restriction, round.bannedLines))}`));
     const isBest = s.settings.goal === 'best';
     const penalty = transferPenalty(s.settings);
-    if (mine) panel.append(myCard(mine, routeCostOf(best, s.settings), isBest, penalty));
+    if (mine) {
+      recordRound(mine);
+      panel.append(myCard(mine, routeCostOf(best, s.settings), isBest, penalty));
+    }
 
     if (multi) {
       const table = h('div', { class: 'ranking' });
@@ -214,6 +220,35 @@ export function revealScreen(panel: HTMLElement): Screen {
     panel.scrollTop = scroll;
   }
 
+  /**
+   * Nach einer schwachen Runde ein konkreter Tipp statt nur Punkte: welche Linien die schnellste Verbindung nimmt,
+   * die man selbst nicht benutzt hat – mit ☆ zum Merken. Diese Linien landen auch in der Fehlerliste (Lernen → Üben).
+   */
+  function tipHtml(ev: Evaluation, diff: number | null): string {
+    const best = reveal!.routes[0];
+    if (!best || reveal!.cancelled || (diff !== null && diff < 3 && !ev.error)) return '';
+    const mine = new Set(ev.legs.map((l) => l.line));
+    const missed = best.legs.filter((l) => l.mode !== 'W' && l.line && !l.line.split('/').some((id) => mine.has(id)));
+    if (!missed.length) return '';
+    const ids = [...new Set(missed.flatMap((l) => l.line!.split('/').filter((id) => app.net.lines.has(id))))];
+    addMistakes(ids.slice(0, 4));
+    const via = missed[0].fromName ? ` ab <b>${esc(missed[0].fromName)}</b>` : '';
+    const gain = diff !== null && diff > 0 ? ` – das wären <b>${diff} min</b> weniger gewesen` : '';
+    return `<div class="round-tip">💡 Der Trick: ${missed.map((l) => `${chain([l])}${starMini(l.line!)}`).join(' ')}${via}${gain}.</div>`;
+  }
+
+  /** Runde für Fortschritt und Sammelkarte verbuchen (einmal je Runde) */
+  function recordRound(ev: Evaluation) {
+    if (reveal!.cancelled || ev.elapsedSec == null) return;
+    const s = routeState();
+    const route = ev.score.route;
+    record(`round:${s.id}:${idx}:${s.rounds[idx].from?.id}`, {
+      xp: XP.round(ev.score.total),
+      count: { rounds: 1, perfect: route >= 1000 ? 1 : 0, beat: route > 1000 ? 1 : 0, night: isNightSlot(s.settings.slot) ? 1 : 0, blindPerfect: s.settings.xtreme === 'noMap' && route >= 1000 ? 1 : 0 },
+      legs: ev.error ? undefined : ev.legs,
+    });
+  }
+
   function myCard(ev: Evaluation, best: number, isBest: boolean, penalty: number): HTMLElement {
     const word = isBest ? 'beste' : 'schnellste';
     let verdict: string;
@@ -222,7 +257,12 @@ export function revealScreen(panel: HTMLElement): Screen {
     else if (ev.matchedRank === 0) verdict = `<p class="good">Volltreffer – das ist die ${word} Verbindung!</p>`;
     else if (ev.matchedRank !== null) verdict = `<p>Das ist Verbindung <b>Nr. ${ev.matchedRank + 1}</b> der Liste.</p>`;
     else if (ev.costMin !== null && ev.costMin < best) verdict = `<p class="good">${isBest ? 'Besser' : 'Schneller'} als alle Verbindungen der Liste – stark!</p>`;
-    else verdict = '<p>Nicht unter den Top-Verbindungen.</p>';
+    else {
+      // andere Linien, aber genauso gut wie eine der Liste → das auch so sagen
+      const st = routeState().settings;
+      const same = reveal!.routes.findIndex((r) => ev.costMin !== null && Math.abs(routeCostOf(r, st) - ev.costMin) < 0.5);
+      verdict = same >= 0 ? `<p class="good">Eigene Route – ${isBest ? 'genauso gut' : 'genauso schnell'} wie Verbindung <b>Nr. ${same + 1}</b>.</p>` : '<p>Eine eigene Route – nicht unter den schnellsten der Liste.</p>';
+    }
     const diff = ev.costMin !== null ? ev.costMin - best : null;
     const tr = ev.route ? transfersOf(ev.route) : 0;
     const max = maxRoundPoints(routeState().settings);
@@ -235,6 +275,7 @@ export function revealScreen(panel: HTMLElement): Screen {
          ${isBest && ev.durationMin !== null && tr ? `<small>gewertet: ${ev.durationMin} min + ${tr} × ${penalty} min Umstieg = <b>${ev.costMin} min</b></small><br>` : ''}
          ${diff !== null ? `<small>${diff <= 0 ? `gleich gut oder besser als die ${word}` : `+${diff} min gegenüber der ${word}n`}</small>` : ''}
          ${verdict}
+         ${tipHtml(ev, diff)}
          ${ev.locateDist ? `<small>📍 A ${ev.locateDist.from != null ? `${fmt(ev.locateDist.from)} m` : '–'} · B ${ev.locateDist.to != null ? `${fmt(ev.locateDist.to)} m` : '–'} daneben</small>` : ''}
          ${breakdown(ev)}
        </div>`,

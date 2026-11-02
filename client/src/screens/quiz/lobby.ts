@@ -6,7 +6,7 @@ import { DEFAULT_QUIZ_SETTINGS, FREQUENCY_LABELS, QUIZ_QUESTION_COUNTS, QUIZ_TIM
 import { api } from '../../api.ts';
 import { app, endSession, inviteLink, isHost, quizState, savePrefs } from '../../store.ts';
 import { inviteButton } from '../../accountui.ts';
-import { esc, toast } from '../../ui.ts';
+import { ask, esc, toast } from '../../ui.ts';
 import { areaPicker, deferWhileEditing, patchQueue, seg } from '../../widgets.ts';
 import { bindKick } from '../host.ts';
 import type { Screen } from '../screen.ts';
@@ -126,8 +126,8 @@ export function quizLobbyScreen(panel: HTMLElement): Screen {
           : null,
       ),
     );
-    panel.querySelector('#resetAll')?.addEventListener('click', () => {
-      if (!confirm('Alle Quiz-Einstellungen auf den Standard zurücksetzen?')) return;
+    panel.querySelector('#resetAll')?.addEventListener('click', async () => {
+      if (!(await ask('Alle Quiz-Einstellungen auf den Standard zurücksetzen?', { ok: 'Zurücksetzen' }))) return;
       send(structuredClone(DEFAULT_QUIZ_SETTINGS));
     });
     panel.querySelectorAll<HTMLButtonElement>('[data-area]').forEach((b) => b.addEventListener('click', () => send({ area: Number(b.dataset.area) })));

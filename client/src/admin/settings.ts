@@ -7,7 +7,7 @@ import { ruleMatches } from '../../../shared/pools.ts';
 import { DISTANCES, MODE_LABEL, NET_MODES, RESTRICTION_FREQUENCIES, SCORING_MODES, STATION_GROUPS, STATION_KINDS, TIME_LIMITS, TIME_SLOTS, XTREME_LEVELS, scoringModeOf, type ScoringMode } from '../../../shared/rules.ts';
 import type { DayType, Mode, StationKind, TipKind } from '../../../shared/types.ts';
 import type { NetIndex } from '../net.ts';
-import { esc, toast } from '../ui.ts';
+import { ask, esc, toast } from '../ui.ts';
 
 import { adm, planNet } from './api.ts';
 import { addrMap, type AddrRow } from './addrmap.ts';
@@ -455,8 +455,8 @@ export function settingsTab(rerender: () => void): Tab {
         toast('Gespeichert – gilt ab sofort', 'info');
       }),
     );
-    root.querySelector<HTMLButtonElement>(`[data-reset="${k}"]`)?.addEventListener('click', () => {
-      if (!confirm(`„${st!.labels[k]}“ auf den Standard zurücksetzen?`)) return;
+    root.querySelector<HTMLButtonElement>(`[data-reset="${k}"]`)?.addEventListener('click', async () => {
+      if (!(await ask(`„${st!.labels[k]}“ auf den Standard zurücksetzen?`, { ok: 'Zurücksetzen' }))) return;
       void run(async () => {
         st = await adm<ConfigState>('DELETE', `/api/admin/config/${k}`);
         drafts.delete(k);
@@ -476,8 +476,8 @@ export function settingsTab(rerender: () => void): Tab {
         });
     });
     root.querySelectorAll<HTMLButtonElement>('[data-restore]').forEach((b) =>
-      b.addEventListener('click', () => {
-        if (!confirm('Alle Einstellungen auf diesen Stand zurücksetzen?')) return;
+      b.addEventListener('click', async () => {
+        if (!(await ask('Alle Einstellungen auf diesen Stand zurücksetzen?', { ok: 'Zurücksetzen', danger: true }))) return;
         void run(async () => {
           st = await adm<ConfigState>('POST', `/api/admin/config-versions/${b.dataset.restore}/restore`);
           drafts.clear();

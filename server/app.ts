@@ -14,6 +14,8 @@ import { adminRoutes } from './routes/admin.ts';
 import { accountRoutes } from './routes/accounts.ts';
 import { gameRoutes } from './routes/games.ts';
 import { trainingRoutes } from './routes/training.ts';
+import { dailyRoutes } from './routes/daily.ts';
+import { DailyService } from './daily.ts';
 import { rateLimit, securityHeaders } from './security.ts';
 import { TrainingService } from './training.ts';
 
@@ -26,9 +28,11 @@ export interface AppOptions {
   accountsDb?: string;
   /** Mailversand (Passwort-Reset); Standard: SMTP_URL */
   mail?: SendMail;
+  /** gespeicherte Strecken des Tages; Standard STATE_DIR/daily.json */
+  dailyFile?: string;
 }
 
-export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer() }: AppOptions) {
+export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(), dailyFile }: AppOptions) {
   const started = Date.now();
   // Netzpläne und Spiel-Konfiguration der Admin-Seite (Standard = Werte im Code)
   const plans = planStore();
@@ -94,6 +98,7 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
   setInterval(() => accounts.cleanup(), 3600_000).unref();
   const training = new TrainingService(net);
   training.onLines = (lines) => adminAcc.countLines(lines);
+  const daily = new DailyService(net, accounts, { file: dailyFile });
 
   const app = express();
   app.disable('x-powered-by');
@@ -140,6 +145,7 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
   gameRoutes(app, games, { accounts, optionalUser });
   adminRoutes(app, { accounts, admin: adminAcc, games, net, version, started, plans, runtime, config: cfg });
   trainingRoutes(app, training, { accounts, optionalUser });
+  dailyRoutes(app, daily, optionalUser);
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: 'Nicht gefunden' });
@@ -151,5 +157,5 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
   }
 
   app.use(errorHandler);
-  return { app, games, accounts };
+  return { app, games, accounts, daily };
 }

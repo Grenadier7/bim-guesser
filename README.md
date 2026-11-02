@@ -85,10 +85,56 @@ zeigen den nächsten Schritt und heben das passende Feld hervor; danach die Punk
 - „Linie zeichnen“ wird am Server bewertet: Anteil der Stationen nahe der Zeichnung (abzüglich dessen, was eine
   gerade Linie schon träfe) und Anteil der Punkte, die auf der Linie liegen.
 - Fragen werden am Server erzeugt und bewertet (`shared/quiz.ts`): richtig = 500–1000 Punkte je nach Tempo;
-  „Linie zeichnen“ zählt nur die Genauigkeit (bis 1000), nicht das Tempo. „Wo liegt …?“ gibt Teilpunkte nach Entfernung (voll bis 200 m, 0 ab 3 km), Mehrfachauswahl Teilpunkte
+  „Linie zeichnen“ zählt nur die Genauigkeit (bis 1000), nicht das Tempo. „Wo liegt …?“ gibt Teilpunkte nach Entfernung (voll bis 250 m, 0 ab 3 km – wie in der Routenjagd), Mehrfachauswahl Teilpunkte
   (falsche ziehen ab). Mehrdeutige Antworten (z.B. S1/S2) werden vermieden. Nur reguläres Netz: keine
   Sonderlinien (71E, 26E) und keine Halte aus Sonderführungen.
 - Host: Pause, Frage überspringen, Jetzt auflösen, Spiel beenden.
+
+## Strecke des Tages
+
+📅 auf der Startseite (Link: `/#daily`): für alle dieselbe Strecke, **ein Versuch am Tag** (Wiener Zeit), ohne
+Zeitlimit und Hilfen, gewertet wie die Route in der Routenjagd (bis 1300). Danach: Ergebnis zum **Teilen** (Emoji-Zeile
+mit Verkehrsmitteln und Punkte-Kästchen, verrät die Lösung nicht), die schnellsten Verbindungen und die **Bestenliste**
+für heute bzw. die Woche (Mo–So, Summe) – alle oder nur Freunde. Bestenliste und „einmal am Tag“ gelten mit Account;
+Gäste spielen auch, ihr Ergebnis bleibt im Browser.
+
+Die Strecke wird nicht einfach zufällig gezogen (`server/daily.ts`):
+
+1. Start und Ziel sind U- oder S-Bahn-Stationen, 3–12 km auseinander – mit U + S kommt jeder hin.
+2. Die schnellste Verbindung hat mindestens einen Umstieg.
+3. Perfekt ist nicht offensichtlich: nur mit U-Bahn und S-Bahn gibt es höchstens 900 Punkte (die beste Verbindung
+   nimmt eine Bim/einen Bus oder eine geschickte Kombination).
+4. Trotzdem machbar: nur mit U-Bahn und S-Bahn gibt es mindestens 350 Punkte.
+5. Abwechslung: Stationen der letzten 7 Tage kommen nicht dran.
+
+Erfüllt nach 30 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strecke je Tag steht in
+`STATE_DIR/daily.json` (bleibt nach einem Neustart gleich); die Auflösung zeigt zum Vergleich die Zeit nur mit U + S.
+
+## Fortschritt & Motivation
+
+- **🗺️ Mein Wien** (Leiste oben auf der Startseite): Level, **Serie** (Tage in Folge; ein **Joker** je 7 Tage überbrückt
+  einen verpassten Tag), **Wochenziel** (5 Spiele/Strecken Mo–So), Medaillen und die **Sammelkarte**: alle Linien und
+  Stationen, die man auf eigenen gültigen Routen benutzt hat (Routenjagd, Training, Strecke des Tages) – je Verkehrsmittel
+  „x von y“. Geht ohne Account (Browser), mit Account auf allen Geräten (`oeffi-career-v1`, wird zusammengeführt).
+- **Fehler wiederholen**: Linien aus falschen Quiz-Antworten und aus Runden, in denen die schnelle Verbindung eine andere
+  Linie nahm, landen unter Lernen → Üben → „Fehler wiederholen“; geübt fallen sie heraus. Quiz-Endstand: Liste aller
+  Fragen (✓/½/✗ mit Erklärung) und „Diese jetzt üben“.
+- **Nach schwachen Runden**: konkreter Tipp („Der Trick: S1/S2 ab Handelskai – das wären 6 min weniger gewesen“, mit ☆
+  zum Merken); eigene Route genauso schnell wie eine der Liste → „genauso schnell wie Nr. 3“. Jede gültige Route bringt
+  mindestens 50 Routenpunkte (Ankommen zählt).
+- **Endstand** (Routenjagd und Quiz gleich): Punkte mit Balken und Urteil bzw. Siegertreppchen, 🔁 **Revanche** (gleiche
+  Einstellungen, sofort los), allein: Vorschlag der nächsten Stufe (≥ 70 %) bzw. einer leichteren (< 25 %).
+  „Spiel beenden“ mitten im Spiel zeigt den Endstand der gespielten Runden.
+- **Varianten** in der Routenjagd-Lobby: Ohne U-Bahn, Nur Bim (Start/Ziel an Bim-Stationen) – für jede Runde, mit
+  Extrazeit. **Ideen**: ☕ Kaffeepause (3 Runden à 2 min, leicht), 🌙 Nachts, 🙈 Blindflug (X-treme ohne Karte),
+  📍 Bezirk der Woche (Start/Ziel meist im Bezirk, jede Kalenderwoche ein anderer).
+- **Chat**: Schnell-Reaktionen 👏 😂 😮 🔥 🚋 GG und 🎲 (= `/ez`).
+- **Tastatur**: Linie tippen, ← → (↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt sie und klappt den
+  Ausstieg auf, ↑ ↓ wählt den Halt, Enter übernimmt, Escape = andere Linie – Routen ganz ohne Maus.
+- **Dunkelmodus**: Knopf oben (🌗 wie das System · 🌙 dunkel · ☀️ hell), Karte mit dunklen Kacheln. Die dunklen Farben
+  erzeugt `npm run build:dark` aus `style.css` (`client/src/dark.css`, nach CSS-Änderungen neu ausführen).
+- Bestätigungen (Spiel beenden, Spieler entfernen …) als eigener Dialog statt Browser-Popup; das Tutorial ist über
+  „Tutorial wiederholen“ unten auf der Startseite jederzeit erreichbar; Datum im Spiel nur „Dienstag, 12:00“.
 
 ## Accounts
 
@@ -100,10 +146,15 @@ Oben rechts **👤 Anmelden** – ohne Account geht alles wie bisher. Mit Accoun
 - **Spielstand auf allen Geräten**: Lernpfad, gemerkte Linien, Lernstand, Tutorial, Trainings-Wiederholungen und
   Einstellungen. Beim Anmelden auf einem Gerät wird der Browser-Stand mit dem Account zusammengeführt (Fortschritt
   geht nie verloren), danach gilt der Account (`client/src/account.ts`, `client/src/boot.ts`).
-- **Level & XP**: Runde 5 + Punkte/20, Routenjagd 20 (+30 Sieg), Quiz 10 + Punkte/50 (+20 Sieg), Trainingsstrecke
-  10–20, Kurs 40 (+60 gemeistert), Tutorial 50. Level 2 bei 100 XP, jedes weitere Level 50 XP mehr.
-- **Medaillen** (14): z.B. Volltreffer (1000 Routenpunkte), Schneller als die Bestzeit, Volle 1300, Sieger, Quiz-Ass,
-  Netzkenner/Netzmeister (Lernpfad), Gesellig (3 Freunde) – neue werden gemeldet.
+- **Level & XP** (auch ohne Account, siehe „Mein Wien“): Runde 5 + Punkte/20, Routenjagd 20 (+30 Sieg), Quiz 10 +
+  Punkte/50 (+20 Sieg), Trainingsstrecke 10–20, Strecke des Tages 15 + Punkte/20, Kurs 40 (+60 gemeistert), Tutorial 50.
+  Level 2 bei 100 XP, jedes weitere Level 50 XP mehr (`shared/career.ts`). Als Gast gesammelte XP zählen nach dem
+  Anmelden mit.
+- **Medaillen** (17, davon 2 geheim) in Stufen Bronze/Silber/Gold, z.B. Stammgast (1/10/50 Routenjagden), Volltreffer,
+  Schlauer als die Auskunft, Sieger, Quiz-Ass, Trainingsfleißig, Netzkenner (Kurse geschafft + gemeistert), Dranbleiber
+  (Serie 3/7/30 Tage), Strecke des Tages, Entdecker (Stationen), Bim-Fan (Gold = alle Bim-Linien), Nachteule,
+  Gesellig, Aufsteiger; geheim: Blindflug, Geisterstunde. Profil zeigt Fortschritt zur nächsten Stufe; neue Stufen
+  werden gemeldet – auch ohne Account.
 - **Statistik & Lieblinge**: Spiele, Siege, Ø Routenpunkte, Zeit in Öffis, Kurse; Lieblingslinie je U-Bahn/S-Bahn/
   Bim/Bus und Lieblingsstation. Gezählt wird die *bewusste Wahl*: Gab es an der Einstiegsstation keine andere Linie
   (92B ab Frachtenbahnhof Lobau), zählt die Fahrt nur 0,15 – mit Alternativen (95A statt 93A am Großen Biberhaufen)
@@ -400,7 +451,7 @@ zurücksetzen“ alles auf diese Werte zurück, im Training „↺ Einstellungen
 
 | Teil | Punkte | Regel |
 |---|---|---|
-| Route | 0–1000 (+300) | Toleranz max(1 min, 4 %), danach fallend, 0 bei +70 % Reisezeit (z.B. 40 → 60 min ≈ 200). Besser als die beste gefundene Route: je 1 % besser +2 %, max. 1300 (z.B. 27 statt 30 min = 1200) |
+| Route | 50–1000 (+300) | 1000 nur für die beste Zeit; in der Toleranz max(1 min, 4 %) sanft bis 980 (44 statt 43 min = 988), danach fallend; ab +70 % Reisezeit 50 fürs Ankommen (z.B. 40 → 60 min ≈ 195). Besser als die beste gefundene Route: je 1 % besser +2 %, max. 1300 (z.B. 27 statt 30 min = 1200) |
 | Tipps | günstig −40 / −40 / −40 / −50 % · teuer −65 / −65 / −65 / −75 % | Anteil der Routenpunkte, mehrere Tipps multiplikativ, mind. 10 % bleiben. |
 | Zeitbonus | bis +10 % | der Routenpunkte (nach Tipps), linear mit Restzeit; ohne Limit gemessen an 1:30 |
 | Wo liegt das? | bis +150 | 75 je Station: voll bis 250 m, 0 ab 3 km |

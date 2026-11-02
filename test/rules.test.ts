@@ -7,16 +7,21 @@ import { DEFAULT_SETTINGS } from '../shared/defaults.ts';
 
 const near = (actual: number, expected: number, tol: number) => assert.ok(Math.abs(actual - expected) <= tol, `${actual} ≉ ${expected} (±${tol})`);
 
-test('beste Route gibt die vollen 1000 Punkte, kleine Abweichungen sind toleriert', () => {
+test('nur die beste Zeit gibt volle 1000 – 1 min langsamer ein ganz klein wenig weniger', () => {
   assert.equal(scoreRoute(30, 30), 1000);
-  assert.equal(scoreRoute(31, 30), 1000); // Toleranz max(1 min, 4 %)
+  assert.equal(scoreRoute(44, 43), 988); // Toleranz max(1 min, 4 %): sanft bis 980
+  near(scoreRoute(31, 30), 983, 1);
+  assert.equal(scoreRoute(30 + 1.2, 30), 980);
+  // ohne Sprung am Ende der Toleranz
+  assert.ok(scoreRoute(30 + 1.21, 30) <= 980 && scoreRoute(30 + 1.21, 30) >= 975);
 });
 
-test('Punkte fallen mit der Reisezeit und sind bei +70 % weg', () => {
+test('Punkte fallen mit der Reisezeit – ab +70 % bleiben 50 fürs Ankommen', () => {
   near(scoreRoute(38, 30), 560, 25);
   near(scoreRoute(45, 30), 200, 25);
   near(scoreRoute(60, 40), 200, 25);
-  assert.equal(scoreRoute(30 * 1.7 + 2, 30), 0);
+  assert.equal(scoreRoute(30 * 1.7 + 2, 30), 50);
+  assert.equal(scoreRoute(300, 30), 50);
   for (let m = 30; m < 60; m++) assert.ok(scoreRoute(m + 1, 30) <= scoreRoute(m, 30), `nicht monoton bei ${m}`);
 });
 
@@ -60,9 +65,11 @@ test('N-4: Restzeit statt benötigter Zeit', () => {
 });
 
 test('Wertung von Hand nachgerechnet: scoreRoute-Tabelle', () => {
-  // Toleranz max(1, 4 %), danach f = 1 − Umweg/(Bestzeit·0,7), Punkte = 1000·f^1,5; besser als die Auskunft: +2 % je 1 %
-  const cases: [number, number, number][] = [[30, 30, 1000], [31.2, 30, 1000], [32, 30, 943], [38, 30, 556], [51, 30, 14], [52, 30, 1], [53, 30, 0],
-    [29, 30, 1067], [27, 30, 1200], [24, 30, 1300], [4, 5, 1200], [10, 0, 0]];
+  // Toleranz g = max(1, 4 %): 1000 − 20·Umweg/g; danach f = 1 − (Umweg − g)/(Bestzeit·0,7), Punkte = 980·f^1,5,
+  // mindestens 50 fürs Ankommen; besser als die Auskunft: +2 % je 1 %
+  // 32 vs 30: f = 1 − 0,8/21 = 0,9619 → 980·0,9434 = 924,5 · 38 vs 30: f = 1 − 6,8/21 = 0,6762 → 980·0,5560 = 544,9
+  const cases: [number, number, number][] = [[30, 30, 1000], [31.2, 30, 980], [32, 30, 925], [38, 30, 545], [51, 30, 50], [52, 30, 50], [53, 30, 50],
+    [29, 30, 1067], [27, 30, 1200], [24, 30, 1300], [4, 5, 1200], [10, 0, 50]];
   for (const [u, b, want] of cases) assert.equal(scoreRoute(u, b), want, `scoreRoute(${u}, ${b})`);
 });
 

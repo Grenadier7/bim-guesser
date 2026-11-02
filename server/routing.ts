@@ -15,7 +15,7 @@ import type { LatLon, Mode, NetMode, Restriction, RouteLeg, RouteOption, RouteSt
 import { lineColor, lineGroupLabel, regionalTrains, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
 import * as efa from './efa.ts';
 import { distM, type Network } from './network.ts';
-import { currentPlan, withPlan } from './plancontext.ts';
+import { currentPlan, isCancelled, withPlan } from './plancontext.ts';
 import { DEFAULT_PARAMS, paramsFor } from './plans.ts';
 
 /** Abfahrtszeiten relativ zum Zeitfenster, an denen gesampelt wird (Minuten) */
@@ -107,6 +107,8 @@ export interface RouteQuery {
   /** Wartezeit ab Abfragezeit mitzählen (Tür-zu-Tür) statt nur ab Abfahrt */
   countWait: boolean;
   restriction: Restriction | null;
+  /** nur diese Verkehrsmittel (z.B. U + S für die Strecke des Tages) – ersetzt die Einschränkung */
+  onlyModes?: Mode[];
   /** bei "banLines": verbotene Linien */
   banned?: string[];
   /** Wartezeiten als Durchschnitt (halber Takt) statt verketteter Fahrplan */
@@ -124,6 +126,7 @@ export interface RouteQuery {
 function restrictionQuery(r: Restriction | null): { mots?: number[]; maxChanges?: number } {
   if (r === 'noU') return { mots: [1, 3, 4, 5] };
   if (r === 'noBus') return { mots: [1, 2, 3, 4] };
+  if (r === 'onlyTram') return { mots: [3, 4] };
   if (r === 'oneTransfer') return { maxChanges: 1 };
   return {};
 }
@@ -513,7 +516,7 @@ export function topRoutes(net: Network, fromId: string, toId: string, slotTime: 
 async function topRoutesIn(net: Network, fromId: string, toId: string, slotTime: number, q: RouteQuery): Promise<RouteOption[]> {
   const from = net.mainEfaId(fromId);
   const to = net.mainEfaId(toId);
-  const rq = restrictionQuery(q.restriction);
+  const rq = q.onlyModes ? { mots: efa.motsForModes(q.onlyModes) } : restrictionQuery(q.restriction);
   let failures = 0;
   const batches = await Promise.all(
     SAMPLE_OFFSETS.map((o) =>
@@ -523,6 +526,7 @@ async function topRoutesIn(net: Network, fromId: string, toId: string, slotTime:
       }),
     ),
   );
+  if (isCancelled()) throw new efa.CancelledError();
   if (failures === SAMPLE_OFFSETS.length) throw new EfaUnavailableError('Die Wiener-Linien-Auskunft ist gerade nicht erreichbar.');
 
   const banned = new Set(q.banned ?? []);

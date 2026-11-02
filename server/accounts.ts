@@ -33,6 +33,8 @@ import type {
 } from '../shared/types.ts';
 import { isSpecialLine } from '../shared/rules.ts';
 import { MONOTONE_KEYS, mergeProgress } from '../shared/progress.ts';
+import type { DailyBoardRow } from '../shared/types.ts';
+import { CAREER_KEY, XP, levelOf, medalList, reachedKeys, streakOf, type Career, type MedalStats } from '../shared/career.ts';
 import { GameError, type Lobby } from './lobby.ts';
 import type { Network } from './network.ts';
 import { STATE_DIR } from './paths.ts';
@@ -66,33 +68,7 @@ function isReservedName(n: string): boolean {
 const COURSES_KEY = 'oeffi-courses-v1';
 const PROGRESS_KEY = 'oeffi-progress-v1';
 
-/** XP bis zum nächsten Level: 100, 150, 200, … */
-export function levelOf(xp: number): LevelInfo {
-  let level = 1;
-  let start = 0;
-  for (let need = 100; xp >= start + need; need += 50) {
-    start += need;
-    level++;
-  }
-  return { level, xp, levelXp: start, nextXp: start + 100 + 50 * (level - 1) };
-}
-
-const MEDALS: { id: string; icon: string; title: string; text: string }[] = [
-  { id: 'first-game', icon: '🎟', title: 'Erstes Spiel', text: 'Eine Routenjagd zu Ende gespielt' },
-  { id: 'games-10', icon: '🎫', title: 'Stammgast', text: '10 Routenjagden gespielt' },
-  { id: 'games-50', icon: '🏟', title: 'Dauerkarte', text: '50 Routenjagden gespielt' },
-  { id: 'perfect', icon: '🎯', title: 'Volltreffer', text: 'Eine Runde so schnell wie die beste Verbindung (1000 Routenpunkte)' },
-  { id: 'beat-api', icon: '🧠', title: 'Schneller als die Bestzeit', text: 'Eine Route gefunden, die schneller ist als die beste Verbindung' },
-  { id: 'max-route', icon: '💎', title: 'Volle 1300', text: 'Alle 1300 Routenpunkte in einer Runde' },
-  { id: 'winner', icon: '🏆', title: 'Sieger', text: 'Eine Routenjagd gegen andere gewonnen' },
-  { id: 'quiz-ace', icon: '🥇', title: 'Quiz-Ass', text: 'Ein Quiz ohne einen Fehler' },
-  { id: 'trainer', icon: '🏋', title: 'Trainingsfleißig', text: '25 Trainingsstrecken' },
-  { id: 'tutorial', icon: '🎓', title: 'Angekommen', text: 'Tutorial geschafft' },
-  { id: 'all-courses', icon: '📚', title: 'Netzkenner', text: 'Alle Kurse im Lernpfad gemacht' },
-  { id: 'master', icon: '⭐', title: 'Netzmeister', text: 'Alle Kurse gemeistert (Prüfung bestanden)' },
-  { id: 'friends-3', icon: '🤝', title: 'Gesellig', text: '3 Freunde' },
-  { id: 'level-10', icon: '🚀', title: 'Level 10', text: 'Level 10 erreicht' },
-];
+export { levelOf };
 
 // ---------------------------------------------------------------- Passwörter & Tokens
 
@@ -500,42 +476,65 @@ export class Accounts {
   level(userId: number): LevelInfo {
     const u = this.row(userId);
     const c = this.courses(userId);
-    // Lernen zählt auch: Kurs geschafft 40, gemeistert +60, Tutorial 50
-    return levelOf(u.game_xp + c.done * 40 + c.mastered * 60 + (this.tutorialDone(userId) ? 50 : 0));
+    // Lernen zählt auch (Kurs, gemeistert, Tutorial) – und XP, die vor dem Anmelden als Gast gesammelt wurden
+    return levelOf(u.game_xp + (this.career(userId).xp ?? 0) + c.done * XP.course + c.mastered * XP.mastered + (this.tutorialDone(userId) ? XP.tutorial : 0));
   }
 
   private addXp(userId: number, xp: number) {
     if (xp > 0) this.db.prepare('UPDATE users SET game_xp = game_xp + ? WHERE id = ?').run(Math.round(xp), userId);
   }
 
-  medals(userId: number): MedalPublic[] {
-    const got = new Map((this.db.prepare('SELECT medal, at FROM medals WHERE user_id = ?').all(userId) as { medal: string; at: number }[]).map((m) => [m.medal, m.at]));
-    return MEDALS.map((m) => ({ ...m, at: got.get(m.id) ?? null }));
+  /** synchronisierter Fortschritt aus dem Browser (Serie, Sammelkarte, Zähler) */
+  private career(userId: number): Partial<Career> {
+    const c = this.data(userId)[CAREER_KEY];
+    return c && typeof c === 'object' && !Array.isArray(c) ? (c as Partial<Career>) : {};
   }
 
-  /** neu erreichte Medaillen eintragen */
-  checkMedals(userId: number) {
+  /** Kennzahlen für die Medaillen: Spiele aus der Datenbank, Serie/Sammelkarte aus dem Browser-Stand (das Größere zählt) */
+  private medalStats(userId: number): MedalStats {
     const count = (sql: string) => Number((this.db.prepare(sql).get(userId) as { n: number }).n);
-    const games = count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'game'");
+    const car = this.career(userId);
+    const cc = car.c ?? {};
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
     const c = this.courses(userId);
-    const reached: Record<string, boolean> = {
-      'first-game': games >= 1,
-      'games-10': games >= 10,
-      'games-50': games >= 50,
-      perfect: count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'round' AND route >= 1000") > 0,
-      'beat-api': count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'round' AND route > 1000") > 0,
-      'max-route': count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'round' AND route >= 1300") > 0,
-      winner: count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'game' AND rank = 1 AND players >= 2") > 0,
-      'quiz-ace': count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'quiz' AND extra = 'ace'") > 0,
-      trainer: count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'training'") >= 25,
-      tutorial: this.tutorialDone(userId),
-      'all-courses': c.done >= c.total,
-      master: c.mastered >= c.total,
-      'friends-3': count('SELECT COUNT(*) AS n FROM friends WHERE (a = ?1 OR b = ?1) AND accepted = 1') >= 3,
-      'level-10': this.level(userId).level >= 10,
+    const tramIds = new Set(this.tramLines());
+    const lines = Array.isArray(car.lines) ? car.lines : [];
+    return {
+      games: Math.max(count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'game'"), num(cc.games)),
+      wins: Math.max(count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind IN ('game', 'quiz') AND rank = 1 AND players >= 2"), num(cc.wins)),
+      perfect: Math.max(count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'round' AND route >= 1000"), num(cc.perfect)),
+      beat: Math.max(count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'round' AND route > 1000"), num(cc.beat)),
+      quizAce: Math.max(count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'quiz' AND extra = 'ace'"), num(cc.quizAce)),
+      trainings: Math.max(count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'training'"), num(cc.trainings)),
+      courses: c.done + c.mastered,
+      tutorial: this.tutorialDone(userId) ? 1 : 0,
+      friends: count('SELECT COUNT(*) AS n FROM friends WHERE (a = ?1 OR b = ?1) AND accepted = 1'),
+      level: this.level(userId).level,
+      streak: Math.max(num(car.best), car.acts && typeof car.acts === 'object' ? streakOf(car.acts as Record<string, number>).days : 0),
+      stations: Array.isArray(car.stations) ? car.stations.length : 0,
+      tramLines: lines.filter((id) => tramIds.has(String(id))).length,
+      tramTotal: tramIds.size,
+      night: num(cc.night),
+      daily: Math.max(count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'daily'"), num(cc.daily)),
+      blindPerfect: num(cc.blindPerfect),
+      lateNight: num(cc.lateNight),
     };
+  }
+
+  /** reguläre Bim-Linien (für „Bim-Fan“) */
+  private tramLines(): string[] {
+    return [...this.net.lines.values()].filter((l) => l.mode === 'T' && !isSpecialLine(l)).map((l) => l.id);
+  }
+
+  medals(userId: number): MedalPublic[] {
+    const got = new Map((this.db.prepare('SELECT medal, at FROM medals WHERE user_id = ?').all(userId) as { medal: string; at: number }[]).map((m) => [m.medal, m.at]));
+    return medalList(this.medalStats(userId), got);
+  }
+
+  /** neu erreichte Medaillen-Stufen eintragen ("id:stufe") */
+  checkMedals(userId: number) {
     const ins = this.db.prepare('INSERT OR IGNORE INTO medals (user_id, medal, at) VALUES (?, ?, ?)');
-    for (const [id, ok] of Object.entries(reached)) if (ok) ins.run(userId, id, Date.now());
+    for (const key of reachedKeys(medalList(this.medalStats(userId)))) ins.run(userId, key, Date.now());
   }
 
   // -------------------------------------------------------------- Statistik aus Spielen
@@ -578,7 +577,7 @@ export class Accounts {
           .run(userId, Date.now(), ev.score.total, ev.score.route, ev.durationMin == null ? null : Math.round(ev.durationMin));
         this.recordLegs(userId, ev.legs, ev.error == null);
         // 5 fürs Mitspielen + bis zu ~130 für eine starke Runde
-        this.addXp(userId, 5 + ev.score.total / 20);
+        this.addXp(userId, XP.round(ev.score.total));
       });
     }
     for (const id of new Set(byPlayer.values())) this.checkMedals(id);
@@ -597,7 +596,7 @@ export class Accounts {
       const ace = quiz && !!t && t.asked >= 5 && t.right === t.asked;
       this.tx(() => {
         this.db.prepare('INSERT INTO results (user_id, kind, at, points, rank, players, extra) VALUES (?, ?, ?, ?, ?, ?, ?)').run(a.userId, quiz ? 'quiz' : 'game', Date.now(), a.score, rank, players, ace ? 'ace' : null);
-        this.addXp(a.userId, quiz ? 10 + a.score / 50 + (won ? 20 : 0) : 20 + (won ? 30 : 0));
+        this.addXp(a.userId, quiz ? XP.quiz(a.score, won) : XP.game(won));
       });
       this.checkMedals(a.userId);
     }
@@ -612,7 +611,7 @@ export class Accounts {
     this.tx(() => {
       this.db.prepare("INSERT INTO results (user_id, kind, at, points, minutes) VALUES (?, 'training', ?, ?, ?)").run(userId, Date.now(), good ? 1 : 0, Math.round(res.durationMin!));
       this.recordLegs(userId, legs, !res.error);
-      this.addXp(userId, good ? 20 : 10);
+      this.addXp(userId, XP.training(good));
     });
     this.checkMedals(userId);
   }
@@ -699,6 +698,55 @@ export class Accounts {
       favoriteStation,
       recent,
     };
+  }
+
+  // -------------------------------------------------------------- Strecke des Tages
+
+  /** schon gespielt? → gespeichertes Ergebnis */
+  dailyResult(userId: number, day: string): { points: number; minutes: number | null; data: Record<string, unknown> } | null {
+    const row = this.db.prepare("SELECT points, minutes, extra FROM results WHERE user_id = ? AND kind = 'daily' AND json_extract(extra, '$.day') = ?").get(userId, day) as
+      | { points: number; minutes: number | null; extra: string }
+      | undefined;
+    if (!row) return null;
+    try {
+      return { points: row.points, minutes: row.minutes, data: JSON.parse(row.extra) };
+    } catch {
+      return { points: row.points, minutes: row.minutes, data: {} };
+    }
+  }
+
+  /** Ergebnis eintragen (je Tag einmal); true = neu */
+  recordDaily(userId: number, day: string, points: number, minutes: number | null, data: Record<string, unknown>, legs: UserLeg[], valid: boolean): boolean {
+    if (!this.exists(userId) || this.dailyResult(userId, day)) return false;
+    this.tx(() => {
+      this.db.prepare("INSERT INTO results (user_id, kind, at, points, minutes, extra) VALUES (?, 'daily', ?, ?, ?, ?)").run(userId, Date.now(), points, minutes, JSON.stringify({ ...data, day }));
+      this.recordLegs(userId, legs, valid);
+      this.addXp(userId, XP.daily(points));
+    });
+    this.checkMedals(userId);
+    return true;
+  }
+
+  private friendIds(me: number): number[] {
+    return (this.db.prepare('SELECT CASE WHEN a = ?1 THEN b ELSE a END AS f FROM friends WHERE (a = ?1 OR b = ?1) AND accepted = 1').all(me) as { f: number }[]).map((r) => r.f);
+  }
+
+  /** Rangliste über Tage (ein Tag oder eine Woche): Summe der Punkte, bei Gleichstand weniger Minuten */
+  dailyBoard(days: string[], me: number | null, friendsOnly: boolean, limit = 50): { rows: DailyBoardRow[]; mine: DailyBoardRow | null } {
+    if (!days.length) return { rows: [], mine: null };
+    const allowed = friendsOnly && me != null ? new Set([me, ...this.friendIds(me)]) : null;
+    const all = this.db
+      .prepare(
+        `SELECT r.user_id AS id, u.name AS name, SUM(r.points) AS points, COALESCE(SUM(r.minutes), 0) AS minutes, COUNT(*) AS days
+         FROM results r JOIN users u ON u.id = r.user_id
+         WHERE r.kind = 'daily' AND json_extract(r.extra, '$.day') IN (${days.map(() => '?').join(',')})
+         GROUP BY r.user_id ORDER BY points DESC, minutes ASC, MIN(r.at) ASC`,
+      )
+      .all(...days) as { id: number; name: string; points: number; minutes: number; days: number }[];
+    const list = (allowed ? all.filter((r) => allowed.has(r.id)) : all).map((r, i) => ({ rank: i + 1, name: r.name, points: r.points, minutes: r.minutes, days: r.days, me: r.id === me }));
+    const mine = list.find((r) => r.me) ?? null;
+    const rows = list.slice(0, limit);
+    return { rows, mine: mine && !rows.includes(mine) ? mine : null };
   }
 
   // -------------------------------------------------------------- Freunde

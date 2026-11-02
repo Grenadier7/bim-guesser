@@ -8,6 +8,7 @@ import type {
   Mode,
   NetMode,
   Restriction,
+  Variant,
   RestrictionFrequency,
   RouteGoal,
   XtremeLevel,
@@ -387,7 +388,15 @@ export const RESTRICTIONS: Record<Restriction, { label: string; hint: string; ic
   noBus: { label: 'Ohne Bus', hint: 'Diese Runde darfst du keinen Bus verwenden.', icon: '🚫🚌' },
   oneTransfer: { label: 'Max. 1 Umstieg', hint: 'Höchstens zwei Linien – also maximal ein Umstieg.', icon: '1️⃣' },
   banLines: { label: 'Linie gesperrt', hint: 'Eine Linie der schnellsten Verbindung ist gesperrt – finde eine Alternative.', icon: '⛔' },
+  onlyTram: { label: 'Nur Bim', hint: 'Nur mit der Bim (und zu Fuß).', icon: '🚋' },
 };
+
+/** Varianten: gelten für jede Runde (in der Lobby unter „Varianten“) */
+export const VARIANTS: { id: Variant; label: string; icon: string; restriction: Restriction | null }[] = [
+  { id: 'none', label: 'Normal', icon: '', restriction: null },
+  { id: 'noU', label: 'Ohne U-Bahn', icon: '🚫🚇', restriction: 'noU' },
+  { id: 'tram', label: 'Nur Bim', icon: '🚋', restriction: 'onlyTram' },
+];
 
 export const RESTRICTION_FREQUENCIES: { id: RestrictionFrequency; label: string }[] = [
   { id: 'never', label: 'Nie' },
@@ -400,7 +409,7 @@ export const RESTRICTION_CHANCE = 0.3;
 /** Einschränkungs-Runden haben doppelte Zeit, aber höchstens 2:30 mehr … */
 export const RESTRICTION_EXTRA_MAX_SEC = 150;
 /** … schwere Einschränkungen (ohne U-Bahn) bekommen fix 4 Minuten mehr */
-export const HARD_RESTRICTIONS: Restriction[] = ['noU'];
+export const HARD_RESTRICTIONS: Restriction[] = ['noU', 'onlyTram'];
 export const HARD_RESTRICTION_EXTRA_SEC = 240;
 
 export function roundLimitSec(base: number | null, restriction: Restriction | null): number | null {
@@ -424,6 +433,7 @@ export function restrictionAllowsLine(r: Restriction | null, banned: string[], l
 export function restrictionAllowsMode(r: Restriction | null, mode: Mode): boolean {
   if (r === 'noU') return mode !== 'U';
   if (r === 'noBus') return mode !== 'B' && mode !== 'N';
+  if (r === 'onlyTram') return mode === 'T' || mode === 'W';
   return true;
 }
 
@@ -459,20 +469,26 @@ export const TIME_BONUS_SHARE = 0.1;
 /** Referenzzeit für den Zeitbonus, wenn kein Zeitlimit gesetzt ist */
 export const TIME_BONUS_REF_SEC = 180;
 export const LOCATE_POINTS_PER_STATION = 75;
-const LOCATE_FULL_M = 250;
-const LOCATE_ZERO_M = 3000;
+/** „Wo liegt das?“ (Routenjagd und Quiz): volle Punkte bis 250 m, nichts mehr ab 3 km */
+export const LOCATE_FULL_M = 250;
+export const LOCATE_ZERO_M = 3000;
 
-/** Ab diesem relativen Umweg gibt es 0 Punkte */
+/** Ab diesem relativen Umweg gibt es nur noch die Punkte fürs Ankommen */
 export const ROUTE_ZERO_REL = 0.7;
+/** Ankommen zählt: jede gültige Route bekommt mindestens so viele Routenpunkte (statt einer harten Null) */
+export const MIN_ROUTE_POINTS = 50;
 /** Besser als die beste gefundene Route: je 1 % besser +2 % Punkte … */
 export const BEAT_BONUS_FACTOR = 2;
 /** … höchstens so viele Extrapunkte */
 export const BEAT_BONUS_MAX = 300;
 
+/** Innerhalb der Toleranz (max. 1 min / 4 %) gehen nur so viele Punkte verloren – volle 1000 nur für die beste Zeit */
+export const GRACE_LOSS = 20;
+
 /**
- * Routenpunkte. Toleranz: max(1 min, 4 %) – danach fällt es ab,
- * bei +70 % Reisezeit gibt's nichts mehr.
- *   30 vs 38 min -> ~560,  30 vs 45 min -> ~200,  40 vs 60 min -> ~200
+ * Routenpunkte. Volle 1000 nur für die beste Zeit; in der Toleranz max(1 min, 4 %) sanft bis 980
+ * (43 statt 42 min ≈ 988), danach fällt es ab, ab +70 % Reisezeit gibt's nur noch die 50 Punkte fürs Ankommen.
+ *   30 vs 38 min -> ~545,  30 vs 45 min -> ~195,  40 vs 60 min -> ~195
  * Besser als die beste Route der Auskunft → über 1000:
  *   30 vs 29 min -> ~1067,  30 vs 27 min -> 1200,  30 vs 24 min -> 1300 (Maximum)
  */
@@ -483,10 +499,11 @@ export function scoreRoute(userMin: number, bestMin: number): number {
     return Math.round(MAX_ROUTE_POINTS + Math.min(BEAT_BONUS_MAX, MAX_ROUTE_POINTS * better * BEAT_BONUS_FACTOR));
   }
   const grace = Math.max(1, bestMin * 0.04);
-  const delta = Math.max(0, userMin - bestMin - grace);
-  const rel = delta / Math.max(bestMin, 10);
+  const over = userMin - bestMin;
+  if (over <= grace) return Math.round(MAX_ROUTE_POINTS - (GRACE_LOSS * over) / grace);
+  const rel = (over - grace) / Math.max(bestMin, 10);
   const f = Math.max(0, 1 - rel / ROUTE_ZERO_REL);
-  return Math.round(MAX_ROUTE_POINTS * f ** 1.5);
+  return Math.max(MIN_ROUTE_POINTS, Math.round((MAX_ROUTE_POINTS - GRACE_LOSS) * f ** 1.5));
 }
 
 export function locatePoints(distM: number | null): number {
@@ -570,7 +587,7 @@ export function maxRoundPointsWithBonus(s: GameSettings): number {
 export const MODE_LABEL: Record<Mode, string> = {
   U: 'U-Bahn',
   S: 'S-Bahn',
-  T: 'Straßenbahn',
+  T: 'Bim',
   B: 'Bus',
   N: 'Nachtbus',
   W: 'Fußweg',

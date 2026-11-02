@@ -6,6 +6,7 @@ import path from 'node:path';
 import { STATE_DIR } from './paths.ts';
 import type { LatLon, Mode } from '../shared/types.ts';
 import { localTrip } from './timetable.ts';
+import { isCancelled } from './plancontext.ts';
 
 const BASE = 'https://www.wienerlinien.at/ogd_routing';
 const CACHE_DIR = path.join(STATE_DIR, 'cache');
@@ -322,8 +323,20 @@ function place(id: string): { type: string; name: string } {
 }
 
 export async function trip(q: TripQuery): Promise<EfaTrip[]> {
+  // Der eigene Fahrplan rechnet synchron. Vorher kurz an die Ereignisschleife abgeben – sonst blockiert eine
+  // Rundenvorbereitung (Dutzende Abfragen hintereinander) den ganzen Server, und z.B. „Spiel beenden“ wartet,
+  // bis alle Runden fertig sind.
+  await new Promise<void>((r) => setImmediate(r));
+  if (isCancelled()) throw new CancelledError();
   // Referenztag des regulären Netzes: eigener Fahrplan (mit Regionalzügen, ohne Abfrage) – sonst die Auskunft
   return localTrip(q) ?? remoteTrip(q);
+}
+
+/** Abfrage nicht mehr gebraucht (z.B. Spiel beendet, während die Runde vorbereitet wurde) */
+export class CancelledError extends Error {
+  constructor() {
+    super('abgebrochen');
+  }
 }
 
 /** immer die Wiener-Linien-Auskunft (für „Aktuell“ und zum Vergleich mit dem eigenen Fahrplan) */

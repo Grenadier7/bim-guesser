@@ -28,10 +28,13 @@ import {
   difficultyMultiplier,
   scoreRoute,
   linePatterns,
+  VARIANTS,
 } from '../shared/rules.ts';
 import { distM, NoPairError, type Network, type PastPair } from './network.ts';
 import { EfaUnavailableError, evaluateUserRoute, topRoutes, type RouteQuery } from './routing.ts';
 import { DEADLINE_GRACE_MS, GameError, Lobby } from './lobby.ts';
+import { CancelledError } from './efa.ts';
+import { withCancel } from './plancontext.ts';
 import { describeSlotDate, slotTime } from './timeslots.ts';
 import { cleanLegs, sanitizeSettings, validLatLon } from './settings.ts';
 
@@ -114,6 +117,20 @@ export class Game extends Lobby {
     this.emitState();
   }
 
+  endGame(token: string) {
+    this.requireHost(token);
+    const firstOpen = this.rounds.findIndex((r) => r.status !== 'revealed');
+    const played = firstOpen < 0 ? this.rounds.length : firstOpen;
+    if (this.phase !== 'playing' || played === 0) return this.backToLobby(token);
+    for (const r of this.rounds) if (r.timer) clearTimeout(r.timer);
+    this.generation++; // Vorbereitung weiterer Runden abbrechen
+    this.rounds = this.rounds.slice(0, played);
+    this.currentRound = played - 1;
+    this.finishGame();
+    this.touch();
+    this.emitState();
+  }
+
   // -------------------------------------------------------------- Ablauf
 
   async start(token: string): Promise<void> {
@@ -140,6 +157,9 @@ export class Game extends Lobby {
   private pickRestrictions(): (Restriction | null)[] {
     const n = this.settings.rounds;
     const out: (Restriction | null)[] = Array(n).fill(null);
+    // Variante (ohne U-Bahn / nur Bim): jede Runde
+    const v = VARIANTS.find((x) => x.id === this.settings.variant)?.restriction;
+    if (v) return out.map(() => v);
     if (this.settings.restrictions === 'never') return out;
     // "Linie gesperrt" doppelt gewichtet – die ist am abwechslungsreichsten
     const kinds: Restriction[] = ['noU', 'noBus', 'oneTransfer', 'banLines', 'banLines'];
@@ -214,6 +234,16 @@ export class Game extends Lobby {
 
   /** Stationspaar ziehen und Top-Verbindungen sampeln; ungeeignete Paare werden verworfen */
   private async prepare(round: Round, gen: number): Promise<RouteOption[]> {
+    // Spiel beendet/neu gestartet → nicht zu Ende rechnen (bricht bei der nächsten Fahrplan-Abfrage ab)
+    try {
+      return await withCancel(() => gen !== this.generation, () => this.prepareInner(round, gen));
+    } catch (e) {
+      if (e instanceof CancelledError || gen !== this.generation) return [];
+      throw e;
+    }
+  }
+
+  private async prepareInner(round: Round, gen: number): Promise<RouteOption[]> {
     const wanted = this.minTransfersFor(round);
     for (let attempt = 0; attempt < 14; attempt++) {
       if (gen !== this.generation) return [];
@@ -246,6 +276,7 @@ export class Game extends Lobby {
         const minTransfers = attempt < 12 ? wanted : 0;
         routes = sortRoutes(await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), minTransfers }), this.settings);
       } catch (e) {
+        if (e instanceof CancelledError) throw e;
         if (e instanceof EfaUnavailableError) throw new GameError('Die Runde konnte gerade nicht vorbereitet werden – bitte in einer Minute nochmal starten.', 503);
         throw e;
       }

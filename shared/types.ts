@@ -124,7 +124,10 @@ export interface FocusArea {
 }
 
 /** Einschränkungs-Runden */
-export type Restriction = 'noU' | 'noBus' | 'oneTransfer' | 'banLines';
+export type Restriction = 'noU' | 'noBus' | 'oneTransfer' | 'banLines' | 'onlyTram';
+
+/** Spielvariante für alle Runden: ohne U-Bahn, nur Bim */
+export type Variant = 'none' | 'noU' | 'tram';
 
 /** Wie oft Einschränkungs-Runden vorkommen */
 export type RestrictionFrequency = 'never' | 'sometimes' | 'always';
@@ -159,6 +162,8 @@ export interface GameSettings {
   tips: TipLevel;
   /** Start und Ziel: Haltestellen oder zufällige Adressen (Punkt 13) */
   endpoints: 'stations' | 'addresses';
+  /** Variante für alle Runden (ohne U-Bahn / nur Bim) */
+  variant: Variant;
 }
 
 // ---------------------------------------------------------------- Routen
@@ -475,6 +480,59 @@ export interface TrainingResult {
   error: string | null;
 }
 
+// ---------------------------------------------------------------- Strecke des Tages
+
+export interface DailyRound {
+  /** Tag in Wien (YYYY-MM-DD) */
+  day: string;
+  /** laufende Nummer (für den Teilen-Text) */
+  number: number;
+  from: StationRef;
+  to: StationRef;
+  when: string;
+  settings: GameSettings;
+  /** mit Account schon gespielt: das Ergebnis (sonst null – Gäste merken es sich im Browser) */
+  played: DailyResult | null;
+}
+
+export interface DailyResult {
+  day: string;
+  number: number;
+  /** Routenpunkte 0–1300 (wie in der Routenjagd, ohne Zeitbonus) */
+  points: number;
+  durationMin: number | null;
+  bestMin: number;
+  route: RouteOption | null;
+  routes: RouteOption[];
+  matchedRank: number | null;
+  error: string | null;
+  /** Platz am Tag (nur mit Account) */
+  rank: number | null;
+  players: number;
+  /** schnellste Verbindung nur mit U-Bahn und S-Bahn (zum Vergleich in der Auflösung) */
+  railMin: number | null;
+}
+
+export interface DailyBoardRow {
+  rank: number;
+  name: string;
+  points: number;
+  minutes: number;
+  /** Tage (Woche) */
+  days: number;
+  me: boolean;
+}
+
+export interface DailyBoard {
+  scope: 'day' | 'week';
+  friends: boolean;
+  /** Tag bzw. Montag der Woche */
+  from: string;
+  rows: DailyBoardRow[];
+  /** eigene Zeile, falls nicht unter den ersten */
+  mine: DailyBoardRow | null;
+}
+
 // ---------------------------------------------------------------- Accounts
 
 export interface LevelInfo {
@@ -489,8 +547,19 @@ export interface MedalPublic {
   id: string;
   icon: string;
   title: string;
+  /** Text der nächsten Stufe (bzw. der höchsten, wenn alle erreicht) */
   text: string;
-  /** Zeitpunkt (ms); null = noch nicht erreicht */
+  /** erreichte Stufe: 0 = noch keine, 1 = Bronze, 2 = Silber, 3 = Gold (Medaillen mit nur einer Stufe: 1) */
+  tier: number;
+  /** Anzahl Stufen (1 oder 3) */
+  tiers: number;
+  /** aktueller Stand, z.B. 12 Runden */
+  value: number;
+  /** Ziel der nächsten Stufe; null = alle erreicht */
+  next: number | null;
+  /** versteckt, bis erreicht */
+  hidden: boolean;
+  /** wann die aktuelle Stufe erreicht wurde (ms) – nur mit Account bekannt */
   at: number | null;
 }
 

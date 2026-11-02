@@ -1,4 +1,6 @@
 import './style.css';
+import './dark.css';
+import { themeButton } from './theme.ts';
 import { fmtDuration } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import { account, startPolling } from './account.ts';
@@ -21,6 +23,8 @@ import { loadingHtml, type Screen } from './screens/screen.ts';
 import { trainingScreen } from './screens/training.ts';
 import { adminScreen } from './screens/admin.ts';
 import { tutorialScreen } from './screens/tutorial.ts';
+import { dailyScreen } from './screens/daily.ts';
+import { meScreen } from './screens/me.ts';
 import { ChatWidget } from './chat.ts';
 import { hideIdle, idleCheck } from './idle.ts';
 import { app, currentRound, inviteLink, isHost, me, openTimer, restoreSession, serverNow, setMapBig, setMobileMap } from './store.ts';
@@ -31,7 +35,7 @@ const topinfo = document.getElementById('topinfo')!;
 // Account-Knopf rechts in der Kopfzeile, Einladungen von Freunden als Banner darunter
 const acctSlot = document.createElement('div');
 acctSlot.className = 'acct-slot';
-document.querySelector('.topbar')!.append(acctSlot);
+document.querySelector('.topbar')!.append(themeButton(), acctSlot);
 const inviteHost = document.createElement('div');
 inviteHost.className = 'invite-host';
 document.body.append(inviteHost);
@@ -158,6 +162,8 @@ function mount(key: string): Screen {
   if (key === 'learn') return learnScreen(panel, back);
   if (key === 'training') return trainingScreen(panel, back);
   if (key === 'tutorial') return tutorialScreen(panel, back);
+  if (key === 'daily') return dailyScreen(panel, back);
+  if (key === 'me') return meScreen(panel, back);
   if (key === 'admin') return adminScreen(panel, back);
   if (key === 'lobby') return lobbyScreen(panel);
   if (key === 'final') return finalScreen(panel);
@@ -271,6 +277,11 @@ async function init() {
     return;
   }
   // geteilter Einstellungs-Link → Startseite (legt die Lobby an) statt in die alte Lobby zurück
+  // geteilter Link zur Strecke des Tages (/#daily)
+  if (location.hash === '#daily') {
+    app.view = 'daily';
+    history.replaceState(null, '', location.pathname + location.search);
+  }
   if (new URLSearchParams(location.search).has('settings') || !(await restoreSession())) render();
   setInterval(tick, 250);
   startVisitorPing();

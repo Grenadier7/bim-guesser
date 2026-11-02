@@ -15,6 +15,7 @@ import {
   NET_MODES,
   stationKindsFromPool,
   xtremeBlocksLocate,
+  VARIANTS,
 } from '../shared/rules.ts';
 
 export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: GameSettings = DEFAULT_SETTINGS): GameSettings {
@@ -73,6 +74,13 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   if (r === 'never' || r === 'sometimes' || r === 'always') out.restrictions = r;
   else if (r === true) out.restrictions = 'sometimes';
   else if (r === false) out.restrictions = 'never';
+  if (VARIANTS.some((v) => v.id === s.variant)) out.variant = s.variant!;
+  // Nur Bim: Start und Ziel an Bim-Stationen (sonst gäbe es oft gar keine Verbindung)
+  if (out.variant === 'tram') {
+    out.stations = ['T'];
+    out.endpoints = 'stations';
+    out.difficulty = matchPreset(out);
+  }
   return out;
 }
 

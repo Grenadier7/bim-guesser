@@ -157,6 +157,39 @@ export function makeExpandable(list: HTMLElement) {
   });
 }
 
+/**
+ * Eigener Bestätigungsdialog statt confirm() (das wirkt fremd und sieht am Handy je nach Browser anders aus).
+ * Escape oder „Abbrechen“ = nein; `danger` färbt den Ja-Knopf rot.
+ */
+export function ask(message: string, opts: { ok?: string; cancel?: string; danger?: boolean; title?: string } = {}): Promise<boolean> {
+  return new Promise((resolve) => {
+    const dlg = h('dialog', { class: 'ask-dlg', 'aria-label': opts.title ?? 'Bestätigen' });
+    dlg.innerHTML = `${opts.title ? `<h3>${esc(opts.title)}</h3>` : ''}<p>${esc(message)}</p>
+      <div class="ask-btns"><button class="btn" data-v="0">${esc(opts.cancel ?? 'Abbrechen')}</button>
+      <button class="btn ${opts.danger ? 'btn-danger' : 'btn-primary'}" data-v="1">${esc(opts.ok ?? 'OK')}</button></div>`;
+    let done = false;
+    const finish = (v: boolean) => {
+      if (done) return;
+      done = true;
+      dlg.close();
+      dlg.remove();
+      resolve(v);
+    };
+    dlg.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-v]');
+      if (b) finish(b.dataset.v === '1');
+      else if (e.target === dlg) finish(false); // Klick daneben
+    });
+    dlg.addEventListener('cancel', (e) => {
+      e.preventDefault();
+      finish(false);
+    });
+    document.body.append(dlg);
+    dlg.showModal();
+    dlg.querySelector<HTMLElement>('[data-v="1"]')!.focus();
+  });
+}
+
 export function toast(msg: string, kind: 'error' | 'info' = 'error', action?: { label: string; run: () => void }) {
   const el = h('div', { class: `toast toast-${kind}`, role: kind === 'error' ? 'alert' : 'status', 'aria-live': kind === 'error' ? 'assertive' : 'polite' }, esc(msg));
   // optionaler Knopf (z.B. „nur S1 merken“) – Meldung bleibt dann etwas länger

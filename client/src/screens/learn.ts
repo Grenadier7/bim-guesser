@@ -11,6 +11,7 @@ import { netLayer, netView } from '../netmap.ts';
 import { app, setMapBig, setMobileMap } from '../store.ts';
 import { esc, h, lineChip } from '../ui.ts';
 import type { Screen } from './screen.ts';
+import { clearMistakes, mistakeLines } from '../mistakes.ts';
 
 /** so viele Linien hat eine Zufalls-Übungsrunde: in 5–10 Minuten machbar, ohne zäh zu werden */
 const RANDOM_COUNT = 5;
@@ -48,6 +49,9 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
     const mastered = COURSES.filter((c) => progress[c.id]?.mastered).length;
     const next = COURSES.find((c) => !progress[c.id]?.done) ?? null;
     const mine = myLines().map((id) => net.lines.get(id)!);
+    const mistakes = mistakeLines()
+      .map((id) => net.lines.get(id))
+      .filter((l): l is NonNullable<typeof l> => !!l && patternsOf(l).length > 0);
     const shown = mine.slice(0, 14);
     const el = h('div', { class: 'learn learn-hub' });
     el.innerHTML = `
@@ -59,7 +63,7 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
         <div class="path-dots">${COURSES.map((c) => `<i class="${progress[c.id]?.done ? 'on' : ''}${progress[c.id]?.mastered ? ' mastered' : ''}${c === next ? ' next' : ''}" title="${esc(c.title)}"></i>`).join('')}</div>
         ${
           next
-            ? `<button class="btn btn-primary" data-course="${next.id}">Weiter mit: ${next.icon} ${esc(next.title)}</button>`
+            ? `<button class="btn btn-primary" data-course="${next.id}">${done ? 'Weiter mit' : 'Los geht’s mit'}: ${next.icon} ${esc(next.title)}</button>`
             : '<p class="good">🎉 Alle Kurse geschafft – zum Auffrischen einfach einen nochmal machen.</p>'
         }
         <details class="all-courses"><summary>Alle Kurse</summary>
@@ -90,8 +94,15 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
             ? `<div class="chips">${shown.map((l) => lineChip(l.mode, l.id, l.color)).join('')}${mine.length > shown.length ? ` <small class="muted">+${mine.length - shown.length}</small>` : ''}</div>`
             : '<p class="muted">Noch keine Linien gemerkt – in der Netzkarte im Steckbrief mit ☆, oder an einer Station alle auf einmal.</p>'
         }
+        ${
+          mistakes.length
+            ? `<div class="mistakes"><b>🔁 Fehler wiederholen</b> <small class="muted">aus Quiz und Routenjagd</small>
+                <div class="chips">${mistakes.slice(0, 14).map((l) => lineChip(l.mode, l.id, l.color)).join('')}</div>
+                <button class="btn btn-primary" id="mistakes">Diese ${mistakes.length} Linien üben</button></div>`
+            : ''
+        }
         <div class="hub-actions">
-          <button class="btn btn-primary" id="practice" ${mine.length ? '' : 'disabled'}>Meine Linien üben${mine.length ? ` (${mine.length})` : ''}</button>
+          <button class="btn ${mistakes.length ? 'btn-ghost' : 'btn-primary'}" id="practice" ${mine.length ? '' : 'disabled'}>Meine Linien üben${mine.length ? ` (${mine.length})` : ''}</button>
           <button class="btn btn-ghost" id="random">🎲 ${RANDOM_COUNT} zufällige Linien</button>
           <button class="btn btn-ghost" id="area">📍 Linien einer Gegend</button>
           <button class="btn btn-ghost" id="busquiz">🚌 Welcher Bus fährt hier?</button>
@@ -126,13 +137,28 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
     el.querySelector('#open-atlas')!.addEventListener('click', () => openAtlas());
     // Tippen in der Suche öffnet gleich die Netzkarte mit dem Suchbegriff
     el.querySelector<HTMLInputElement>('#hub-search')!.addEventListener('input', (e) => openAtlas((e.target as HTMLInputElement).value));
+    el.querySelector('#mistakes')?.addEventListener('click', () => practiceMistakes());
     el.querySelector('#practice')!.addEventListener('click', () => {
       setMobileMap(true);
       studyView({ panel, scope: () => scopeOfLines(myLines(), 'Meine Linien'), back: home }).start();
     });
   }
 
-  home();
+  /** Fehlerliste üben – danach sind diese Linien erledigt */
+  function practiceMistakes() {
+    const ids = mistakeLines().filter((id) => net.lines.has(id));
+    if (!ids.length) return home();
+    clearMistakes(ids);
+    setMobileMap(true);
+    studyView({ panel, scope: () => scopeOfLines(ids, 'Deine Fehler'), back: home }).start();
+  }
+
+  // „Diese üben“ aus dem Quiz-Endstand: gleich mit der Fehlerliste anfangen
+  if (app.learnStart === 'mistakes') {
+    app.learnStart = null;
+    home();
+    practiceMistakes();
+  } else home();
   return {
     destroy: () => {
       setMapBig(false);

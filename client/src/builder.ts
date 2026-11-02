@@ -115,6 +115,8 @@ export class RouteBuilder {
 
   /** Hinweis, nachdem eine frühere Teilstrecke geändert wurde (z.B. „ab hier neu wählen“) */
   private notice = '';
+  /** Linie per Tastatur gewählt → Ausstiegsliste gleich aufklappen */
+  private openPicker = false;
 
   private render() {
     this.el.innerHTML = '';
@@ -241,21 +243,42 @@ export class RouteBuilder {
 
     if (!this.pickedLine) {
       const input = h('input', { type: 'text', class: 'line-input', placeholder: 'Linie eingeben, z.B. U2, 5B, 43, S45 …', autocomplete: 'off', spellcheck: 'false' });
-      const results = h('div', { class: 'line-results' });
+      const results = h('div', { class: 'line-results', role: 'listbox', 'aria-label': 'Passende Linien' });
+      // Tastatur: ← → (bzw. ↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt die gewählte
+      let active = 0;
+      let found: Line[] = [];
       const update = () => {
-        const found = this.net.searchLines(input.value, this.restriction, this.banned);
-        results.innerHTML = found.map((l) => `<button class="line-opt" data-line="${esc(l.id)}">${lineChip(l.mode, l.id, l.color)}</button>`).join('');
+        found = this.net.searchLines(input.value, this.restriction, this.banned);
+        active = Math.min(active, Math.max(0, found.length - 1));
+        results.innerHTML = found
+          .map((l, i) => `<button class="line-opt ${i === active && input.value.trim() ? 'active' : ''}" data-line="${esc(l.id)}" role="option" aria-selected="${i === active}" tabindex="-1">${lineChip(l.mode, l.id, l.color)}</button>`)
+          .join('');
         if (input.value.trim() && !found.length) {
           const q = input.value.trim().toLowerCase().replace(/\s+/g, '');
           const blocked = this.banned.find((id) => id.toLowerCase() === q);
           results.innerHTML = `<span class="muted">${blocked ? `⛔ ${esc(blocked)} ist in dieser Runde gesperrt` : `Keine Linie gefunden${this.restriction ? ' (Einschränkung beachten)' : ''}`}</span>`;
         }
       };
-      input.addEventListener('input', update);
+      input.addEventListener('input', () => {
+        active = 0;
+        update();
+      });
       input.addEventListener('keydown', (e) => {
+        const atEnd = input.selectionStart === input.value.length;
+        const move = (d: number) => {
+          e.preventDefault();
+          active = (active + d + found.length) % found.length;
+          update();
+        };
+        if (found.length > 1 && ((e.key === 'ArrowRight' && atEnd) || e.key === 'ArrowDown')) return move(1);
+        if (found.length > 1 && ((e.key === 'ArrowLeft' && active > 0) || e.key === 'ArrowUp')) return move(-1);
         if (e.key !== 'Enter') return;
-        const first = this.net.searchLines(input.value, this.restriction, this.banned)[0];
-        if (first) this.pickLine(first);
+        const pick = found[active] ?? this.net.searchLines(input.value, this.restriction, this.banned)[0];
+        if (pick) {
+          // mit der Tastatur gewählt → Ausstiegsliste gleich offen (Pfeiltasten + Enter)
+          this.openPicker = true;
+          this.pickLine(pick);
+        }
       });
       results.addEventListener('click', (e) => {
         const id = (e.target as HTMLElement).closest<HTMLElement>('[data-line]')?.dataset.line;
@@ -324,16 +347,23 @@ export class RouteBuilder {
 
     // Ausstieg nach Richtung gruppiert
     const alightSel = this.alightSelect(line, this.board!, null);
-    alightSel.addEventListener('change', () => {
+    const commit = () => {
       if (!alightSel.value) return;
       const [from, to] = parseAlight(alightSel.value, this.board!);
       this.legs.push({ line, from, to });
       this.resetForm();
-    });
+    };
+    alightSel.addEventListener('change', commit);
+    keyboardList(alightSel, commit, () => this.resetForm());
     const alightRow = h('label', { class: 'field' }, '<span>Ausstieg</span>');
     alightRow.append(alightSel);
     form.append(alightRow);
-    queueMicrotask(() => alightSel.focus());
+    const open = this.openPicker;
+    this.openPicker = false;
+    queueMicrotask(() => {
+      alightSel.focus();
+      if (open) expandList(alightSel);
+    });
     return form;
   }
 
@@ -433,6 +463,49 @@ export class RouteBuilder {
     this.board = this.net.boardOptions(line, this.position, 1)[0].station.id;
     this.render();
   }
+}
+
+/** Liste im Formular aufklappen (statt des Browser-Fensters – das lässt sich nicht überall per Tastatur steuern) */
+function expandList(sel: HTMLSelectElement) {
+  sel.size = Math.min(12, sel.options.length + sel.querySelectorAll('optgroup').length);
+  sel.classList.add('expanded');
+  sel.options[sel.selectedIndex]?.scrollIntoView({ block: 'center' });
+}
+
+function collapseList(sel: HTMLSelectElement) {
+  sel.size = 0;
+  sel.classList.remove('expanded');
+}
+
+/**
+ * Ausstieg nur mit der Tastatur: ↑ ↓ wandert durch die Halte (ohne schon zu übernehmen), Enter übernimmt bzw.
+ * klappt die Liste auf, Escape klappt zu bzw. wählt eine andere Linie. Mausklick übernimmt wie gewohnt (change).
+ */
+function keyboardList(sel: HTMLSelectElement, commit: () => void, cancel: () => void) {
+  const move = (d: 1 | -1) => {
+    for (let i = sel.selectedIndex + d; i >= 0 && i < sel.options.length; i += d)
+      if (!sel.options[i].disabled) {
+        sel.selectedIndex = i;
+        sel.options[i].scrollIntoView({ block: 'nearest' });
+        return;
+      }
+  };
+  sel.addEventListener('keydown', (e) => {
+    const open = sel.classList.contains('expanded');
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!open) expandList(sel);
+      move(e.key === 'ArrowDown' ? 1 : -1);
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (open && sel.value) commit();
+      else expandList(sel);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      if (open) collapseList(sel);
+      else cancel();
+    }
+  });
 }
 
 /** Eine gemeinsame Vorschlagsliste mit allen Stationsnamen (einmal pro Seite) */

@@ -27,6 +27,8 @@ import {
   TIME_BONUS_REF_SEC,
   TIME_LIMITS,
   TIME_SLOTS,
+  VARIANTS,
+  isNightSlot,
   TIPS,
   difficultyMultiplier,
   fmtDuration,
@@ -37,7 +39,7 @@ import {
 import { api } from '../api.ts';
 import { app, routeState, endSession, inviteLink, isHost, savePrefs, setMobileMap } from '../store.ts';
 import { distM } from '../net.ts';
-import { accountTag, esc, toast } from '../ui.ts';
+import { accountTag, ask, esc, toast } from '../ui.ts';
 import { inviteButton } from '../accountui.ts';
 import { deferWhileEditing, infoTip, patchQueue, seg, toggleInfo } from '../widgets.ts';
 import { bindKick, kickButton } from './host.ts';
@@ -101,6 +103,12 @@ function inPool(st: Station, kinds: StationKind[]): boolean {
   return inStationKinds(st, kinds, (id) => app.net.lines.get(id));
 }
 
+/** Bezirk der Woche: jede Kalenderwoche ein anderer der 23 Bezirke (für alle gleich) */
+export function districtOfWeek(t = Date.now()): number {
+  const week = Math.floor((t / 86_400_000 + 3) / 7); // Wochen seit Montag, 5.1.1970
+  return (week % 23) + 1;
+}
+
 /** Mittelpunkt eines Bezirks = Schwerpunkt seiner Haltestellen */
 function districtCenter(id: number): [number, number] {
   const sts = app.net.data.stations.filter((x) => x.district === id);
@@ -134,6 +142,28 @@ export function lobbyScreen(panel: HTMLElement): Screen {
   function sendFocus(patch: Partial<FocusArea>) {
     const cur = routeState().settings.focus ?? { lat: 48.2085, lon: 16.3731, radiusM: 2500, share: 0.5 };
     send({ focus: { ...cur, ...patch } });
+  }
+
+  /** Schnellstart-Ideen: setzen mehrere Einstellungen auf einmal */
+  function presetsHtml(st: GameSettings): string {
+    const night = TIME_SLOTS.find((t) => isNightSlot(t.id));
+    const d = districtOfWeek();
+    return `<div class="presets" role="group" aria-label="Schnellstart"><small>Ideen:</small>
+      <button data-preset="coffee" title="3 Runden, je 2 Minuten, leicht">☕ Kaffeepause</button>
+      ${night ? `<button data-preset="night" title="${esc(night.label)}" class="${st.slot === night.id ? 'on' : ''}">🌙 Nachts</button>` : ''}
+      <button data-preset="blind" class="${st.xtreme === 'noMap' ? 'on' : ''}" title="X-treme ohne Karte: nur die Namen von Start und Ziel">🙈 Blindflug</button>
+      <button data-preset="district" title="Start und Ziel meist im ${d}. Bezirk – jede Woche ein anderer">📍 Bezirk der Woche: ${d}.</button></div>`;
+  }
+
+  function applyPreset(id: string) {
+    const st = routeState().settings;
+    if (id === 'coffee') send({ difficulty: 'easy', rounds: 3, roundTimeLimitSec: 120, xtreme: 'off', variant: 'none' });
+    else if (id === 'night') send({ slot: TIME_SLOTS.find((t) => isNightSlot(t.id))!.id });
+    else if (id === 'blind') send({ xtreme: st.xtreme === 'noMap' ? 'off' : 'noMap' });
+    else if (id === 'district') {
+      const [lat, lon] = districtCenter(districtOfWeek());
+      send({ distance: 'short', focus: { lat, lon, radiusM: 2500, share: 0.9 } });
+    }
   }
 
   function render() {
@@ -269,7 +299,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     panel.innerHTML = `
       <div class="lobby">
         <div class="lobby-code">
-          <div><small>Lobby-Code</small><div class="code">${code}</div></div>
+          <div><small>🏁 Routenjagd · Lobby-Code</small><div class="code">${code}</div></div>
           <div class="code-actions"><button class="btn btn-ghost btn-icon" id="copy">${icon('link')}<span>Link kopieren</span></button>${inviteButton()}</div>
         </div>
         <h3>Spieler <small>(${s.players.length})</small></h3>
@@ -280,6 +310,9 @@ export function lobbyScreen(panel: HTMLElement): Screen {
           ${seg('difficulty', [...DIFFICULTY_PRESETS.map((d) => ({ value: d.id, label: d.label })), ...(st.difficulty === 'custom' ? [{ value: 'custom', label: 'Eigene' }] : [])], st.difficulty, ro)}
           <small class="hint">${st.endpoints === 'addresses' ? `${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} Adressen` : `${poolCount(st.stations)} Haltestellen`}${st.distance !== 'medium' ? ` · ${DISTANCES.find((d) => d.id === st.distance)!.label}` : ''}${st.minTransfers ? ` · mind. ${st.minTransfers} Umstieg${st.minTransfers > 1 ? 'e' : ''}` : ''} · <b>Punkte ×${mult.toLocaleString('de-AT')}</b> ${st.endpoints === 'addresses' ? '' : infoTip(esc(stationsText(st.stations)))}</small></div>
         <div class="setting"><span>Runden</span>${seg('rounds', [3, 5, 7, 10].map((n) => ({ value: String(n), label: String(n) })), String(st.rounds), ro)}</div>
+        <div class="setting"><span>Variante ${infoTip('Gilt für jede Runde: <b>Ohne U-Bahn</b> oder <b>Nur Bim</b> (Start und Ziel an Bim-Stationen). Mit mehr Zeit pro Runde.')}</span>
+          ${seg('variant', VARIANTS.map((v) => ({ value: v.id, label: `${v.icon} ${v.label}`.trim() })), st.variant, ro)}</div>
+        ${host ? presetsHtml(st) : ''}
 
         <div class="setting"><span>${icon('clock', 15)} Zeitlimit ${infoTip(
           `Pro Runde, inkl. „Wo liegt das?“. Nach Ablauf wird abgegeben, was eingegeben ist. Wer schnell ist, bekommt bis zu +10 % Zeitbonus.<br><b>Ohne:</b> kein Zeitdruck – der Zeitbonus wird an ${fmtDuration(TIME_BONUS_REF_SEC)} gemessen.`,
@@ -398,6 +431,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
       const [lat, lon] = districtCenter(id);
       sendFocus({ lat, lon });
     });
+    panel.querySelectorAll<HTMLButtonElement>('[data-preset]').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset!)));
     panel.querySelector('#shareSettings')?.addEventListener('click', () =>
       openSettingsDialog(
         'route',
@@ -414,11 +448,11 @@ export function lobbyScreen(panel: HTMLElement): Screen {
           : null,
       ),
     );
-    panel.querySelector('#resetAll')?.addEventListener('click', (e) => {
+    panel.querySelector('#resetAll')?.addEventListener('click', async (e) => {
       // sitzt in der Überschrift von "Erweitert" – nicht auf-/zuklappen
       e.preventDefault();
       e.stopPropagation();
-      if (!confirm('Alle Einstellungen dieser Lobby auf den Standard zurücksetzen?')) return;
+      if (!(await ask('Alle Einstellungen dieser Lobby auf den Standard zurücksetzen?', { ok: 'Zurücksetzen' }))) return;
       send({ ...DEFAULT_SETTINGS, focus: null });
     });
     panel.querySelector('#start')?.addEventListener('click', async (e) => {

@@ -3,9 +3,10 @@
 // Das Fenster liegt über allem – so geht es auch mitten in einer Lobby auf, ohne sie zu verlassen.
 import type { AccountStats, FavoriteLine, LevelInfo, MedalPublic, Profile, UserListItem } from '../../shared/types.ts';
 import { account, accountApi, deleteAccount, newMedals, signedIn, signOut } from './account.ts';
+import { TIER_NAMES } from '../../shared/career.ts';
 import { api } from './api.ts';
 import { app, endSession, savePrefs, startSession } from './store.ts';
-import { esc, h, lineChip, toast } from './ui.ts';
+import { ask, esc, h, lineChip, toast } from './ui.ts';
 import { icon } from './icons.ts';
 import { openLegal, type LegalPage } from './legal.ts';
 
@@ -45,15 +46,21 @@ function levelBar(l: LevelInfo): string {
     <small>${l.xp - l.levelXp} / ${l.nextXp - l.levelXp} XP bis Level ${l.level + 1}</small></div>`;
 }
 
-function medalsHtml(ms: MedalPublic[]): string {
-  const got = ms.filter((m) => m.at).length;
-  return `<h4>🏅 Medaillen <small class="muted">${got} von ${ms.length}</small></h4>
-    <div class="medals">${[...ms]
-      .sort((a, b) => Number(!!b.at) - Number(!!a.at))
-      .map(
-        (m) =>
-          `<div class="medal ${m.at ? 'on' : 'locked'}" title="${m.at ? '' : 'noch nicht erreicht: '}${esc(m.text)}${m.at ? ` – ${new Date(m.at).toLocaleDateString('de-AT')}` : ''}"><span>${m.icon}</span><b>${esc(m.title)}</b><small>${esc(m.text)}</small></div>`,
-      )
+export function medalsHtml(ms: MedalPublic[]): string {
+  const shown = ms.filter((m) => m.tier || !m.hidden);
+  const got = ms.filter((m) => m.tier).length;
+  const secret = ms.filter((m) => m.hidden && !m.tier).length;
+  return `<h4>🏅 Medaillen <small class="muted">${got} von ${ms.length}${secret ? ` · ${secret} geheim` : ''}</small></h4>
+    <div class="medals">${[...shown]
+      .sort((a, b) => b.tier / b.tiers - a.tier / a.tiers)
+      .map((m) => {
+        const tierName = m.tiers > 1 && m.tier ? TIER_NAMES[m.tier - 1] : '';
+        const goal = m.next != null ? `${m.value.toLocaleString('de-AT')} / ${m.next.toLocaleString('de-AT')}` : '';
+        const pct = m.next != null ? Math.min(100, Math.round((m.value / m.next) * 100)) : 100;
+        return `<div class="medal ${m.tier ? 'on' : 'locked'} tier-${m.tiers > 1 ? m.tier : m.tier ? 3 : 0}" title="${esc(m.next != null ? `Nächste Stufe: ${m.text}` : m.text)}${m.at ? ` – erreicht am ${new Date(m.at).toLocaleDateString('de-AT')}` : ''}">
+          <span>${m.icon}</span><b>${esc(m.title)}${tierName ? ` <i class="tier-name">${tierName}</i>` : ''}</b><small>${esc(m.text)}</small>
+          ${m.next != null && m.tiers > 1 ? `<span class="medal-prog" aria-hidden="true"><i style="width:${pct}%"></i></span><small class="muted">${goal}</small>` : ''}</div>`;
+      })
       .join('')}</div>`;
 }
 
@@ -338,7 +345,7 @@ function bind() {
             toast('E-Mail gespeichert', 'info');
             break;
           case 'delete':
-            if (!confirm(`Account „${account.me?.name}“ wirklich endgültig löschen?`)) break;
+            if (!(await ask(`Account „${account.me?.name}“ wirklich endgültig löschen?`, { ok: 'Endgültig löschen', danger: true }))) break;
             await deleteAccount(v('password'));
             break;
           case 'password':
@@ -402,7 +409,7 @@ export function renderInvites(host: HTMLElement) {
     b.addEventListener('click', async () => {
       const inv = account.me?.invites.find((i) => i.id === Number(b.dataset.joinInvite));
       if (!inv) return;
-      if (app.session && !confirm('Deine aktuelle Lobby verlassen und beitreten?')) return;
+      if (app.session && !(await ask('Deine aktuelle Lobby verlassen und beitreten?', { ok: 'Beitreten' }))) return;
       try {
         if (app.session) {
           await api.leave(app.session).catch(() => {});
@@ -475,7 +482,7 @@ document.addEventListener('click', (e) => {
 /** neue Medaillen melden */
 export function announceMedals() {
   if (!account.me) return;
-  for (const m of newMedals(account.me)) toast(`${m.icon} Neue Medaille: ${m.title} – ${m.text}`, 'info');
+  for (const m of newMedals(account.me)) toast(`🏅 Neue Medaille: ${m.icon} ${m.title}${m.tiers > 1 ? ` (${TIER_NAMES[m.tier - 1]})` : ''}`, 'info');
 }
 
 /** ?reset=… aus der Mail: Fenster „Neues Passwort“ */

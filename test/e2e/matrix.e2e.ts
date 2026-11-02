@@ -128,8 +128,8 @@ async function playRound(p: Page, s: Sess, how: 'route' | 'cancel' | 'timeout', 
     await p.locator('#confirm').click();
   }
   if (how === 'cancel') {
-    p.once('dialog', (d) => void d.accept());
     await p.locator('.hb-cancel').click();
+    await p.locator('.ask-dlg [data-v="1"]').click();
   } else await buildAndSubmit(p, s);
   await p.locator('.btn-big', { hasText: /Nächste Runde|Zum Endergebnis/ }).waitFor({ timeout: 180_000 });
   const st = await routeState(s);

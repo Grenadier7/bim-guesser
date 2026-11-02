@@ -1,5 +1,6 @@
 // Leere Wien-Karte (ohne Beschriftungen) + Routen-Darstellung
 import L from 'leaflet';
+import { isDark } from './theme.ts';
 import 'leaflet/dist/leaflet.css';
 import type { District, FocusArea, LatLon, RouteLeg, RouteOption, StationRef } from '../../shared/types.ts';
 import { chain, esc } from './ui.ts';
@@ -41,11 +42,19 @@ export class GameMap {
   constructor(el: HTMLElement) {
     this.map = L.map(el, { zoomControl: true, attributionControl: true, minZoom: 10, maxZoom: 16, zoomSnap: 0.25 });
     // Basiskarte ohne Beschriftungen ("leere Karte")
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-      // ab Zoomstufe 15 enthalten die Kacheln Straßen- und Parknamen – darüber nur vergrößern
-      maxNativeZoom: 14,
-      attribution: 'Karte: Esri, HERE, Garmin, &copy; OpenStreetMap · Daten: Wiener Linien (CC BY 4.0) · Fahrplan: Mobilitätsverbünde Österreich OG – data.mobilitaetsverbuende.at (verarbeitet)',
-    }).addTo(this.map);
+    // Basiskarte hell bzw. dunkel (Dunkelmodus, theme.ts)
+    const tiles = (dark: boolean) =>
+      L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_${dark ? 'Dark' : 'Light'}_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
+        // ab Zoomstufe 15 enthalten die Kacheln Straßen- und Parknamen – darüber nur vergrößern
+        maxNativeZoom: 14,
+        attribution: 'Karte: Esri, HERE, Garmin, &copy; OpenStreetMap · Daten: Wiener Linien (CC BY 4.0) · Fahrplan: Mobilitätsverbünde Österreich OG – data.mobilitaetsverbuende.at (verarbeitet)',
+      });
+    let base = tiles(isDark()).addTo(this.map);
+    window.addEventListener('themechange', () => {
+      base.remove();
+      base = tiles(isDark()).addTo(this.map);
+      base.bringToBack();
+    });
     this.map.fitBounds(VIENNA);
     for (const g of [this.areas, this.learnArea, this.learnMarks, this.guesses, this.endpoints, this.hints, this.draft, this.routes]) g.addTo(this.map);
   }

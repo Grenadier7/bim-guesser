@@ -1,8 +1,10 @@
 import type { RoundReveal } from '../../../shared/types.ts';
 import { fmtTimeLeft, maxRoundPoints } from '../../../shared/rules.ts';
-import { api } from '../api.ts';
-import { app, routeState, endSession, getReveal, isHost } from '../store.ts';
-import { accountTag, esc, toast } from '../ui.ts';
+import { app, routeState, getReveal } from '../store.ts';
+import { esc } from '../ui.ts';
+import { XP } from '../../../shared/career.ts';
+import { record } from '../career.ts';
+import { bindEndActions, earlyNote, endActions, levelSuggestion, podium, soloCard } from './result.ts';
 import type { Screen } from './screen.ts';
 import { markPlayed } from '../progress.ts';
 
@@ -10,6 +12,14 @@ export function finalScreen(panel: HTMLElement): Screen {
   app.map.clear();
   app.map.overview();
   markPlayed();
+  {
+    // Fortschritt: einmal je Spiel (Endstand kann nach Neuladen wieder erscheinen)
+    const s = routeState();
+    const myId = app.session!.playerId;
+    const ranking = [...s.players].sort((a, b) => b.score - a.score);
+    const won = ranking.length > 1 && ranking[0]?.id === myId && ranking[0].score > 0;
+    record(`game:${s.id}:${s.rounds.map((r) => `${r.from?.id}-${r.to?.id}`).join()}`, { activity: true, xp: XP.game(won), count: { games: 1, wins: won ? 1 : 0 } });
+  }
   let reveals: RoundReveal[] = [];
 
   Promise.all(routeState().rounds.map((r) => getReveal(r.index).catch(() => null)))
@@ -22,10 +32,9 @@ export function finalScreen(panel: HTMLElement): Screen {
   function render() {
     const s = routeState();
     const myId = app.session!.playerId;
-    const max = s.settings.rounds * maxRoundPoints(s.settings);
+    const max = Math.max(1, s.rounds.length) * maxRoundPoints(s.settings);
     const ranking = [...s.players].sort((a, b) => b.score - a.score);
     const me = ranking.find((p) => p.id === myId);
-    const medals = ['🥇', '🥈', '🥉'];
     const multi = ranking.length > 1;
 
     const rows = reveals
@@ -38,36 +47,17 @@ export function finalScreen(panel: HTMLElement): Screen {
       })
       .join('');
 
-    const pct = me ? me.score / max : 0;
+    const pct = me ? Math.round((me.score / max) * 100) : 0;
     panel.innerHTML = `
       <div class="final">
-        ${
-          multi
-            ? `<h2>Endstand</h2><ol class="podium">${ranking
-                .map(
-                  (p, i) =>
-                    `<li class="${p.id === myId ? 'is-me' : ''}"><span>${medals[i] ?? `${i + 1}.`}</span><b>${esc(p.name)}${accountTag(p)}</b><span class="pts">${p.score.toLocaleString('de-AT')}</span></li>`,
-                )
-                .join('')}</ol>`
-            : `<h1>${(me?.score ?? 0).toLocaleString('de-AT')} <small>/ ${max.toLocaleString('de-AT')} Punkte</small></h1>
-               <p>${pct >= 0.75 ? 'Öffi-Profi! 🏆' : pct >= 0.5 ? 'Solide – du kennst dich aus.' : 'Da geht noch was – nächstes Mal vielleicht öfter die U-Bahn? 😉'}</p>`
-        }
+        <h2>🏁 Endstand</h2>
+        ${earlyNote(s.rounds.length, s.settings.rounds, 'Runde')}
+        ${multi ? podium(s.players, myId) : soloCard(me?.score ?? 0, max)}
         <h3>Deine Runden</h3>
         <table><thead><tr><th>#</th><th>Strecke</th><th>Du / Beste</th><th title="Zeit übrig / Zeitlimit">⏱ übrig</th><th>Pkt.</th></tr></thead><tbody>${rows}</tbody></table>
-        ${isHost() ? '<button class="btn btn-primary btn-big" id="again">Zurück zur Lobby</button>' : '<div class="waiting-host">Der Host kann eine neue Runde in derselben Lobby starten.</div>'}
-        <button class="link leave" id="leave">Lobby verlassen</button>
+        ${endActions({ suggestion: multi ? null : levelSuggestion(pct, s.settings.difficulty) })}
       </div>`;
-    panel.querySelector('#again')?.addEventListener('click', async () => {
-      try {
-        await api.lobby(app.session!);
-      } catch (e) {
-        toast((e as Error).message);
-      }
-    });
-    panel.querySelector('#leave')!.addEventListener('click', async () => {
-      await api.leave(app.session!).catch(() => {});
-      endSession();
-    });
+    bindEndActions(panel);
   }
 
   render();

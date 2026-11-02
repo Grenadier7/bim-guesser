@@ -92,6 +92,7 @@ export function gameRoutes(app: Express, games: GameManager, account?: { account
   app.post('/api/games/:code/start', limitStart, h(async (req) => (await game(req).start(token(req)), game(req).state())));
   app.post('/api/games/:code/next', h(async (req) => (await game(req).next(token(req)), game(req).state())));
   app.post('/api/games/:code/lobby', h((req) => (game(req).backToLobby(token(req)), game(req).state())));
+  app.post('/api/games/:code/end', h((req) => (game(req).endGame(token(req)), game(req).state())));
   app.post('/api/games/:code/leave', h((req) => (game(req).leave(token(req)), { ok: true })));
   // Host entfernt einen Spieler; Lobby-Chat (eigenes Rate-Limit – Fluten bremst zusätzlich die Lobby selbst)
   app.post('/api/games/:code/host', h((req) => (game(req).setHost(token(req), String(req.body?.playerId ?? ''), req.body?.on !== false), game(req).state())));
