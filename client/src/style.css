@@ -6681,7 +6681,7 @@ details.adm-linechg li {
   }
 }
 /* aktive Challenge: Einstellungen ausgegraut */
-.lobby.challenge-on .setting,
+.lobby.challenge-on .setting:not(.rounds-setting),
 .lobby.challenge-on .toggles,
 .lobby.challenge-on details.advanced {
   opacity: 0.45;
@@ -7133,4 +7133,48 @@ details.adm-linechg li {
 }
 .dt-table tr.ok td {
   font-weight: 700;
+}
+
+/* Tages-Challenges: Punkte („3 Punkte“) */
+.pin-way span {
+  background: #1e6fbf;
+}
+.pin-way.done span {
+  background: var(--good);
+}
+.challenge-rule {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff4cc;
+  color: #5b4100;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.challenge-rule .chips {
+  display: inline-flex;
+  gap: 4px;
+  vertical-align: middle;
+}
+
+/* Testseite Tages-Challenges (nur lokal) */
+.ch-list {
+  display: grid;
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+}
+.ch-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.ch-districts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }

@@ -101,7 +101,10 @@ export type Difficulty = 'easy' | 'medium' | 'hard' | 'expert' | 'custom';
  */
 export type StationKind = 'Ukey' | 'U' | 'Skey' | 'S' | 'Tkey' | 'T' | 'hub' | 'bus' | 'all';
 
-export type DistanceRange = 'short' | 'medium' | 'long';
+export type DistanceRange = 'short' | 'medium' | 'long' | 'xlong';
+
+/** Aufgabe einer Runde: normal (A → B), eines von 3 Zielen, 3 Punkte abklappern, zum nächsten Wasser */
+export type RoundTask = 'normal' | 'choose3' | 'visit3' | 'water';
 
 /**
  * X-treme: 'off' · 'noHints' (Haltestellen selbst eintippen, keine Route auf der Karte) ·
@@ -137,10 +140,41 @@ export type Restriction =
   | 'mixModes'
   | 'noSameMode'
   | 'twoTrams'
-  | 'insider';
+  | 'insider'
+  | 'busOnly'
+  | 'oneLeg'
+  | 'tramEnds'
+  | 'umland'
+  | 'sunny'
+  | 'avoidInner'
+  | 'min2Transfers'
+  | 'mustLine'
+  | 'anyLine';
 
 /** Spielvariante für alle Runden (Tages-Challenges): ohne U-Bahn, ohne Bus, nur Bim, max. 1 Umstieg */
-export type Variant = 'none' | 'noU' | 'noBus' | 'tram' | 'one' | 'needS' | 'needTram' | 'needBus' | 'maxOneU' | 'mixModes' | 'noSameMode' | 'twoTrams' | 'insider';
+export type Variant =
+  | 'none'
+  | 'noU'
+  | 'noBus'
+  | 'tram'
+  | 'one'
+  | 'needS'
+  | 'needTram'
+  | 'needBus'
+  | 'maxOneU'
+  | 'mixModes'
+  | 'noSameMode'
+  | 'twoTrams'
+  | 'insider'
+  | 'busOnly'
+  | 'oneLeg'
+  | 'tramEnds'
+  | 'umland'
+  | 'sunny'
+  | 'avoidInner'
+  | 'min2Transfers'
+  | 'mustLine'
+  | 'anyLine';
 
 /** Wie oft Einschränkungs-Runden vorkommen */
 export type RestrictionFrequency = 'never' | 'sometimes' | 'always';
@@ -179,6 +213,10 @@ export interface GameSettings {
   variant: Variant;
   /** aktive Tages-Challenge (shared/challenges.ts): Einstellungen sind dann fest */
   challenge: string | null;
+  /** Aufgabe der Runden (Tages-Challenges) */
+  task: RoundTask;
+  /** fester Start (Stationsname, z.B. „Schwedenplatz“) – Tages-Challenges */
+  start: string | null;
 }
 
 // ---------------------------------------------------------------- Routen
@@ -210,6 +248,8 @@ export interface RouteLeg {
 export interface RouteOption {
   /** Signatur: Linien + Umstiegsstationen */
   key: string;
+  /** „3 Ziele“: zu welchem Ziel (Name) / „Wasser“: zu welchem Gewässer */
+  target?: string;
   legs: RouteLeg[];
   /** Median der gewerteten Reisezeit (je nach Einstellung inkl. Wartezeit), Minuten */
   medianMin: number;
@@ -349,6 +389,17 @@ export interface RoundPublic {
   deadline: number | null;
   /** vom Host pausiert seit (Serverzeit, ms) */
   pausedAt: number | null;
+  /** Tages-Challenges: Pflicht-Linien („mustLine“: eine, „anyLine“: drei zur Wahl) */
+  required?: string[];
+  /** Umland: Zug, in dem man sitzt, und woher */
+  entryLines?: string[];
+  entryTown?: string;
+  /** „3 Ziele“: eines davon erreichen (to ist dann eines davon) */
+  targets?: StationRef[];
+  /** „3 Punkte“: alle befahren, Reihenfolge egal */
+  waypoints?: StationRef[];
+  /** „Ab ins Wasser“: Ziel ist das nächste Wasser */
+  water?: boolean;
 }
 
 export type GamePhase = 'lobby' | 'playing' | 'finished';

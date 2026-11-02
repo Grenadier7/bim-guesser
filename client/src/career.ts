@@ -50,6 +50,8 @@ function localMedals(c = career()): MedalPublic[] {
     daily: cc.daily ?? 0,
     blindPerfect: cc.blindPerfect ?? 0,
     lateNight: cc.lateNight ?? 0,
+    challenges: c.ch?.length ?? 0,
+    challengesDone: c.chDone?.length ?? 0,
   };
   return medalList(stats);
 }
@@ -85,6 +87,8 @@ interface Event {
   count?: Partial<Record<keyof CareerCounters, number>>;
   /** eigene, gültige Route → Sammelkarte */
   legs?: UserLeg[];
+  /** Tages-Challenge gespielt (und ggf. geschafft) */
+  challenge?: { id: string; done: boolean };
 }
 
 const once = new Set<string>();
@@ -116,6 +120,12 @@ export function record(key: string, ev: Event) {
     }
     c.lines = [...lines];
     c.stations = [...stations];
+  }
+  if (ev.challenge) {
+    // Bezirk des Tages: jeder Bezirk ist dieselbe Challenge
+    const id = ev.challenge.id.startsWith('district-') ? 'district' : ev.challenge.id;
+    c.ch = [...new Set([...(c.ch ?? []), id])];
+    if (ev.challenge.done) c.chDone = [...new Set([...(c.chDone ?? []), id])];
   }
   c.acts = trimActs(c.acts, today);
   c.best = Math.max(c.best, streakOf(c.acts, today).days);

@@ -38,6 +38,9 @@ export interface Career {
   lines: string[];
   stations: string[];
   c: Partial<CareerCounters>;
+  /** Tages-Challenges: gespielt / geschafft (IDs; Bezirk des Tages zählt einmal als „district“) */
+  ch?: string[];
+  chDone?: string[];
 }
 
 export const emptyCareer = (): Career => ({ xp: 0, acts: {}, best: 0, lines: [], stations: [], c: {} });
@@ -170,6 +173,9 @@ export interface MedalStats {
   daily: number;
   blindPerfect: number;
   lateNight: number;
+  /** verschiedene Tages-Challenges gespielt / geschafft */
+  challenges?: number;
+  challengesDone?: number;
 }
 
 interface MedalDef {
@@ -207,6 +213,8 @@ export const MEDALS: MedalDef[] = [
     value: (s) => s.tramLines,
   },
   { id: 'night', icon: '🦉', title: 'Nachteule', text: (x) => `${n(x, 'Nachtrunde', 'Nachtrunden')} (0–5 Uhr) gespielt`, tiers: () => [1, 10, 50], value: (s) => s.night },
+  { id: 'challenges', icon: '🎪', title: 'Challenge-Sammler', text: (x) => `${n(x, 'Tages-Challenge', 'verschiedene Tages-Challenges')} gespielt`, tiers: () => [3, 10, 25], value: (s) => s.challenges ?? 0 },
+  { id: 'challenges-done', icon: '🏅', title: 'Challenge-Meister', text: (x) => `${n(x, 'Tages-Challenge', 'verschiedene Tages-Challenges')} geschafft`, tiers: () => [3, 10, 25], value: (s) => s.challengesDone ?? 0 },
   { id: 'friends', icon: '🤝', title: 'Gesellig', text: (x) => n(x, 'Freund', 'Freunde'), tiers: () => [1, 3, 10], value: (s) => s.friends },
   { id: 'level', icon: '🚀', title: 'Aufsteiger', text: (x) => `Level ${x} erreicht`, tiers: () => [5, 10, 20], value: (s) => s.level },
   { id: 'tutorial', icon: '🎓', title: 'Angekommen', text: () => 'Tutorial geschafft', tiers: () => [1], value: (s) => s.tutorial },

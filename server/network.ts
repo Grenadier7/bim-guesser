@@ -360,6 +360,33 @@ export class Network {
     throw new NoPairError('Kein passendes Adress-Paar gefunden – bitte andere Entfernung wählen.');
   }
 
+  /** Station mit diesem Namen (mit Linien) – fester Start der Tages-Challenges */
+  stationByName(name: string): Station | null {
+    return [...this.stations.values()].find((s) => s.name === name && s.lines.length) ?? null;
+  }
+
+  /** Ziel zu einem festen Start: Station aus dem Pool in passender Entfernung */
+  randomTarget(from: { lat: number; lon: number; id?: string }, s: GameSettings, exclude: Set<string> = new Set(), minApart: { lat: number; lon: number }[] = []): Station {
+    const [minD, maxD] = distanceRange(s.distance);
+    const pool = this.candidates(s.stations, s.slot, s.network).filter(
+      (x) => x.id !== from.id && !exclude.has(x.id) && distM(x, from) >= minD && distM(x, from) <= maxD && minApart.every((p) => distM(p, x) >= 2000),
+    );
+    if (!pool.length) throw new NoPairError('Kein passendes Ziel gefunden – bitte andere Entfernung wählen.');
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  /** zufällige Adresse in passender Entfernung von einem festen Start */
+  randomAddressFrom(from: { lat: number; lon: number }, s: GameSettings): Station {
+    const all = this.addressList();
+    const [minD, maxD] = distanceRange(s.distance);
+    for (let n = 0; n < 3000; n++) {
+      const b = all[Math.floor(Math.random() * all.length)];
+      const d = distM(b, from);
+      if (d >= minD && d <= maxD) return this.addVirtual(b);
+    }
+    throw new NoPairError('Keine passende Adresse gefunden.');
+  }
+
   private addVirtual(x: { i: number; lat: number; lon: number; name: string; district: number }): Station {
     const id = `a:${x.i}`;
     const st: Station = { id, name: x.name, lat: x.lat, lon: x.lon, modes: [], lines: [], district: x.district };

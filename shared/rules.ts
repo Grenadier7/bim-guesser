@@ -36,9 +36,15 @@ export const NET_MODES: { id: NetMode; label: string; hint: string }[] = [
   { id: 'current', label: 'Aktuell', hint: 'Nächster echter Tag – inkl. Sperren & Ersatzverkehr' },
 ];
 
-export const SLOT_DAYTYPE: Record<SlotId, DayType> = { wd12: 'wd', wd17: 'wd', sa02: 'sa', su12: 'su' };
+/**
+ * Uhrzeiten, die es nur für Tages-Challenges gibt (kein Knopf in der Lobby): wd-night = unter der Woche, 01:30 –
+ * keine U-Bahn mehr, nur Nachtbusse („Dickmacks Donnerstag“).
+ */
+export const HIDDEN_SLOTS: Record<string, { day: DayType; time: [number, number] }> = { 'wd-night': { day: 'wd', time: [1, 30] } };
+
+export const SLOT_DAYTYPE: Record<SlotId, DayType> = { wd12: 'wd', wd17: 'wd', sa02: 'sa', su12: 'su', 'wd-night': 'wd' };
 /** Uhrzeit je Zeitfenster [Stunde, Minute] – sa02: Nacht Fr → Sa (U-Bahn fährt durch) */
-export const SLOT_TIME: Record<SlotId, [number, number]> = { wd12: [12, 0], wd17: [17, 0], sa02: [2, 0], su12: [12, 0] };
+export const SLOT_TIME: Record<SlotId, [number, number]> = { wd12: [12, 0], wd17: [17, 0], sa02: [2, 0], su12: [12, 0], 'wd-night': [1, 30] };
 /** gültige Uhrzeit – eine inzwischen entfernte wird zur ersten */
 export const slotOr = (id: unknown): SlotId => (isSlotId(id) ? id : TIME_SLOTS[0].id);
 /** Nacht (0–5 Uhr): nur Stationen mit U-Bahn oder Nachtbus */
@@ -135,6 +141,7 @@ export const DISTANCES: { id: DistanceRange; label: string; range: [number, numb
   { id: 'short', label: '2–7 km', range: [2000, 7000], factor: 0.9 },
   { id: 'medium', label: '3–12 km', range: [3000, 12000], factor: 1 },
   { id: 'long', label: '6–16 km', range: [6000, 16000], factor: 1.1 },
+  { id: 'xlong', label: '12–25 km', range: [12000, 25000], factor: 1.2 },
 ];
 
 /** Punkte-Faktor je Mindest-Umstiegszahl (0 · 1 · 2) */
@@ -242,7 +249,7 @@ export function regionalTrains(names: string[]): string[] {
 export const isSpecialLine = (l: { id: string }) => /^\d+E$/.test(l.id) || isRegionalTrain(l);
 
 export function isSlotId(v: unknown): v is SlotId {
-  return typeof v === 'string' && TIME_SLOTS.some((s) => s.id === v);
+  return typeof v === 'string' && (TIME_SLOTS.some((s) => s.id === v) || v in HIDDEN_SLOTS);
 }
 
 // ---------------------------------------------------------------- Wertung: Modus („Was zählt?“)
@@ -397,6 +404,15 @@ export const RESTRICTIONS: Record<Restriction, { label: string; hint: string; ic
   noSameMode: { label: 'Nie zweimal dasselbe', hint: 'Kein Umstieg zwischen gleichen Verkehrsmitteln – nach der U-Bahn keine U-Bahn, nach der Bim keine Bim.', icon: '🔁' },
   twoTrams: { label: 'Bim-Hüpfer', hint: 'Mindestens zwei Fahrten mit der Bim.', icon: '🚋' },
   insider: { label: 'Insider', hint: 'Keine U-Bahn und keine bekannte S-Bahn (S1–S4, S7, S45, S80) – nur Bim, Bus und die übrigen S-Bahnen.', icon: '🕵️' },
+  busOnly: { label: 'Busreise', hint: 'Nur mit dem Bus.', icon: '🚌' },
+  oneLeg: { label: 'Fußbus', hint: 'Genau eine Linie – zu ihr hin und von ihr weg gehst du zu Fuß. Der Fußbus fährt immer!', icon: '🚶' },
+  tramEnds: { label: 'Bim-Hüpfer', hint: 'Die erste und die letzte Fahrt mit der Bim.', icon: '🦘' },
+  umland: { label: 'Aus dem Umland', hint: 'Du kommst mit dem Zug aus Niederösterreich – steig in Wien geschickt um.', icon: '🚆' },
+  sunny: { label: 'Sonnenschein', hint: 'Nichts, was unter der Erde fährt (U3, U-Bahn-Tunnel, S-Bahn-Stammstrecke, 18er am Hauptbahnhof …).', icon: '☀️' },
+  avoidInner: { label: 'Innenstadt umfahren', hint: 'Keine Station in den Bezirken 1, 4, 5, 6, 7, 8, 9 – auch nicht durchfahren.', icon: '🚫' },
+  min2Transfers: { label: 'Umsteige-Profi', hint: 'Mindestens 2-mal umsteigen (3 Fahrten).', icon: '🔀' },
+  mustLine: { label: 'Pflicht-Linie', hint: 'Eine bestimmte Linie muss dabei sein.', icon: '📌' },
+  anyLine: { label: 'Eine von drei', hint: 'Eine der drei Linien muss dabei sein.', icon: '🎲' },
 };
 
 /** Varianten: gelten für jede Runde (in der Lobby unter „Varianten“) */
@@ -414,6 +430,15 @@ export const VARIANTS: { id: Variant; label: string; icon: string; restriction: 
   { id: 'noSameMode', label: 'Nie zweimal dasselbe', icon: '🔁', restriction: 'noSameMode' },
   { id: 'twoTrams', label: 'Bim-Hüpfer', icon: '🚋', restriction: 'twoTrams' },
   { id: 'insider', label: 'Insider', icon: '🕵️', restriction: 'insider' },
+  { id: 'busOnly', label: 'Busreise', icon: '🚌', restriction: 'busOnly' },
+  { id: 'oneLeg', label: 'Fußbus', icon: '🚶', restriction: 'oneLeg' },
+  { id: 'tramEnds', label: 'Bim-Hüpfer', icon: '🦘', restriction: 'tramEnds' },
+  { id: 'umland', label: 'Aus dem Umland', icon: '🚆', restriction: 'umland' },
+  { id: 'sunny', label: 'Sonnenschein', icon: '☀️', restriction: 'sunny' },
+  { id: 'avoidInner', label: 'Innenstadt umfahren', icon: '🚫', restriction: 'avoidInner' },
+  { id: 'min2Transfers', label: 'Umsteige-Profi', icon: '🔀', restriction: 'min2Transfers' },
+  { id: 'mustLine', label: 'Pflicht-Linie', icon: '📌', restriction: 'mustLine' },
+  { id: 'anyLine', label: 'Eine von drei', icon: '🎲', restriction: 'anyLine' },
 ];
 
 export const RESTRICTION_FREQUENCIES: { id: RestrictionFrequency; label: string }[] = [
@@ -427,7 +452,7 @@ export const RESTRICTION_CHANCE = 0.3;
 /** Einschränkungs-Runden haben doppelte Zeit, aber höchstens 2:30 mehr … */
 export const RESTRICTION_EXTRA_MAX_SEC = 150;
 /** … schwere Einschränkungen (ohne U-Bahn) bekommen fix 4 Minuten mehr */
-export const HARD_RESTRICTIONS: Restriction[] = ['noU', 'onlyTram', 'insider'];
+export const HARD_RESTRICTIONS: Restriction[] = ['noU', 'onlyTram', 'insider', 'busOnly', 'oneLeg', 'sunny', 'avoidInner', 'anyLine', 'mustLine'];
 export const HARD_RESTRICTION_EXTRA_SEC = 240;
 
 export function roundLimitSec(base: number | null, restriction: Restriction | null): number | null {
@@ -454,6 +479,7 @@ export function restrictionAllowsMode(r: Restriction | null, mode: Mode): boolea
   if (r === 'noBus') return mode !== 'B' && mode !== 'N';
   if (r === 'onlyTram') return mode === 'T' || mode === 'W';
   if (r === 'insider') return mode !== 'U';
+  if (r === 'busOnly') return mode === 'B' || mode === 'N' || mode === 'W';
   return true;
 }
 
@@ -465,7 +491,10 @@ export function restrictionAllowsRoute(r: Restriction | null, legs: { mode: Mode
   if (r === 'needBus') return n('B') + n('N') > 0;
   if (r === 'maxOneU') return n('U') <= 1;
   if (r === 'twoTrams') return n('T') >= 2;
-  if (r === 'mixModes') return new Set(legs.map((l) => (l.mode === 'N' ? 'B' : l.mode))).size >= 2;
+  if (r === 'mixModes') return new Set(legs.map((l) => (l.mode === 'N' ? 'B' : l.mode))).size >= 3;
+  if (r === 'tramEnds') return legs[0]?.mode === 'T' && legs.at(-1)?.mode === 'T';
+  if (r === 'min2Transfers') return legs.length >= 3;
+  if (r === 'oneLeg') return legs.length === 1;
   if (r === 'noSameMode') return legs.every((l, i) => i === 0 || l.mode !== legs[i - 1].mode);
   return true;
 }
@@ -479,7 +508,7 @@ export const WELL_KNOWN_S = ['S1', 'S2', 'S3', 'S4', 'S7', 'S45', 'S80'];
 export const isWellKnownLine = (l: { id: string; mode: Mode }) => l.mode === 'U' || (l.mode === 'S' && WELL_KNOWN_S.includes(l.id));
 
 export function restrictionMaxLegs(r: Restriction | null): number {
-  return r === 'oneTransfer' ? 2 : 8;
+  return r === 'oneLeg' ? 1 : r === 'oneTransfer' ? 2 : 8;
 }
 
 // ---------------------------------------------------------------- Tipps

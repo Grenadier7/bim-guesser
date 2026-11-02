@@ -128,25 +128,42 @@ Verbindung, die nur mit bekannten Linien und alle Versuche mit Begründung. Die 
 - **Endstand** (Routenjagd und Quiz gleich): Punkte mit Balken und Urteil bzw. Siegertreppchen, 🔁 **Revanche** (gleiche
   Einstellungen, sofort los), allein: Vorschlag der nächsten Stufe (≥ 70 %) bzw. einer leichteren (< 25 %).
   „Spiel beenden“ mitten im Spiel zeigt den Endstand der gespielten Runden.
-- **Tages-Challenges** in der Routenjagd-Lobby (`shared/challenges.ts`, `client/src/challenges.ts`): ein niedriges
-  Banner unter „Einstellungen“, mit ‹ › blätterbar – jeden Tag **4** (für alle gleich, die erste ist der Vorschlag).
-  **Rotation:** alle stehen in einer Reihenfolge, jeden Tag sind die nächsten 4 dran, nach jedem Durchlauf wird leicht
-  umgestellt – jede kommt gleich oft, in fast gleichem Abstand (Anzahl/4 Tage ±2), nie an zwei Tagen hintereinander und
-  nicht immer mit denselben Partnern; 🏘️ Bezirk der Woche läuft mit (≈ einmal pro Woche). Katalog (30):
-  - Tempo & Format: Kaffeepause, Blitzrunde (1 min), Sekundenkrimi (40 s), Marathon (10 Runden), Profi-Sprint,
-    Puristen-Runde (keine Joker, kein Limit), Gemütlich (Umstiege vermeiden – nur wenn verfügbar)
-  - Netz-Regeln je Linie: Ohne U-Bahn, Schienen-Tag (ohne Bus), Bim-Tour, **Insider** (keine U-Bahn und keine bekannte
-    S-Bahn), Direkt-Profi (max. 1 Umstieg), Umsteige-Profi, Hindernislauf
-  - Routen-Regeln für die ganze Route: S-Bahn-Fan (mind. eine S-Bahn), Busfahrer (mind. ein Bus), Eine U reicht
-    (höchstens 1× U-Bahn), Bunt gemischt (≥ 2 Verkehrsmittel), Nie zweimal dasselbe (kein Umstieg zwischen gleichen
-    Verkehrsmitteln), Bim-Hüpfer (≥ 2× Bim) – der Baukasten sagt vor dem Abgeben, wenn die Regel noch fehlt; die
-    Auflösung zeigt nur Verbindungen, die sie einhalten
-  - Wahrnehmung: Blindflug, Ohne Namen, Ortskenner („Wo liegt das?“ + Ein-/Ausstieg ohne Vorschläge)
-  - Ort & Zeit: Tür zu Tür (Adressen), Innere Stadt, Stadtrand-Tour (6–16 km), Fahrplan-Fuchs (echte Abfahrten),
-    Nachtschicht, Stoßzeit, Sonntagsausflug (nur mit passender Uhrzeit)
-  „Spielen“ setzt alle Einstellungen auf Standard + die der Challenge, klappt „Erweitert“ zu und graut alles aus (auch
-  am Server gesperrt); eigener Start-Knopf; beim Start sehen alle ein Fenster mit Icon, Name und Beschreibung.
-  „✕ Beenden“ → wieder alles Standard. Einstellungen einer Challenge werden nicht für die nächste Lobby gemerkt.
+- **Tages-Challenges** in der Routenjagd-Lobby – kurze Abwechslung für etwa 5 Minuten (`shared/challenges.ts`,
+  Regeln in `shared/challengeRules.ts`, Server `server/challengeRound.ts`): ein niedriges Banner unter
+  „Einstellungen“, mit ‹ › blätterbar – jeden Tag **3 aus der Rotation + 🏘️ Bezirk des Tages** (für alle gleich,
+  zufällig gemischt, die erste ist der Vorschlag). Rotation: jede kommt gleich oft und in fast gleichem Abstand, nie an
+  zwei Tagen hintereinander, wechselnde Gruppen; der Bezirk wechselt täglich (alle 23 der Reihe nach).
+  - „Spielen“ setzt alle Einstellungen auf Standard + die der Challenge („Wo liegt das?“ aus), klappt „Erweitert“ zu
+    und graut alles aus (am Server gesperrt) – **nur die Rundenzahl bleibt wählbar**, mit eigenen Optionen je
+    Challenge (Standard ≈ 5 Minuten: leicht 2, schwer 1, Sprints 3–4). Eigener Start-Knopf, beim Start sieht jeder ein
+    Fenster mit Icon, Name und Beschreibung. „✕ Beenden“ → wieder alles Standard.
+  - Katalog: ⚡ Blitzrunde · ⏱️ Sekundenkrimi · 🏆 Profi-Sprint · 🚫 Ohne U-Bahn · 🚋 Bim-Tour · 🕵️ Insider (keine U-Bahn,
+    keine bekannte S-Bahn) · 1️⃣ Direkt-Profi · 🔀 Umsteige-Profi (mind. 2× umsteigen) · ⛔ Hindernislauf · 🚐 Busreise (nur
+    Busse, kurz) · 🚶 Fußbus (genau eine Linie, Rest zu Fuß) · ☀️ Sonnenschein (nichts Unterirdisches) · 🍩 Innenstadt
+    umfahren (keine Station in 1, 4–9; Bezirke rot auf der Karte) · 🚆 S-Bahn-Fan · 🚌 Busfahrer (Strecken, auf denen der Bus
+    die besten Verbindungen stellt) · ☝️ Eine U reicht · 🎨 Bunt gemischt (≥ 3 Verkehrsmittel) · 🔁 Nie zweimal dasselbe ·
+    🦘 Bim-Hüpfer (erste und letzte Fahrt Bim) · 📌 Pflicht-Linie · 🎲 Eine von drei · 🎯 Drei Ziele (zu einem davon) ·
+    📍 Drei Punkte (alle befahren) · 🏊 Ab ins Wasser · 🚆 Aus dem Umland (im Zug aus Gänserndorf, Mistelbach, Tulln,
+    St. Pölten, Wr. Neustadt …; erste Fahrt ab der Stadtgrenze) · 🎡 Ring-Runde (Innere Stadt ohne U-Bahn) · 🏠 Tür zu Tür ·
+    🌄 Stadtrand-Tour (12–25 km) · 🧮 Fahrplan-Fuchs · 🚧 Aktuelles Netz · 🍔 Dickmacks Donnerstag (01:30 unter der Woche,
+    Schwedenplatz → Adresse, nur Nightline) · 🌙 Nachtschicht · 🧺 Sonntagsausflug.
+  - **Sofort korrigiert:** Der Baukasten bietet nur an, was die Regel erlaubt – gesperrte Linien mit Begründung beim
+    Eintippen („🦘 Die erste Fahrt muss mit der Bim sein – U3 ist U-Bahn“), gesperrte Ein-/Ausstiege grau mit Grund
+    („☁️ unter der Erde“, „🚫 innerer Bezirk“), das Ziel erst, wenn die Route die Regel erfüllt („noch nicht: Es fehlt
+    noch ein Bus“). Server und Baukasten nutzen dieselben Regeln und Meldungen.
+  - Auswahl der Strecken je Challenge (z.B. Busfahrer: Bus in allen besten Verbindungen; Bunt gemischt: gemischte
+    Verbindung fast so schnell wie die beste; Pflicht-Linie: liegt nicht auf der schnellsten Verbindung; Drei Ziele:
+    das nächstgelegene ist nicht das schnellste). Die Auflösung zeigt nur Verbindungen, die die Regeln einhalten.
+  - Unterirdische Abschnitte (grob): U3 fast ganz, U1/U2/U4 im Zentrum, U6 bei Längenfeldgasse/Niederhofstraße und
+    Jägerstraße/Dresdner Straße, S-Bahn-Stammstrecke (Mitte–Rennweg–Quartier Belvedere), 18er am Hauptbahnhof und im
+    Südgürtel-Tunnel (`UNDERGROUND` in `shared/challengeRules.ts`).
+  - **Ab ins Wasser:** Gewässer und Bäder aus OpenStreetMap (`npm run build:water` → `data/water.json`, ODbL); Start
+    ≥ 1,2 km vom Wasser und mit den Öffis klar schneller als zu Fuß; gewertet bis ans Wasser inkl. Fußweg.
+  - **Medaillen:** 🎪 Challenge-Sammler (verschiedene gespielt) und 🏅 Challenge-Meister (geschafft – meist eine Runde
+    mit vollen Routenpunkten, bei schweren ab 900), je Bronze/Silber/Gold.
+  - **Testen (nur lokal, `npm run dev`):** `http://localhost:5173/#challenge-test` – jede Challenge (und jeder Bezirk)
+    mit einem Klick allein spielen. `npm run check:challenges` prüft mit dem echten Fahrplan, ob jede Challenge Strecken
+    findet.
 - **Chat**: Schnell-Reaktionen 👏 😂 😮 🔥 🚋 GG und 🎲 (= `/ez`).
 - **Tastatur**: Linie tippen, ← → (↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt sie – der Fokus steht
   beim Ausstieg (hält die Linie woanders: beim Einstieg, mit Fußweg-Hinweis). Enter öffnet die Liste, ↑ ↓ wählt den

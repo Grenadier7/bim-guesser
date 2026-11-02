@@ -180,13 +180,15 @@ test('Tages-Challenge: Banner blättern, Spielen legt die Einstellungen fest (au
   assert.equal(await title(), first);
   await p.locator('#cb-go').click();
   await p.locator('.lobby.challenge-on .challenge-bar.on').waitFor();
-  assert.ok(await p.locator('button[data-k=rounds]').first().isDisabled(), 'Einstellungen fest');
+  assert.ok(await p.locator('button[data-k=difficulty]').first().isDisabled(), 'Einstellungen fest');
+  assert.ok(!(await p.locator('button[data-k=rounds]').first().isDisabled()), 'Rundenzahl bleibt wählbar');
   const s = await p.evaluate(() => JSON.parse(sessionStorage.getItem('oeffi-guesser-session')!));
   const st = (await (await fetch(`${app.base}/api/games/${s.code}?token=${s.token}`)).json()).state;
   assert.ok(st.settings.challenge);
-  // Einstellungen ändern geht nicht (auch nicht am Server vorbei)
-  const r = await fetch(`${app.base}/api/games/${s.code}/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: s.token, settings: { rounds: 10 } }) });
-  assert.equal(r.status, 400);
+  // Einstellungen ändern geht nicht (auch nicht am Server vorbei) – nur die Rundenzahl
+  const put = (settings: object) => fetch(`${app.base}/api/games/${s.code}/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: s.token, settings }) });
+  assert.equal((await put({ tips: 'off' })).status, 400);
+  assert.equal((await put({ rounds: 2 })).status, 200);
   await p.locator('#cb-end').click();
   await p.locator('.lobby:not(.challenge-on)').waitFor();
   const st2 = (await (await fetch(`${app.base}/api/games/${s.code}?token=${s.token}`)).json()).state;

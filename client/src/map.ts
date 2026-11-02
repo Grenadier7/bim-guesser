@@ -1,6 +1,7 @@
 // Leere Wien-Karte (ohne Beschriftungen) + Routen-Darstellung
 import L from 'leaflet';
 import { isDark } from './theme.ts';
+import type { WaterData } from '../../shared/water.ts';
 import 'leaflet/dist/leaflet.css';
 import type { District, FocusArea, LatLon, RouteLeg, RouteOption, StationRef } from '../../shared/types.ts';
 import { chain, esc } from './ui.ts';
@@ -37,6 +38,8 @@ export class GameMap {
   private areas = L.layerGroup();
   private learnArea = L.layerGroup();
   private learnMarks = L.layerGroup();
+  /** Tages-Challenges: Ziele/Punkte, Gewässer, innere Bezirke */
+  private challenge = L.layerGroup();
   private tapHandler: ((e: L.LeafletMouseEvent) => void) | null = null;
 
   constructor(el: HTMLElement) {
@@ -56,7 +59,7 @@ export class GameMap {
       base.bringToBack();
     });
     this.map.fitBounds(VIENNA);
-    for (const g of [this.areas, this.learnArea, this.learnMarks, this.guesses, this.endpoints, this.hints, this.draft, this.routes]) g.addTo(this.map);
+    for (const g of [this.areas, this.learnArea, this.learnMarks, this.challenge, this.guesses, this.endpoints, this.hints, this.draft, this.routes]) g.addTo(this.map);
   }
 
   /** die Leaflet-Karte selbst – für eigene Ebenen wie die Netzkarte */
@@ -95,7 +98,7 @@ export class GameMap {
     for (const fn of this.clearHooks) fn();
     this.stopLocate();
     this.onTap(null);
-    for (const g of [this.areas, this.learnArea, this.learnMarks, this.guesses, this.endpoints, this.hints, this.draft, this.routes]) g.clearLayers();
+    for (const g of [this.areas, this.learnArea, this.learnMarks, this.guesses, this.endpoints, this.hints, this.draft, this.routes, this.challenge]) g.clearLayers();
     this.routeLayers.clear();
   }
 
@@ -255,6 +258,53 @@ export class GameMap {
       ]);
       this.fit(b.pad(0.6), 14);
     }
+  }
+
+  /**
+   * Tages-Challenges: Start (A) und – statt B – drei Ziele (1–3), drei Punkte (✓ wenn befahren), die Gewässer
+   * („Ab ins Wasser“) oder die gesperrten inneren Bezirke. Passt die Karte auf alles ein.
+   */
+  showChallenge(o: {
+    from: StationRef;
+    to?: StationRef | null;
+    targets?: StationRef[];
+    waypoints?: { s: StationRef; done: boolean }[];
+    water?: WaterData | null;
+    inner?: District[];
+    fit?: boolean;
+  }) {
+    this.endpoints.clearLayers();
+    this.challenge.clearLayers();
+    const pts: [number, number][] = [[o.from.lat, o.from.lon]];
+    const label = (m: L.Marker, text: string) => m.bindTooltip(esc(text), { permanent: true, direction: 'top', offset: [0, -14], className: 'pin-label' });
+    this.endpoints.addLayer(label(L.marker([o.from.lat, o.from.lon], { icon: pin('pin-start', 'A'), zIndexOffset: 1000 }), o.from.name));
+    if (o.to) {
+      this.endpoints.addLayer(label(L.marker([o.to.lat, o.to.lon], { icon: pin('pin-end', 'B'), zIndexOffset: 1000 }), o.to.name));
+      pts.push([o.to.lat, o.to.lon]);
+    }
+    o.targets?.forEach((t, i) => {
+      this.endpoints.addLayer(label(L.marker([t.lat, t.lon], { icon: pin('pin-end', String(i + 1)), zIndexOffset: 1000 }), `Ziel ${i + 1}: ${t.name}`));
+      pts.push([t.lat, t.lon]);
+    });
+    o.waypoints?.forEach(({ s, done }, i) => {
+      this.endpoints.addLayer(label(L.marker([s.lat, s.lon], { icon: pin(done ? 'pin-way done' : 'pin-way', done ? '✓' : String(i + 1)), zIndexOffset: 900 }), s.name));
+      pts.push([s.lat, s.lon]);
+    });
+    for (const d of o.inner ?? [])
+      this.challenge.addLayer(L.polygon(d.rings, { color: '#c81e1e', weight: 1.5, fillColor: '#c81e1e', fillOpacity: 0.16, interactive: false }).bindTooltip(`🚫 ${esc(d.name)}`, { sticky: true }));
+    if (o.water) {
+      for (const w of o.water.waters)
+        for (const line of w.lines)
+          this.challenge.addLayer(L.polyline(line, { color: '#1e88e5', weight: w.kind === 'river' ? 5 : 3, opacity: 0.55, interactive: false }));
+      for (const b of o.water.baths)
+        this.challenge.addLayer(L.circleMarker([b.lat, b.lon], { radius: 6, color: '#1e88e5', weight: 2, fillColor: '#bbdefb', fillOpacity: 1 }).bindTooltip(`🏊 ${esc(b.name)}`, { direction: 'top' }));
+    }
+    if (o.water) {
+      // Wasser: Umgebung des Starts (~3,5 km), damit Flüsse und Bäder in der Nähe zu sehen sind
+      const d = 0.032;
+      pts.push([o.from.lat - d, o.from.lon - d * 1.5], [o.from.lat + d, o.from.lon + d * 1.5]);
+    }
+    if (o.fit !== false) this.fit(L.latLngBounds(pts).pad(0.3), 14);
   }
 
   clearEndpoints() {

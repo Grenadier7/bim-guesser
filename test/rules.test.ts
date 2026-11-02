@@ -160,7 +160,7 @@ test('Routen-Regeln der Tages-Challenges: mind. S-Bahn/Bim/Bus, höchstens 1× U
   assert.ok(ok('needTram', r('T')) && !ok('needTram', r('U')));
   assert.ok(ok('needBus', r('N')) && !ok('needBus', r('U', 'S')));
   assert.ok(ok('maxOneU', r('U', 'T', 'S')) && !ok('maxOneU', r('U', 'U')));
-  assert.ok(ok('mixModes', r('U', 'T')) && !ok('mixModes', r('U', 'U')));
+  assert.ok(ok('mixModes', r('U', 'T', 'B')) && !ok('mixModes', r('U', 'T')));
   assert.ok(ok('noSameMode', r('U', 'T', 'U')) && !ok('noSameMode', r('T', 'T', 'U')));
   assert.ok(ok('twoTrams', r('T', 'U', 'T')) && !ok('twoTrams', r('T', 'U')));
   assert.ok(ok(null, r('U', 'U')));

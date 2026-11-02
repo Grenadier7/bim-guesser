@@ -43,6 +43,7 @@ import { deferWhileEditing, infoTip, patchQueue, seg, toggleInfo } from '../widg
 import { bindKick, kickButton } from './host.ts';
 import type { Screen } from './screen.ts';
 import { districtCenter, findChallenge, todaysChallenges } from '../challenges.ts';
+import { challengeSettings } from './challengetest.ts';
 import { openSettingsDialog } from '../settingsShare.ts';
 
 /**
@@ -136,17 +137,6 @@ export function lobbyScreen(panel: HTMLElement): Screen {
   }
 
   // -------------------------------------------------------------- Tages-Challenges
-
-  /** Standard + Challenge; gibt die Challenge eine Schwierigkeit vor, gelten deren Regler (nicht die des Standards) */
-  function challengeSettings(patch: Partial<GameSettings>, id: string): Partial<GameSettings> {
-    const base: Partial<GameSettings> = { ...DEFAULT_SETTINGS, focus: null };
-    if (patch.difficulty) {
-      delete base.stations;
-      delete base.distance;
-      delete base.minTransfers;
-    }
-    return { ...base, ...patch, challenge: id };
-  }
 
   let challengeIdx = 0;
 
@@ -332,7 +322,12 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         <div class="setting"><span>Schwierigkeit</span>
           ${seg('difficulty', [...DIFFICULTY_PRESETS.map((d) => ({ value: d.id, label: d.label })), ...(st.difficulty === 'custom' ? [{ value: 'custom', label: 'Eigene' }] : [])], st.difficulty, ro)}
           <small class="hint">${st.endpoints === 'addresses' ? `${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} Adressen` : `${poolCount(st.stations)} Haltestellen`}${st.distance !== 'medium' ? ` · ${DISTANCES.find((d) => d.id === st.distance)!.label}` : ''}${st.minTransfers ? ` · mind. ${st.minTransfers} Umstieg${st.minTransfers > 1 ? 'e' : ''}` : ''} · <b>Punkte ×${mult.toLocaleString('de-AT')}</b> ${st.endpoints === 'addresses' ? '' : infoTip(esc(stationsText(st.stations)))}</small></div>
-        <div class="setting"><span>Runden</span>${seg('rounds', [3, 5, 7, 10].map((n) => ({ value: String(n), label: String(n) })), String(st.rounds), ro)}</div>
+        <div class="setting rounds-setting"><span>Runden</span>${seg(
+          'rounds',
+          (findChallenge(st.challenge)?.roundOptions ?? [3, 5, 7, 10]).map((n) => ({ value: String(n), label: String(n) })),
+          String(st.rounds),
+          !host,
+        )}</div>
 
         <div class="setting"><span>${icon('clock', 15)} Zeitlimit ${infoTip(
           `Pro Runde, inkl. „Wo liegt das?“. Nach Ablauf wird abgegeben, was eingegeben ist. Wer schnell ist, bekommt bis zu +10 % Zeitbonus.<br><b>Ohne:</b> kein Zeitdruck – der Zeitbonus wird an ${fmtDuration(TIME_BONUS_REF_SEC)} gemessen.`,

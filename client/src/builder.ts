@@ -1,9 +1,11 @@
 // Routen-Eingabe: Linie wählen -> Einstieg (auto, ggf. Fußweg) -> Ausstieg -> nächste Linie …
 import type { Line, Restriction, Station, UserLeg } from '../../shared/types.ts';
 import { RESTRICTIONS, restrictionAllowsLine, restrictionAllowsRoute, restrictionLabel, restrictionMaxLegs } from '../../shared/rules.ts';
+import { legProblem, lineProblem, problemBadge, routeProblem, stationProblem, type RuleRound } from '../../shared/challengeRules.ts';
+import { clientRuleNet } from './challenges.ts';
 import { distM, fmtDist, type NetIndex } from './net.ts';
 import { smoothPath } from './netmap.ts';
-import { esc, h, lineChip } from './ui.ts';
+import { esc, h, lineChip, toast } from './ui.ts';
 
 export interface DraftLeg {
   line: Line;
@@ -31,6 +33,14 @@ export interface BuilderOptions {
   hideStart?: boolean;
   /** keine Fußweg-Entfernungen zeigen (X-treme "ohne Namen" / "ohne Karte") */
   hideDistances?: boolean;
+  /** Tages-Challenges: Regeln – nicht Erlaubtes gar nicht erst anbieten (shared/challengeRules.ts) */
+  rules?: RuleRound;
+  /** „3 Ziele“: jedes zählt als Ziel */
+  targets?: Station[];
+  /** „3 Punkte“: alle befahren, Ende bei einem davon */
+  waypoints?: Station[];
+  /** „Ab ins Wasser“: nächstes Wasser zu einem Punkt */
+  water?: (p: { lat: number; lon: number }) => { name: string; dist: number; lat: number; lon: number };
 }
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -88,6 +98,48 @@ export class RouteBuilder {
     this.render();
   }
 
+  /** Regeln als Netz-Ansicht (für shared/challengeRules.ts) */
+  private get rn() {
+    return clientRuleNet(this.net);
+  }
+
+  /** Teilstrecken als einfache Liste (für die Regeln) */
+  private plain(legs = this.legs) {
+    return legs.map((l) => ({ line: l.line.id, from: l.from, to: l.to }));
+  }
+
+  /** an diesen Stationen ist man am Ziel (normal: B; „3 Ziele“: jedes; „3 Punkte“: einer, wenn alle befahren sind) */
+  private isGoal(id: string, legs = this.plain()): boolean {
+    if (this.opts.water) return false;
+    if (this.opts.targets) return this.opts.targets.some((t) => t.id === id);
+    if (this.opts.waypoints) {
+      const seen = new Set(legs.flatMap((l) => this.rn.traversed(l.line, l.from, l.to)));
+      return this.opts.waypoints.every((w) => seen.has(w.id)) && this.opts.waypoints.some((w) => w.id === id);
+    }
+    return id === this.dest.id;
+  }
+
+  /** nächstes Ziel zu einem Punkt: Ziel, eines der 3 Ziele, ein noch fehlender Punkt oder das Wasser */
+  private goalNear(p: Station): { name: string; dist: number; lat: number; lon: number } {
+    if (this.opts.water) return this.opts.water(p);
+    const list = this.opts.targets ?? (this.opts.waypoints ? this.missingWaypoints() : null) ?? [this.dest];
+    const pool = list.length ? list : (this.opts.waypoints ?? [this.dest]);
+    const best = pool.reduce((m, s) => (distM(s, p) < distM(m, p) ? s : m));
+    return { name: best.name, dist: distM(best, p), lat: best.lat, lon: best.lon };
+  }
+
+  /** „3 Punkte“: noch nicht befahren */
+  missingWaypoints(legs = this.plain()): Station[] {
+    if (!this.opts.waypoints) return [];
+    const seen = new Set(legs.flatMap((l) => this.rn.traversed(l.line, l.from, l.to)));
+    return this.opts.waypoints.filter((w) => !seen.has(w.id));
+  }
+
+  /** Warum diese Linie jetzt nicht geht (Challenge-Regeln) – null = ok */
+  lineBlocked(lineId: string): string | null {
+    return this.opts.rules ? lineProblem(this.opts.rules, this.plain(), lineId, this.rn) : null;
+  }
+
   get position(): Station {
     return this.legs.length ? this.net.station(this.legs[this.legs.length - 1].to) : this.start;
   }
@@ -107,7 +159,10 @@ export class RouteBuilder {
       segs.push({ path: smoothPath(l.line.id, l.from, l.to, this.net.legPath(l.line, l.from, l.to)), color: l.line.color, walk: false });
       pos = this.net.station(l.to);
     }
-    if (this.legs.length && pos.id !== this.dest.id) segs.push({ path: [ll(pos), ll(this.dest)], color: '#666', walk: true });
+    if (this.legs.length && !this.isGoal(pos.id)) {
+      const g = this.goalNear(pos);
+      segs.push({ path: [ll(pos), [g.lat, g.lon]], color: '#666', walk: true });
+    }
     if (this.pickedLine && this.board && this.board !== pos.id)
       segs.push({ path: [ll(pos), ll(this.net.station(this.board))], color: '#666', walk: true });
     return segs;
@@ -190,18 +245,23 @@ export class RouteBuilder {
     if (this.legs.length) this.el.append(list);
     if (this.notice) this.el.append(h('div', { class: 'warn' }, esc(this.notice)));
 
-    const arrived = pos.id === this.dest.id;
+    const arrived = this.isGoal(pos.id);
     const full = this.legs.length >= restrictionMaxLegs(this.restriction);
     if (!arrived && !full) this.el.append(this.renderForm());
     if (!arrived && full)
       this.el.append(h('div', { class: 'warn' }, `${esc(restrictionLabel(this.restriction!, this.banned))}: keine weitere Linie möglich.`));
 
     if (this.legs.length) {
-      const endWalk = arrived || hideD ? '' : `<div class="walk">🚶 ${walkText(distM(pos, this.dest))} zum Ziel</div>`;
-      const far = !arrived && !hideD && distM(pos, this.dest) > WALK_WARN_M ? '<div class="warn">Ziemlich weiter Fußweg – sicher?</div>' : '';
+      const goal = this.goalNear(pos);
+      const goalWord = this.opts.water ? `zum Wasser (${esc(goal.name)})` : this.opts.targets ? `zum nächsten Ziel (${esc(goal.name)})` : 'zum Ziel';
+      const endWalk = arrived || hideD || (this.opts.waypoints && this.missingWaypoints().length) ? '' : `<div class="walk">🚶 ${walkText(goal.dist)} ${goalWord}</div>`;
+      const far = !arrived && !hideD && !this.opts.water && goal.dist > WALK_WARN_M ? '<div class="warn">Ziemlich weiter Fußweg – sicher?</div>' : '';
+      const missing = this.missingWaypoints();
+      const todo = missing.length ? `<div class="warn">📍 Noch nicht befahren: ${missing.map((w) => `<b>${esc(w.name)}</b>`).join(', ')}</div>` : '';
       // Regel für die ganze Route (mind. eine S-Bahn …) noch nicht erfüllt → vor dem Abgeben sagen
-      const rule = !restrictionAllowsRoute(this.restriction, this.legs.map((l) => l.line)) ? `<div class="warn">${RESTRICTIONS[this.restriction!].icon} ${esc(RESTRICTIONS[this.restriction!].hint)}</div>` : '';
-      const foot = h('div', { class: 'submit-row' }, `${endWalk}${far}${rule}<button class="btn btn-primary" data-act="submit">Route abgeben</button><small class="kbd-hint">Strg + Enter</small>`);
+      const problem = this.opts.rules ? routeProblem(this.opts.rules, this.plain(), this.rn) : !restrictionAllowsRoute(this.restriction, this.legs.map((l) => l.line)) ? `${RESTRICTIONS[this.restriction!].icon} ${RESTRICTIONS[this.restriction!].hint}` : null;
+      const rule = problem ? `<div class="warn rule-warn">${esc(problem)}</div>` : '';
+      const foot = h('div', { class: 'submit-row' }, `${endWalk}${far}${todo}${rule}<button class="btn btn-primary" data-act="submit">Route abgeben</button><small class="kbd-hint">Strg + Enter</small>`);
       foot.querySelector('button')!.disabled = this.locked;
       foot.querySelector('button')!.addEventListener('click', () => this.onSubmit());
       this.el.append(foot);
@@ -265,7 +325,7 @@ export class RouteBuilder {
       let active = 0;
       let found: Line[] = [];
       const update = () => {
-        found = this.net.searchLines(input.value, this.restriction, this.banned);
+        found = this.net.searchLines(input.value, this.restriction, this.banned).filter((l) => !this.lineBlocked(l.id));
         active = Math.min(active, Math.max(0, found.length - 1));
         results.innerHTML = found
           .map((l, i) => `<button class="line-opt ${i === active && input.value.trim() ? 'active' : ''}" data-line="${esc(l.id)}" role="option" aria-selected="${i === active}" tabindex="-1">${lineChip(l.mode, l.id, l.color)}</button>`)
@@ -273,7 +333,10 @@ export class RouteBuilder {
         if (input.value.trim() && !found.length) {
           const q = input.value.trim().toLowerCase().replace(/\s+/g, '');
           const blocked = this.banned.find((id) => id.toLowerCase() === q);
-          results.innerHTML = `<span class="muted">${blocked ? `⛔ ${esc(blocked)} ist in dieser Runde gesperrt` : `Keine Linie gefunden${this.restriction ? ' (Einschränkung beachten)' : ''}`}</span>`;
+          // genau diese Linie gibt es, aber die Challenge verbietet sie gerade → sagen, warum
+          const exact = this.net.data.lines.find((l) => l.id.toLowerCase() === q);
+          const why = exact ? (this.lineBlocked(exact.id) ?? (!restrictionAllowsLine(this.restriction, this.banned, exact) ? `⛔ ${exact.id} ist in dieser Runde nicht erlaubt.` : null)) : null;
+          results.innerHTML = `<span class="${why ? 'warn' : 'muted'}">${why ? esc(why) : blocked ? `⛔ ${esc(blocked)} ist in dieser Runde gesperrt` : `Keine Linie gefunden${this.restriction ? ' (Einschränkung beachten)' : ''}`}</span>`;
         }
       };
       input.addEventListener('input', () => {
@@ -292,7 +355,7 @@ export class RouteBuilder {
         if (e.key !== 'Enter' || e.ctrlKey || e.metaKey) return;
         // sonst landet das Enter (keypress) beim gleich fokussierten Ausstiegsfeld und öffnet die Browser-Liste
         e.preventDefault();
-        const pick = found[active] ?? this.net.searchLines(input.value, this.restriction, this.banned)[0];
+        const pick = found[active] ?? this.net.searchLines(input.value, this.restriction, this.banned).filter((l) => !this.lineBlocked(l.id))[0];
         if (pick) {
           // mit der Tastatur gewählt → Ausstiegsliste gleich offen (Pfeiltasten + Enter)
           this.openPicker = true;
@@ -315,11 +378,19 @@ export class RouteBuilder {
     if (this.opts.typed) return this.typedForm(form, line, pos);
 
     // Einstieg: hier, oder nächstgelegene Haltestellen der Linie (Fußweg)
-    const opts = this.net.boardOptions(line, pos);
+    // Umland: man sitzt im Zug – die erste Fahrt beginnt an der Stadtgrenze
+    const fixedBoard = this.opts.rules?.restriction === 'umland' && !this.legs.length;
+    const opts = fixedBoard ? [{ station: pos, dist: 0 }] : this.net.boardOptions(line, pos);
     const boardSel = h('select', { class: 'board-select' });
+    const stProblem = (id: string) => (this.opts.rules ? stationProblem(this.opts.rules, line.id, id, this.rn) : null);
     boardSel.innerHTML = opts
-      .map((o) => `<option value="${o.station.id}">${o.dist === 0 ? `${esc(o.station.name)} (hier)` : `${esc(o.station.name)} · 🚶 ${fmtDist(o.dist)}`}</option>`)
+      .map((o) => {
+        const bad = stProblem(o.station.id);
+        return `<option value="${o.station.id}" ${bad ? 'disabled' : ''} title="${esc(bad ?? '')}">${o.dist === 0 ? `${esc(o.station.name)} (hier)` : `${esc(o.station.name)} · 🚶 ${fmtDist(o.dist)}`}${bad ? ` – ${problemBadge(this.opts.rules!)}` : ''}</option>`;
+      })
       .join('');
+    // gesperrter Einstieg vorgewählt → den ersten erlaubten nehmen
+    if (stProblem(this.board!)) this.board = opts.find((o) => !stProblem(o.station.id))?.station.id ?? this.board;
     boardSel.value = this.board!;
     boardSel.addEventListener('change', () => {
       this.board = boardSel.value;
@@ -426,8 +497,18 @@ export class RouteBuilder {
     // Ziel ist eine Adresse: die Haltestelle der Linie, die ihr am nächsten liegt (bis 1,5 km), markieren
     const nearDest = isAddress(this.dest) ? (this.net.boardOptions(line, this.dest, 1).find((o) => o.dist <= 1500) ?? null) : null;
     // Gegenrichtung mit anderem Einstieg: Wert "einstieg>ausstieg"
-    const opt = (s: Station, alt?: Station) =>
-      `<option value="${alt ? `${alt.id}>` : ''}${s.id}">${esc(s.name)}${s.id === this.dest.id ? ' 🏁' : ''}${s.id === nearDest?.station.id ? ` 📍 ${fmtDist(nearDest.dist)} zum Ziel` : ''}${alt && alt.id !== board ? ` ↩ ab ${esc(alt.name)}` : ''}</option>`;
+    const rules = this.opts.rules;
+    const prev = this.plain();
+    const opt = (s: Station, alt?: Station) => {
+      const leg = { line: line.id, from: alt?.id ?? board, to: s.id };
+      let bad = rules ? legProblem(rules, prev, leg, this.rn) : null;
+      // am Ziel aussteigen geht nur, wenn die ganze Route die Regeln erfüllt (z.B. letzte Fahrt mit der Bim)
+      const goal = this.isGoal(s.id, [...prev, leg]);
+      if (!bad && rules && goal) bad = routeProblem(rules, [...prev, leg], this.rn);
+      const flag = goal || s.id === this.dest.id ? ' 🏁' : this.opts.targets?.some((t) => t.id === s.id) ? ' 🎯' : this.opts.waypoints?.some((t) => t.id === s.id) ? ' 📍' : '';
+      const badge = bad ? ` – ${goal && rules && !legProblem(rules, prev, leg, this.rn) ? `noch nicht: ${bad.replace(/^\S+\s/, '').slice(0, 48)}` : problemBadge(rules!)}` : '';
+      return `<option value="${alt ? `${alt.id}>` : ''}${s.id}" ${bad ? 'disabled' : ''} title="${esc(bad ?? '')}">${esc(s.name)}${flag}${s.id === nearDest?.station.id ? ` 📍 ${fmtDist(nearDest.dist)} zum Ziel` : ''}${alt && alt.id !== board ? ` ↩ ab ${esc(alt.name)}` : ''}${badge}</option>`;
+    };
     const here = this.net.station(board);
     // Reihenfolge wie auf dem Linienplan: obere Stationen · "↑ Richtung …" · hier · "↓ Richtung …" · untere Stationen.
     // Die Überschriften sind leere <optgroup>s, damit sie fett direkt neben der aktuellen Station stehen.
@@ -497,6 +578,15 @@ export class RouteBuilder {
   }
 
   private pickLine(line: Line) {
+    const why = this.lineBlocked(line.id);
+    if (why) return toast(why, 'info');
+    // Einstieg nur dort möglich, wo es die Regel verbietet (z.B. U1 hier nur unter der Erde) → gleich sagen
+    const rules = this.opts.rules;
+    if (rules) {
+      const opts = this.net.boardOptions(line, this.position);
+      const bad = opts.map((o) => stationProblem(rules, line.id, o.station.id, this.rn));
+      if (opts.length && bad.every(Boolean)) return toast(bad[0]!, 'info');
+    }
     this.pickedLine = line;
     this.board = this.net.boardOptions(line, this.position, 1)[0].station.id;
     this.render();

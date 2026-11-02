@@ -311,6 +311,8 @@ export interface TripQuery {
   via?: string;
   /** Netzplan (sonst der der laufenden Runde, siehe plancontext.ts) */
   plan?: string;
+  /** mit maxChanges 0: trotzdem zu Fuß zu/von nahen Haltestellen (Fußbus) – sonst nur direkt von Station zu Station */
+  walkDirect?: boolean;
 }
 
 /** „coord:lon:lat“ (Adresse) oder EFA-Haltestellen-ID */

@@ -518,6 +518,8 @@ export class Accounts {
       daily: Math.max(count("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'daily'"), num(cc.daily)),
       blindPerfect: num(cc.blindPerfect),
       lateNight: num(cc.lateNight),
+      challenges: Array.isArray(car.ch) ? car.ch.length : 0,
+      challengesDone: Array.isArray(car.chDone) ? car.chDone.length : 0,
     };
   }
 

@@ -9,6 +9,7 @@ import type {
   Restriction,
   RoundPublic,
   RoundReveal,
+  RouteLeg,
   RouteOption,
   Station,
   TipKind,
@@ -29,14 +30,16 @@ import {
   scoreRoute,
   linePatterns,
   VARIANTS,
-  restrictionAllowsRoute,
-  restrictionAllowsLine,
   WELL_KNOWN_S,
 } from '../shared/rules.ts';
 import { distM, NoPairError, type Network, type PastPair } from './network.ts';
 import { EfaUnavailableError, evaluateUserRoute, topRoutes, type RouteQuery } from './routing.ts';
 import { DEADLINE_GRACE_MS, GameError, Lobby } from './lobby.ts';
 import { CancelledError } from './efa.ts';
+import { waterData } from './water.ts';
+import { nearestWater, walkMinutes, type WaterHit } from '../shared/water.ts';
+import { UMLAND, crossesCenter, pairFits, pickRequired, routeAllowed, ruleNetOf, umlandEntry } from './challengeRound.ts';
+import type { RuleNet, RuleRound } from '../shared/challengeRules.ts';
 import { withCancel } from './plancontext.ts';
 import { describeSlotDate, slotTime } from './timeslots.ts';
 import { cleanLegs, sanitizeSettings, validLatLon } from './settings.ts';
@@ -69,6 +72,13 @@ interface Round {
   /** Pause durch den Host */
   pausedAt: number | null;
   pausedTotalMs: number;
+  /** Tages-Challenges: Pflicht-Linien, Umland-Zug, Ziele/Punkte zur Auswahl */
+  required: string[];
+  entryLines?: string[];
+  entryTown?: string;
+  targets?: Station[];
+  waypoints?: Station[];
+  water?: boolean;
 }
 
 export class Game extends Lobby {
@@ -77,6 +87,8 @@ export class Game extends Lobby {
   currentRound = -1;
   private rounds: Round[] = [];
   private usedStations = new Set<string>();
+  /** Haltestellen nahe am Wasser („Ab ins Wasser“, einmal berechnet) */
+  private waterStops: { s: Station; hit: WaterHit }[] | undefined;
   /** bisherige Strecken dieses Spiels – neue sollen woanders liegen */
   private pastPairs: PastPair[] = [];
   private generation = 0;
@@ -102,7 +114,9 @@ export class Game extends Lobby {
     this.requireHost(token);
     if (this.phase !== 'lobby') throw new GameError('Einstellungen nur in der Lobby änderbar.');
     // Tages-Challenge aktiv: Einstellungen sind fest – nur Challenge beenden/wechseln geht
-    if (this.settings.challenge && !(s && typeof s === 'object' && 'challenge' in s))
+    // (die Rundenzahl bleibt wählbar)
+    const keys = s && typeof s === 'object' ? Object.keys(s) : [];
+    if (this.settings.challenge && !keys.includes('challenge') && !(keys.length && keys.every((k) => k === 'rounds')))
       throw new GameError('Während einer Tages-Challenge sind die Einstellungen fest – erst die Challenge beenden.');
     this.settings = sanitizeSettings(s as Partial<GameSettings>, this.settings);
     this.touch();
@@ -209,13 +223,26 @@ export class Game extends Lobby {
       timer: null,
       pausedAt: null,
       pausedTotalMs: 0,
+      required: [],
     };
+  }
+
+  private ruleRound(round: Round): RuleRound {
+    return { restriction: round.restriction, banned: this.query(round).banned, required: round.required, entryLines: round.entryLines, entryTown: round.entryTown };
   }
 
   private query(round: Round): RouteQuery {
     // Insider: auch die bekannten S-Bahnen sind gesperrt
     const banned = round.restriction === 'insider' ? [...round.bannedLines, ...WELL_KNOWN_S] : round.bannedLines;
-    return { countWait: this.settings.countWait, avgWait: this.settings.avgWait, restriction: round.restriction, banned };
+    return {
+      countWait: this.settings.countWait,
+      avgWait: this.settings.avgWait,
+      restriction: round.restriction,
+      banned,
+      required: round.required,
+      entryLines: round.entryLines,
+      entryTown: round.entryTown,
+    };
   }
 
   /** Für "Linie gesperrt": eine Linie der schnellsten Verbindung sperren (U-Bahn bevorzugt) */
@@ -251,68 +278,265 @@ export class Game extends Lobby {
     }
   }
 
+  /** Start/Ziel ziehen – mit festem Start (z.B. Schwedenplatz), Umland-Einstieg oder „quer durch die Innenstadt“ */
+  private pickPair(round: Round): [Station, Station] {
+    const s = this.settings;
+    round.entryLines = round.entryTown = undefined;
+    let fixed: Station | null = null;
+    if (round.restriction === 'umland') {
+      const opts = UMLAND.map((e) => ({ e, st: umlandEntry(this.net, e) })).filter((x) => x.st);
+      const pick = opts[Math.floor(Math.random() * opts.length)];
+      fixed = pick.st!;
+      round.entryLines = pick.e.lines;
+      round.entryTown = pick.e.town;
+    } else if (s.start) fixed = this.net.stationByName(s.start);
+    if (fixed) return [fixed, s.endpoints === 'addresses' && this.net.hasAddresses ? this.net.randomAddressFrom(fixed, s) : this.net.randomTarget(fixed, s, this.usedStations)];
+    for (let i = 0; i < (round.restriction === 'avoidInner' ? 400 : 1); i++) {
+      const [a, b] = s.endpoints === 'addresses' && this.net.hasAddresses ? this.net.randomAddressPair(s, this.pastPairs) : this.net.randomPair(s, this.usedStations, this.pastPairs);
+      if (round.restriction !== 'avoidInner' || crossesCenter(a, b)) return [a, b];
+    }
+    throw new NoPairError('Kein Paar gefunden, das quer durch die Innenstadt führt.');
+  }
+
+  /** beste erlaubte Verbindungen a → b (für „3 Ziele“ und „3 Punkte“) */
+  private async allowedRoutes(round: Round, a: string, b: string, rn: RuleNet): Promise<RouteOption[]> {
+    const all = sortRoutes(await topRoutes(this.net, a, b, round.time, this.query(round)), this.settings);
+    return all.filter((r) => routeAllowed(r, this.ruleRound(round), rn));
+  }
+
   private async prepareInner(round: Round, gen: number): Promise<RouteOption[]> {
     const wanted = this.minTransfersFor(round);
-    for (let attempt = 0; attempt < 14; attempt++) {
+    const rn = ruleNetOf(this.net, this.settings.network);
+    for (let attempt = 0; attempt < 18; attempt++) {
       if (gen !== this.generation) return [];
       let a: Station, b: Station;
       try {
-        [a, b] =
-          this.settings.endpoints === 'addresses' && this.net.hasAddresses
-            ? this.net.randomAddressPair(this.settings, this.pastPairs)
-            : this.net.randomPair(this.settings, this.usedStations, this.pastPairs);
+        [a, b] = this.pickPair(round);
       } catch (e) {
         if (e instanceof NoPairError) throw new GameError(e.message, 422);
         throw e;
       }
-      let routes: RouteOption[];
+      const strict = attempt < 12;
+      let routes: RouteOption[] | null;
       try {
-        if (round.restriction === 'banLines') {
-          // erst normal rechnen, dann eine Linie der schnellsten Verbindung sperren und neu rechnen
-          round.bannedLines = [];
-          const free = await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), sampleOnly: true });
-          if (!free.length || free[0].key === 'walk') continue;
-          round.bannedLines = this.pickBan(free[0]);
-          if (!round.bannedLines.length) continue;
-          // nur sperren, wenn es in der Stichprobe eine Verbindung ohne die gesperrten Linien gibt –
-          // sonst findet die zweite Rechnung nichts (früher häufiger Grund für „Keine passende Strecke“)
-          const banned = new Set(round.bannedLines);
-          if (!free.some((r) => r.key !== 'walk' && !r.legs.some((l) => l.line?.split('/').some((x) => banned.has(x))))) continue;
-        }
-        // bei "beste Route" nach Zeit + Umstiegen sortieren – routes[0] ist dann die beste (auch für Tipps)
-        // Mindest-Umstiege schon nach den Stichproben prüfen (nach vielen Versuchen gelockert, siehe unten)
-        const minTransfers = attempt < 12 ? wanted : 0;
-        routes = sortRoutes(await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), minTransfers }), this.settings);
-        // Regeln für die ganze Route (mind. eine S-Bahn …): nur Verbindungen, die sie einhalten – sonst anderes Paar
-        // und Linien-Regeln: die Auflösung soll keine Bestzeit mit einer verbotenen Linie zeigen (Insider: keine S1)
-        const lineOk = (id: string) => {
-          const line = this.net.lines.get(id);
-          return !line || restrictionAllowsLine(round.restriction, round.bannedLines, line);
-        };
-        routes = routes.filter(
-          (r) =>
-            r.key === 'walk' ||
-            (restrictionAllowsRoute(round.restriction, r.legs.filter((l) => l.mode !== 'W')) &&
-              r.legs.every((l) => l.mode === 'W' || !l.line || l.line.split('/').some(lineOk))),
-        );
+        if (this.settings.task === 'water') routes = await this.prepWater(round, a, rn);
+        else if (this.settings.task === 'choose3') routes = await this.prepChoose3(round, a, b, rn, strict);
+        else if (this.settings.task === 'visit3') routes = await this.prepVisit3(round, a, rn);
+        else routes = await this.prepNormal(round, a, b, rn, strict, strict ? wanted : 0);
       } catch (e) {
         if (e instanceof CancelledError) throw e;
+        if (e instanceof NoPairError) continue;
         if (e instanceof EfaUnavailableError) throw new GameError('Die Runde konnte gerade nicht vorbereitet werden – bitte in einer Minute nochmal starten.', 503);
         throw e;
       }
-      if (!routes.length || routes[0].key === 'walk') continue;
-      const ptLegs = routes[0].legs.filter((l) => l.mode !== 'W').length;
-      // beste Verbindung muss mindestens so viele Umstiege haben (nach vielen Versuchen gelockert)
-      if (ptLegs - 1 < wanted && attempt < 12) continue;
+      if (!routes?.length || routes[0].key === 'walk') continue;
       this.usedStations.add(a.id).add(b.id);
       this.pastPairs.push({ a, b });
       if (!this.net.isAddress(a.id)) this.net.markUsed(a.id, b.id);
+      if (this.settings.task === 'water') a = round.from ?? a;
       round.from = a;
-      round.to = b;
+      // „3 Ziele“: to = das Ziel der besten Verbindung; „3 Punkte“: der letzte Punkt der besten Reihenfolge
+      const lastStop = routes[0].legs.findLast((l) => l.toStation)?.toStation;
+      round.to =
+        round.targets?.find((t) => t.name === routes![0].target) ??
+        round.waypoints?.find((t) => t.name === routes![0].target) ??
+        (round.water && lastStop ? this.net.station(lastStop) : b);
       round.routes = routes;
       return routes;
     }
     throw new GameError('Keine passende Strecke gefunden – bitte nochmal starten oder die Einstellungen ändern.', 502);
+  }
+
+  /** normale Runde A → B, mit Regeln und Auswahl-Kriterien der Challenge */
+  private async prepNormal(round: Round, a: Station, b: Station, rn: RuleNet, strict: boolean, wanted: number): Promise<RouteOption[] | null> {
+    if (round.restriction === 'banLines') {
+      // erst normal rechnen, dann eine Linie der schnellsten Verbindung sperren und neu rechnen
+      round.bannedLines = [];
+      const free = await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), sampleOnly: true });
+      if (!free.length || free[0].key === 'walk') return null;
+      round.bannedLines = this.pickBan(free[0]);
+      if (!round.bannedLines.length) return null;
+      // nur sperren, wenn es in der Stichprobe eine Verbindung ohne die gesperrten Linien gibt
+      const banned = new Set(round.bannedLines);
+      if (!free.some((r) => r.key !== 'walk' && !r.legs.some((l) => l.line?.split('/').some((x) => banned.has(x))))) return null;
+    }
+    // Fußbus: Verbindungen mit genau einer Linie selbst ausrechnen (die Suche ohne Umstieg kennt keine Fußwege)
+    if (round.restriction === 'oneLeg') {
+      if (a.lines.some((l) => b.lines.includes(l))) return null; // keine Linie fährt direkt – sonst zu leicht
+      const ok = await this.oneLineRoutes(round, a, b);
+      // man muss hin- oder weggehen, aber nicht ewig (≤ 45 min)
+      return ok.length && ok[0].legs.some((l) => l.mode === 'W') && ok[0].medianMin <= 45 ? ok : null;
+    }
+    // bei "beste Route" nach Zeit + Umstiegen sortieren – routes[0] ist dann die beste (auch für Tipps)
+    let all = sortRoutes(await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), minTransfers: wanted }), this.settings);
+    // Sonnenschein: zusätzlich ohne U-Bahn suchen – die oberirdischen Verbindungen sind oft nicht unter den schnellsten
+    if (round.restriction === 'sunny') {
+      const more = await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), restriction: 'noU' });
+      const keys = new Set(all.map((r) => r.key));
+      all = sortRoutes([...all, ...more.filter((r) => !keys.has(r.key))], this.settings);
+    }
+    if (round.restriction === 'mustLine' || round.restriction === 'anyLine') {
+      round.required = pickRequired(round.restriction, all);
+      if (!round.required.length) return null;
+    }
+    // nur Verbindungen, die alle Regeln einhalten – die Auflösung zeigt keine Bestzeit mit verbotener Linie
+    const ok = all.filter((r) => routeAllowed(r, this.ruleRound(round), rn));
+    if (!pairFits(this.ruleRound(round), all, ok, rn, a, b, strict)) return null;
+    // beste Verbindung muss mindestens so viele Umstiege haben (nach vielen Versuchen gelockert)
+    if (ok[0].legs.filter((l) => l.mode !== 'W').length - 1 < wanted) return null;
+    return ok;
+  }
+
+  /**
+   * Fußbus: für jede Linie in Gehweite (≤ 1,2 km vom Start) die nächste Haltestelle am Start und die Haltestelle in
+   * Fahrtrichtung, die dem Ziel am nächsten liegt (≤ 1,5 km) – Fußweg + Fahrt + Fußweg wie bei einer eigenen Route.
+   */
+  private async oneLineRoutes(round: Round, a: Station, b: Station): Promise<RouteOption[]> {
+    const nearA = [...this.net.stations.values()].filter((s) => s.lines.length && distM(s, a) <= 1200);
+    const tried = new Set<string>();
+    const out: RouteOption[] = [];
+    for (const lineId of new Set(nearA.flatMap((s) => s.lines))) {
+      const line = this.net.lines.get(lineId);
+      if (!line || line.mode === 'N') continue;
+      for (const p of linePatterns(line, this.settings.network)) {
+        const boards = p.map((id, i) => ({ id, i })).filter((x) => nearA.some((s) => s.id === x.id));
+        if (!boards.length) continue;
+        const board = boards.sort((x, y) => distM(this.net.station(x.id), a) - distM(this.net.station(y.id), a))[0];
+        const after = p.slice(board.i + 1).map((id) => this.net.station(id));
+        if (!after.length) continue;
+        const alight = after.reduce((m, s) => (distM(s, b) < distM(m, b) ? s : m));
+        if (distM(alight, b) > 1500) continue;
+        const key = `${lineId}:${board.id}>${alight.id}`;
+        if (tried.has(key)) continue;
+        tried.add(key);
+        const r = await evaluateUserRoute(this.net, [{ line: lineId, from: board.id, to: alight.id }], a.id, b.id, round.time, this.settings.network, this.query(round), []);
+        if (r.route && r.durationMin != null) out.push({ ...r.route, key: `foot:${key}`, medianMin: r.durationMin });
+      }
+    }
+    return sortRoutes(out, this.settings).slice(0, 4);
+  }
+
+  /**
+   * „Ab ins Wasser“: Start ≥ 2 km vom nächsten Wasser. Bestwert = schnellste Fahrt zu einer Haltestelle nahe am Wasser
+   * (≤ 600 m) + Fußweg dorthin; geprüft werden die 30 Haltestellen in Wassernähe, die am nächsten am Start liegen.
+   */
+  private async prepWater(round: Round, _a: Station, rn: RuleNet): Promise<RouteOption[] | null> {
+    const w = waterData();
+    if (!w) return null;
+    // Start: mindestens 1,2 km vom nächsten Wasser (zu Fuß wäre man zu lange unterwegs)
+    const starts = this.net.candidates(this.settings.stations, this.settings.slot, this.settings.network).filter((s) => !this.usedStations.has(s.id));
+    let a: Station | null = null;
+    for (let i = 0; i < 60 && !a; i++) {
+      const s = starts[Math.floor(Math.random() * starts.length)];
+      if (s && nearestWater(w, s).dist >= 1200) a = s;
+    }
+    if (!a) return null;
+    round.from = a;
+    this.waterStops ??= [...this.net.stations.values()].filter((s) => s.lines.length).map((s) => ({ s, hit: nearestWater(w, s) })).filter((x) => x.hit.dist <= 600);
+    const near = [...this.waterStops].sort((x, y) => distM(x.s, a) - distM(y.s, a)).slice(0, 30);
+    const out: RouteOption[] = [];
+    for (const { s, hit } of near) {
+      const r = (await this.allowedRoutes(round, a.id, s.id, rn)).find((x) => x.key !== 'walk');
+      if (r) out.push(this.withWaterWalk(r, s, hit));
+    }
+    if (!out.length) return null;
+    // mit den Öffis klar schneller als direkt hinzugehen
+    const sorted = sortRoutes(out, this.settings);
+    if (sorted[0].medianMin + 3 >= walkMinutes(nearestWater(w, a).dist)) return null;
+    round.water = true;
+    return sorted.slice(0, 4);
+  }
+
+  /** Fußweg von der letzten Haltestelle zum Wasser anhängen (zählt mit) */
+  private withWaterWalk(r: RouteOption, s: Station, hit: WaterHit): RouteOption {
+    const m = walkMinutes(hit.dist);
+    const last = r.legs[r.legs.length - 1];
+    const leg: RouteLeg = {
+      mode: 'W',
+      line: null,
+      color: '#7a7a7a',
+      fromName: s.name,
+      toName: hit.name,
+      fromStation: s.id,
+      toStation: null,
+      dep: last?.arr ?? '',
+      arr: last?.arr ?? '',
+      path: [
+        [s.lat, s.lon],
+        [hit.lat, hit.lon],
+      ],
+    };
+    return { ...r, key: `water:${r.key}`, target: hit.name, legs: [...r.legs, leg], medianMin: r.medianMin + m, minMin: r.minMin + m, maxMin: r.maxMin + m, rideMin: r.rideMin + m, steps: undefined };
+  }
+
+  /** „3 Ziele“: zwei weitere Ziele in ähnlicher Entfernung; die Wahl soll nicht offensichtlich sein */
+  private async prepChoose3(round: Round, a: Station, b: Station, rn: RuleNet, strict: boolean): Promise<RouteOption[] | null> {
+    const t2 = this.net.randomTarget(a, this.settings, this.usedStations, [b]);
+    const t3 = this.net.randomTarget(a, this.settings, this.usedStations, [b, t2]);
+    const targets = [b, t2, t3];
+    const per: RouteOption[][] = [];
+    for (const t of targets) {
+      const ok = await this.allowedRoutes(round, a.id, t.id, rn);
+      if (!ok.length || ok[0].key === 'walk') return null;
+      per.push(ok.slice(0, 2).map((r) => ({ ...r, key: `${t.id}:${r.key}`, target: t.name })));
+    }
+    const bestOf = per.map((rs) => rs[0].medianMin);
+    const fastest = bestOf.indexOf(Math.min(...bestOf));
+    const dists = targets.map((t) => distM(a, t));
+    const nearest = dists.indexOf(Math.min(...dists));
+    // nicht zu leicht: das nächstgelegene Ziel ist nicht das schnellste – oder alle liegen knapp beisammen
+    if (strict && fastest === nearest && Math.max(...bestOf) - Math.min(...bestOf) > 4) return null;
+    round.targets = [...targets].sort(() => Math.random() - 0.5);
+    return sortRoutes(per.flat(), this.settings);
+  }
+
+  /** „3 Punkte“: drei Stationen in der Umgebung, alle befahren – beste Reihenfolge aus den Teilstrecken */
+  private async prepVisit3(round: Round, a: Station, rn: RuleNet): Promise<RouteOption[] | null> {
+    const near = { ...this.settings, distance: 'short' as const };
+    const p1 = this.net.randomTarget(a, near, this.usedStations);
+    const p2 = this.net.randomTarget(a, near, this.usedStations, [p1]);
+    const p3 = this.net.randomTarget(a, near, this.usedStations, [p1, p2]);
+    const pts = [p1, p2, p3];
+    const seg = new Map<string, RouteOption | null>();
+    const best = async (x: Station, y: Station) => {
+      const k = `${x.id}>${y.id}`;
+      if (!seg.has(k)) seg.set(k, (await this.allowedRoutes(round, x.id, y.id, rn)).find((r) => r.key !== 'walk') ?? null);
+      return seg.get(k)!;
+    };
+    const orders = [
+      [0, 1, 2],
+      [0, 2, 1],
+      [1, 0, 2],
+      [1, 2, 0],
+      [2, 0, 1],
+      [2, 1, 0],
+    ];
+    const combos: RouteOption[] = [];
+    for (const o of orders) {
+      const chain = [a, ...o.map((i) => pts[i])];
+      const parts: RouteOption[] = [];
+      for (let i = 1; i < chain.length; i++) {
+        const r = await best(chain[i - 1], chain[i]);
+        if (!r) break;
+        parts.push(r);
+      }
+      if (parts.length !== 3) continue;
+      const sum = (f: (r: RouteOption) => number) => parts.reduce((n, r) => n + f(r), 0);
+      combos.push({
+        ...parts[0],
+        key: `visit:${o.join('')}`,
+        target: pts[o[2]].name,
+        legs: parts.flatMap((r) => r.legs),
+        steps: undefined,
+        medianMin: sum((r) => r.medianMin),
+        minMin: sum((r) => r.minMin),
+        maxMin: sum((r) => r.maxMin),
+        rideMin: sum((r) => r.rideMin),
+      });
+    }
+    if (!combos.length) return null;
+    round.waypoints = pts;
+    return sortRoutes(combos, this.settings).slice(0, 3);
   }
 
   private async openRound(i: number, gen: number) {
@@ -506,8 +730,41 @@ export class Game extends Lobby {
 
   /** Eine Spieler-Route nachrechnen; fällt die Auskunft aus, ist nur diese Route betroffen (nicht die ganze Runde) */
   private async evaluate(round: Round, legs: UserLeg[], q: RouteQuery, routes: RouteOption[]) {
+    const fail = (error: string) => ({ route: null, durationMin: null, matchedRank: null, source: 'none' as const, error });
+    let dest = round.to!.id;
+    const end = legs.at(-1)?.to;
+    // Umland: man sitzt im Zug – die erste Fahrt beginnt an der Stadtgrenze
+    if (round.restriction === 'umland' && legs[0] && legs[0].from !== round.from!.id)
+      return fail(`🚆 Du sitzt in der ${round.entryLines?.join('/')}${round.entryTown ? ` aus ${round.entryTown}` : ''} – die erste Fahrt beginnt in ${round.from!.name}.`);
+    // „3 Ziele“: gewertet wird das Ziel, bei dem die Route ankommt (bzw. das nächste zum letzten Ausstieg)
+    if (round.targets && end) {
+      const at = this.net.station(end);
+      dest = [...round.targets].sort((x, y) => distM(x, at) - distM(y, at))[0].id;
+    }
+    // „3 Punkte“: alle befahren (Ein-, Aus- oder Durchfahrt), Ende beim letzten
+    if (round.waypoints && end) {
+      const rn = ruleNetOf(this.net, this.settings.network);
+      const seen = new Set(legs.flatMap((l) => rn.traversed(l.line, l.from, l.to)));
+      const missing = round.waypoints.filter((w) => !seen.has(w.id));
+      if (missing.length) return fail(`📍 Nicht bei allen Punkten gewesen – es fehlt ${missing.map((w) => w.name).join(' und ')}.`);
+      if (!round.waypoints.some((w) => w.id === end)) return fail('📍 Die Route muss bei einem der drei Punkte enden.');
+      dest = end;
+    }
+    // „Ab ins Wasser“: bis zur letzten Haltestelle fahren, dann zu Fuß zum nächsten Wasser (zählt mit)
+    if (round.water && end) {
+      const w = waterData();
+      try {
+        const r = await evaluateUserRoute(this.net, legs, round.from!.id, end, round.time, this.settings.network, q, []);
+        if (!r.route || r.durationMin == null || !w) return r;
+        const st = this.net.station(end);
+        const route = this.withWaterWalk(r.route, st, nearestWater(w, st));
+        return { ...r, route, durationMin: route.medianMin, matchedRank: null };
+      } catch {
+        return fail('Deine Route konnte gerade nicht ausgewertet werden.');
+      }
+    }
     try {
-      return await evaluateUserRoute(this.net, legs, round.from!.id, round.to!.id, round.time, this.settings.network, q, routes);
+      return await evaluateUserRoute(this.net, legs, round.from!.id, dest, round.time, this.settings.network, q, routes);
     } catch (e) {
       console.warn(`[${new Date().toISOString()}] Route in Lobby ${this.id} nicht auswertbar: ${(e as Error).message}`);
       return {
@@ -615,9 +872,16 @@ export class Game extends Lobby {
         index: r.index,
         status: r.status,
         from: visible && r.from ? this.net.ref(r.from.id) : null,
-        to: visible && r.to ? this.net.ref(r.to.id) : null,
+        // „Ab ins Wasser“: kein Ziel verraten (der Browser zeigt die Gewässer)
+        to: visible && r.to ? this.net.ref((r.water ? r.from! : r.to).id) : null,
         when: describeSlotDate(r.time),
         restriction: visible ? r.restriction : null,
+        required: visible ? r.required : [],
+        entryLines: visible ? r.entryLines : undefined,
+        entryTown: visible ? r.entryTown : undefined,
+        targets: visible && r.targets ? r.targets.map((t) => this.net.ref(t.id)) : undefined,
+        waypoints: visible && r.waypoints ? r.waypoints.map((t) => this.net.ref(t.id)) : undefined,
+        water: visible ? r.water : undefined,
         bannedLines: visible ? r.bannedLines : [],
         limitSec: r.limitSec,
         submitted: [...r.submissions.keys()],

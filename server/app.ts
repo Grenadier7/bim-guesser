@@ -18,6 +18,7 @@ import { dailyRoutes } from './routes/daily.ts';
 import { DailyService } from './daily.ts';
 import { rateLimit, securityHeaders } from './security.ts';
 import { TrainingService } from './training.ts';
+import { waterJson } from './water.ts';
 
 const DIST = path.resolve(import.meta.dirname, '../dist');
 
@@ -122,6 +123,16 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
     const json = /^[a-z0-9-]{1,24}$/.test(plan) ? runtime.networkJson(plan) : null;
     if (!json) return void res.status(404).json({ error: 'Diesen Netzplan gibt es nicht.' });
     res.type('json').set('Cache-Control', 'no-cache').send(json);
+  });
+  // lokal mit npm run dev (--dev): Testseiten (Challenges, Strecke des Tages)
+  app.get('/api/dev', (_req, res) => {
+    res.json({ dev: process.argv.includes('--dev') });
+  });
+  // Gewässer für „Ab ins Wasser“ (Karte, Fußweg zum nächsten Wasser)
+  app.get('/api/water', (_req, res) => {
+    const json = waterJson();
+    if (!json) return void res.status(404).json({ error: 'Keine Gewässer-Daten.' });
+    res.type('json').set('Cache-Control', 'public, max-age=86400').send(json);
   });
   app.post('/api/ping', (req, res) => {
     const id = String(req.body?.v ?? '');

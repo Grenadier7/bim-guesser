@@ -16,6 +16,8 @@
     "build": "vite build",
     "build:data": "node scripts/build-network.ts",
     "build:dark": "node scripts/build-dark-css.ts",
+    "build:water": "node scripts/build-water.ts",
+    "check:challenges": "node scripts/check-challenges.ts",
     "build:timetable": "node --max-old-space-size=6000 scripts/build-timetable.ts",
     "typecheck": "tsc --noEmit",
     "release": "node scripts/release.ts",

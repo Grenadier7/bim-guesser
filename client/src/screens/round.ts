@@ -8,6 +8,9 @@ import { netLayer } from '../netmap.ts';
 import { app, routeState, currentRound, isHost, serverNow, setMapBig } from '../store.ts';
 import { esc, h, lineChip, modeChip, toast } from '../ui.ts';
 import { hostBar } from './host.ts';
+import { INNER_DISTRICTS, ruleSummary, type RuleRound } from '../../../shared/challengeRules.ts';
+import { nearestWater } from '../../../shared/water.ts';
+import { loadWater, waterNow } from '../challenges.ts';
 import type { Screen } from './screen.ts';
 
 type View = 'locate' | 'route' | 'waiting';
@@ -38,11 +41,23 @@ export function roundScreen(panel: HTMLElement): Screen {
   let submittedAt: number | null = null;
   // Der Builder ruft onChange schon im Konstruktor auf – daher erst deklarieren, dann zuweisen
   let builder: RouteBuilder | undefined;
+  let alive = true;
+  // Tages-Challenges: Regeln, Ziele/Punkte, Wasser
+  const rules: RuleRound | undefined = round.restriction
+    ? { restriction: round.restriction, banned: round.bannedLines, required: round.required, entryLines: round.entryLines, entryTown: round.entryTown }
+    : undefined;
+  const targets = round.targets?.map((t) => app.net.ensure(t));
+  const waypoints = round.waypoints?.map((t) => app.net.ensure(t));
+  if (round.water && !waterNow()) void loadWater().then(() => alive && render());
   builder = new RouteBuilder(app.net, from, to, round.restriction, () => drawDraft(), () => submit(false), round.bannedLines, {
     typed: xtreme,
     hideStart: !showNames,
     // ohne Namen / ohne Karte: keine Entfernungen verraten
     hideDistances: !showNames || !showMap,
+    rules,
+    targets,
+    waypoints,
+    water: round.water ? (p) => (waterNow() ? nearestWater(waterNow()!, p) : { name: 'Wasser', dist: 0, lat: p.lat, lon: p.lon }) : undefined,
   });
   const b = builder;
 
@@ -69,15 +84,39 @@ export function roundScreen(panel: HTMLElement): Screen {
         : ''
     }
     <div class="when">🕒 ${esc(round.when ?? '')}${s.settings.network === 'current' ? ' · aktuelles Netz' : ''}${s.settings.countWait ? ` · ${esc(scoringUnit(s.settings))}` : ''}</div>
+    ${challengeHead()}
     ${
-      round.restriction
+      round.restriction && !s.settings.challenge
         ? `<div class="restriction">${RESTRICTIONS[round.restriction].icon} <b>${esc(restrictionLabel(round.restriction, round.bannedLines))}</b> – ${
             round.restriction === 'banLines' ? 'finde eine andere Verbindung.' : RESTRICTIONS[round.restriction].hint
           }${round.limitSec && baseLimitSec(s.settings) && round.limitSec > baseLimitSec(s.settings)! ? ` <small>⏱ +${fmtDuration(round.limitSec - baseLimitSec(s.settings)!)} Extrazeit</small>` : ''}</div>`
         : ''
     }
-    <div class="od"><div class="od-row"><span class="pin-dot a">A</span><b>${showNames ? esc(from.name) : 'Start <small>(nur auf der Karte)</small>'}</b></div>
-    <div class="od-row"><span class="pin-dot b">B</span><b>${showNames ? esc(to.name) : 'Ziel <small>(nur auf der Karte)</small>'}</b></div></div>`;
+    <div class="od"><div class="od-row"><span class="pin-dot a">A</span><b>${showNames ? esc(from.name) : 'Start <small>(nur auf der Karte)</small>'}</b>${round.entryTown ? ` <small>(${esc(round.entryLines!.join('/'))} aus ${esc(round.entryTown)})</small>` : ''}</div>
+    ${goalRows()}</div>`;
+
+  /** Ziel-Zeilen: B, „eines von 3 Zielen“, „alle 3 Punkte“ oder „nächstes Wasser“ */
+  function goalRows(): string {
+    if (targets) return `<div class="od-row"><span class="pin-dot b">🎯</span><span>Eines dieser Ziele: ${targets.map((t, i) => `<b>${i + 1}. ${esc(t.name)}</b>`).join(' · ')}</span></div>`;
+    if (waypoints) return `<div class="od-row"><span class="pin-dot b">📍</span><span>Alle befahren, Reihenfolge egal: ${waypoints.map((t, i) => `<b>${i + 1}. ${esc(t.name)}</b>`).join(' · ')}</span></div>`;
+    if (round.water) return '<div class="od-row"><span class="pin-dot b">🏊</span><span><b>Zum nächsten Wasser</b> – Donau, Donaukanal, Wienfluss, Alte Donau oder ein Bad (blau auf der Karte). Gewertet wird bis dorthin, auch der Fußweg.</span></div>';
+    return `<div class="od-row"><span class="pin-dot b">B</span><b>${showNames ? esc(to.name) : 'Ziel <small>(nur auf der Karte)</small>'}</b></div>`;
+  }
+
+  /** Regel der Challenge (verständlich, mit Pflicht-Linien als Chips) */
+  function challengeHead(): string {
+    if (!rules || !s.settings.challenge) return '';
+    const text = ruleSummary(rules);
+    if (!text) return '';
+    const chips = rules.required?.length
+      ? ` <span class="chips">${rules.required.map((id) => {
+          const l = app.net.lines.get(id);
+          return l ? lineChip(l.mode, l.id, l.color) : esc(id);
+        }).join('')}</span>`
+      : '';
+    const extra = round.limitSec && baseLimitSec(s.settings) && round.limitSec > baseLimitSec(s.settings)! ? ` <small>⏱ +${fmtDuration(round.limitSec - baseLimitSec(s.settings)!)} Extrazeit</small>` : '';
+    return `<div class="challenge-rule">${esc(text)}${chips}${extra}</div>`;
+  }
 
   // nach Neuladen: bereits genutzte Tipps holen
   if (s.settings.tips !== 'off')
@@ -97,7 +136,8 @@ export function roundScreen(panel: HTMLElement): Screen {
     // Handy: zum Orten die Karte groß machen, danach wieder normal
     setMapBig(view === 'locate');
     if (view === 'locate') return renderLocate();
-    if (showMap) app.map.showEndpoints(round.from!, round.to!, true, showNames);
+    if (showMap && (targets || waypoints || round.water || round.restriction === 'avoidInner')) showChallengeMap(true);
+    else if (showMap) app.map.showEndpoints(round.from!, round.to!, true, showNames);
     else app.map.clear();
     const transferTip = tips.find((t) => t.kind === 'transfers');
     // ohne Karte: auch keine Umstiegs-Punkte · ohne Namen: Punkte ohne Beschriftung
@@ -283,6 +323,21 @@ export function roundScreen(panel: HTMLElement): Screen {
   function drawDraft() {
     // X-treme: die eigene Route wird erst bei der Auflösung gezeigt
     if (builder && view !== 'locate' && !xtreme) app.map.showDraft(builder.segments(), builder.transferPoints());
+    // „3 Punkte“: befahrene Punkte abhaken
+    if (builder && waypoints && view !== 'locate') showChallengeMap(false);
+  }
+
+  function showChallengeMap(fit: boolean) {
+    const missing = new Set((builder?.missingWaypoints() ?? waypoints ?? []).map((w) => w.id));
+    app.map.showChallenge({
+      from: round.from!,
+      to: targets || waypoints || round.water ? null : round.to,
+      targets: round.targets,
+      waypoints: round.waypoints?.map((w) => ({ s: w, done: !missing.has(w.id) })),
+      water: round.water ? waterNow() : null,
+      inner: round.restriction === 'avoidInner' ? app.net.data.districts.filter((d) => INNER_DISTRICTS.includes(d.id)) : undefined,
+      fit,
+    });
   }
 
   // -------------------------------------------------------------- Abgabe
@@ -337,6 +392,7 @@ export function roundScreen(panel: HTMLElement): Screen {
       }
     },
     destroy() {
+      alive = false;
       clearTimeout(flashTimer);
       app.map.stopLocate();
       setMapBig(false);

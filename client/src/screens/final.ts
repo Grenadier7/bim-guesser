@@ -4,6 +4,7 @@ import { app, routeState, getReveal } from '../store.ts';
 import { esc } from '../ui.ts';
 import { XP } from '../../../shared/career.ts';
 import { record } from '../career.ts';
+import { findChallenge } from '../challenges.ts';
 import { bindEndActions, earlyNote, endActions, levelSuggestion, podium, soloCard } from './result.ts';
 import type { Screen } from './screen.ts';
 import { markPlayed } from '../progress.ts';
@@ -19,6 +20,15 @@ export function finalScreen(panel: HTMLElement): Screen {
     const ranking = [...s.players].sort((a, b) => b.score - a.score);
     const won = ranking.length > 1 && ranking[0]?.id === myId && ranking[0].score > 0;
     record(`game:${s.id}:${s.rounds.map((r) => `${r.from?.id}-${r.to?.id}`).join()}`, { activity: true, xp: XP.game(won), count: { games: 1, wins: won ? 1 : 0 } });
+    // Tages-Challenge: gespielt – geschafft, wenn eine Runde die Schwelle der Challenge erreicht (meist volle Routenpunkte)
+    const ch = findChallenge(s.settings.challenge);
+    if (ch)
+      Promise.all(s.rounds.map((r) => getReveal(r.index).catch(() => null)))
+        .then((rs) => {
+          const best = Math.max(0, ...rs.map((rv) => rv?.evaluations.find((e) => e.playerId === myId)?.score.route ?? 0));
+          record(`challenge:${s.id}:${s.rounds.map((r) => r.from?.id).join()}`, { challenge: { id: ch.id, done: best >= ch.done } });
+        })
+        .catch(() => {});
   }
   let reveals: RoundReveal[] = [];
 

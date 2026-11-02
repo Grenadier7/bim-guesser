@@ -164,7 +164,7 @@ export function revealScreen(panel: HTMLElement): Screen {
       .map(
         (r, i) => `<li data-key="${esc(r.key)}" class="expandable ${mine?.route?.key === r.key ? 'is-mine' : ''} ${i >= SHOWN_ROUTES ? 'more' : ''}">
           <div class="rrow"><span class="rank">${i + 1}</span>
-          <div class="rmain"><div class="chainline">${chain(r.legs)}</div><small>${viaText(r)}</small></div>
+          <div class="rmain"><div class="chainline">${chain(r.legs)}</div><small>${r.target ? `→ <b>${esc(r.target)}</b> · ` : ''}${viaText(r)}</small></div>
           <div class="rtime"><b>${r.medianMin} min</b><small>${
             // „Umstiege vermeiden“: was die Verbindung in der Wertung zählt
             isBest && transfersOf(r) ? `${transfersOf(r)} Umstieg${transfersOf(r) > 1 ? 'e' : ''} · gewertet <b>${routeCostOf(r, s.settings)}</b>` : ''

@@ -75,6 +75,9 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   else if (r === true) out.restrictions = 'sometimes';
   else if (r === false) out.restrictions = 'never';
   if (VARIANTS.some((v) => v.id === s.variant)) out.variant = s.variant!;
+  if (s.task === 'normal' || s.task === 'choose3' || s.task === 'visit3' || s.task === 'water') out.task = s.task;
+  if (s.start === null) out.start = null;
+  else if (typeof s.start === 'string' && s.start.length <= 60) out.start = s.start;
   if (s.challenge === null) out.challenge = null;
   else if (typeof s.challenge === 'string' && /^[a-z0-9-]{1,24}$/.test(s.challenge)) out.challenge = s.challenge;
   // Nur Bim: Start und Ziel an Bim-Stationen (sonst gäbe es oft gar keine Verbindung)

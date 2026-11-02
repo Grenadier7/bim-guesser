@@ -12,8 +12,10 @@
 //     Ein zufällig perfekter Anschluss (an um 16:32, S-Bahn um 16:34) bringt so keinen Vorteil mehr –
 //     eine S-Bahn alle 15 min kostet im Schnitt 7,5 min Warten, eine U-Bahn alle 4 min nur 2.
 import type { LatLon, Mode, NetMode, Restriction, RouteLeg, RouteOption, RouteStep, UserLeg } from '../shared/types.ts';
-import { lineColor, lineGroupLabel, regionalTrains, lineKey, restrictionAllowsLine, restrictionAllowsRoute, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
+import { lineColor, lineGroupLabel, regionalTrains, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
 import * as efa from './efa.ts';
+import { routeProblem } from '../shared/challengeRules.ts';
+import { ruleNetOf } from './challengeRound.ts';
 import { distM, type Network } from './network.ts';
 import { currentPlan, isCancelled, withPlan } from './plancontext.ts';
 import { DEFAULT_PARAMS, paramsFor } from './plans.ts';
@@ -109,6 +111,10 @@ export interface RouteQuery {
   restriction: Restriction | null;
   /** nur diese Verkehrsmittel (z.B. U + S für die Strecke des Tages) – ersetzt die Einschränkung */
   onlyModes?: Mode[];
+  /** Tages-Challenges: Pflicht-Linien, Umland-Zug (für die Prüfung der Route, shared/challengeRules.ts) */
+  required?: string[];
+  entryLines?: string[];
+  entryTown?: string;
   /** bei "banLines": verbotene Linien */
   banned?: string[];
   /** Wartezeiten als Durchschnitt (halber Takt) statt verketteter Fahrplan */
@@ -123,11 +129,13 @@ export interface RouteQuery {
 }
 
 /** EFA-Parameter für eine Einschränkung */
-function restrictionQuery(r: Restriction | null): { mots?: number[]; maxChanges?: number } {
+function restrictionQuery(r: Restriction | null): { mots?: number[]; maxChanges?: number; walkDirect?: boolean } {
   if (r === 'noU') return { mots: [1, 3, 4, 5] };
   if (r === 'noBus') return { mots: [1, 2, 3, 4] };
   if (r === 'onlyTram') return { mots: [3, 4] };
   if (r === 'insider') return { mots: [1, 3, 4, 5] }; // ohne U-Bahn; bekannte S-Bahnen sperrt die Abfrage (banned)
+  if (r === 'busOnly') return { mots: [5] };
+  if (r === 'oneLeg') return { maxChanges: 0, walkDirect: true };
   if (r === 'oneTransfer') return { maxChanges: 1 };
   return {};
 }
@@ -631,9 +639,13 @@ export function validateLegs(net: Network, legs: UserLeg[], mode: NetMode, restr
     if (!net.servesInOrder(l.line, l.from, l.to, mode))
       return `Linie ${l.line} fährt nicht von ${net.station(l.from).name} nach ${net.station(l.to).name}.`;
   }
-  if (!restrictionAllowsRoute(restriction, legs.map((l) => net.lines.get(l.line)!)))
-    return `Einschränkung „${restrictionLabel(restriction!, banned)}“ nicht eingehalten.`;
   return null;
+}
+
+/** Regeln der Tages-Challenges (dieselben Meldungen wie im Baukasten) */
+export function challengeProblem(net: Network, legs: UserLeg[], mode: NetMode, q: RouteQuery): string | null {
+  if (!q.restriction) return null;
+  return routeProblem({ restriction: q.restriction, banned: q.banned, required: q.required, entryLines: q.entryLines, entryTown: q.entryTown }, legs, ruleNetOf(net, mode));
 }
 
 export function evaluateUserRoute(
@@ -659,7 +671,7 @@ async function evaluateIn(
   q: RouteQuery,
   top: RouteOption[],
 ): Promise<UserRouteResult> {
-  const invalid = validateLegs(net, legs, netMode, q.restriction, q.banned);
+  const invalid = validateLegs(net, legs, netMode, q.restriction, q.banned) ?? challengeProblem(net, legs, netMode, q);
   if (invalid) return { route: null, durationMin: null, matchedRank: null, source: 'none', error: invalid };
 
   // gleiche Verbindungsart wie eine Top-Verbindung? (gleichwertige Linien zählen gleich)
