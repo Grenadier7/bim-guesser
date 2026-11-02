@@ -115,8 +115,10 @@ export class RouteBuilder {
 
   /** Hinweis, nachdem eine frühere Teilstrecke geändert wurde (z.B. „ab hier neu wählen“) */
   private notice = '';
-  /** Linie per Tastatur gewählt → Ausstiegsliste gleich aufklappen */
+  /** Linie per Tastatur gewählt → Ausstiegsliste gleich aufklappen (wenn hier eingestiegen wird) */
   private openPicker = false;
+  /** Einstieg gerade geändert → Fokus bleibt dort */
+  private focusBoard = false;
 
   private render() {
     this.el.innerHTML = '';
@@ -306,6 +308,8 @@ export class RouteBuilder {
     boardSel.value = this.board!;
     boardSel.addEventListener('change', () => {
       this.board = boardSel.value;
+      // Fokus bleibt beim Einstieg (Pfeiltasten wechseln dort weiter durch die Haltestellen)
+      this.focusBoard = true;
       this.render();
     });
     const boardDist = opts.find((o) => o.station.id === this.board)?.dist ?? 0;
@@ -360,11 +364,22 @@ export class RouteBuilder {
     const alightRow = h('label', { class: 'field' }, '<span>Ausstieg</span>');
     alightRow.append(alightSel);
     form.append(alightRow);
-    const open = this.openPicker;
-    this.openPicker = false;
+    // Entf: angefangene Linie verwerfen (fertige Teilstrecken bleiben)
+    form.addEventListener('keydown', (e) => {
+      if (e.key !== 'Delete') return;
+      e.preventDefault();
+      this.resetForm();
+    });
+    // per Tastatur gewählt: Ausstiegsliste nur gleich offen, wenn hier eingestiegen wird – sonst erst zum Einstieg
+    // (Fußweg ansehen, ggf. andere Haltestelle wählen)
+    const keyboard = this.openPicker;
+    const stay = this.focusBoard;
+    this.openPicker = this.focusBoard = false;
+    const here = this.board === pos.id;
     queueMicrotask(() => {
+      if (stay || (keyboard && !here)) return boardSel.focus();
       alightSel.focus();
-      if (open) kb.open();
+      if (keyboard) kb.open();
     });
     return form;
   }

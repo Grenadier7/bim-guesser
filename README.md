@@ -131,8 +131,10 @@ Erfüllt nach 30 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strec
   Einstellungen auf Standard + die der Challenge und graut sie aus (auch am Server gesperrt); „✕ Beenden“ → wieder
   alles Standard. Einstellungen einer Challenge werden nicht für die nächste Lobby gemerkt.
 - **Chat**: Schnell-Reaktionen 👏 😂 😮 🔥 🚋 GG und 🎲 (= `/ez`).
-- **Tastatur**: Linie tippen, ← → (↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt sie und öffnet die
-  Ausstiegsliste, ↑ ↓ wählt den Halt, Enter übernimmt, Escape = zu bzw. andere Linie – Routen ganz ohne Maus.
+- **Tastatur**: Linie tippen, ← → (↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt sie. Hält sie hier,
+  geht gleich die Ausstiegsliste auf (↑ ↓ wählt den Halt, Enter übernimmt); hält sie woanders, steht der Fokus beim
+  Einstieg (Fußweg ansehen). Entf verwirft die angefangene Linie, Escape = Liste zu bzw. andere Linie – Routen ganz
+  ohne Maus.
 - **Dunkelmodus**: startet immer hell; Knopf oben (☀️ hell · 🌙 dunkel · 🌗 wie das System), Karte mit dunklen Kacheln. Die dunklen Farben
   erzeugt `npm run build:dark` aus `style.css` (`client/src/dark.css`, nach CSS-Änderungen neu ausführen).
 - Bestätigungen (Spiel beenden, Spieler entfernen …) als eigener Dialog statt Browser-Popup; das Tutorial ist über
