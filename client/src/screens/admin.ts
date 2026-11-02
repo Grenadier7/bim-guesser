@@ -140,6 +140,8 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
     const card = (v: string | number, l: string) => `<div class="adm-card"><b>${v}</b><small>${l}</small></div>`;
     const fmtT = (t: number) =>
       statDays <= 2 ? new Date(t).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' }) : new Date(t).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' });
+    // gewählter Zeitraum – die Verlaufs-Grafiken zeigen ihn ganz, auch wenn es erst später Messwerte gibt
+    const range: [number, number] = [Date.now() - statDays * 864e5, Date.now()];
     const fmtTip = (t: number) => new Date(t).toLocaleString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     const pts = (f: 'online' | 'players' | 'visitors' | 'anon') => s.samples.map((x) => ({ t: x.at, v: x[f] }));
     const lineRow = (line: string) => {
@@ -153,11 +155,11 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
       </div>
       <div class="adm-range">Zeitraum ${[1, 7, 30, 90].map((d) => `<button class="${d === statDays ? 'on' : ''}" data-days="${d}">${d === 1 ? '24 h' : `${d} Tage`}</button>`).join('')}</div>
       <div class="adm-charts">
-        ${lineChart('visitors', 'Besucher online', [{ name: 'alle', points: pts('visitors') }, { name: 'ohne Account', points: pts('anon') }], fmtT, true, fmtTip)}
+        ${lineChart('visitors', 'Besucher online', [{ name: 'alle', points: pts('visitors') }, { name: 'ohne Account', points: pts('anon') }], fmtT, true, fmtTip, range)}
         ${barChart('visits', 'Besucher je Tag', ['mit Account', 'ohne Account'], s.days.map((d) => ({ label: dayLabel(d.day), values: [d.visitors - d.anonVisitors, d.anonVisitors] })))}
         ${barChart('games', 'Fertige Spiele je Tag', ['Routenjagd', 'Quiz'], s.days.map((d) => ({ label: dayLabel(d.day), values: [d.route, d.quiz] })))}
         ${rankChart('Meistgewählte Linien', s.lines.slice(0, 15).map((l) => ({ label: lineRow(l.line), n: l.n })), statDays === 1 ? 'heute' : `letzte ${statDays} Tage`)}
-        ${lineChart('players', 'Spieler in Lobbys', [{ name: 'Spieler', points: pts('players') }], fmtT, false, fmtTip)}
+        ${lineChart('players', 'Spieler in Lobbys', [{ name: 'Spieler', points: pts('players') }], fmtT, false, fmtTip, range)}
         ${barChart('users', 'Accounts je Tag', ['aktiv', 'neu'], s.days.map((d) => ({ label: dayLabel(d.day), values: [d.activeUsers, d.newUsers] })))}
       </div>
       <dl class="adm-facts">

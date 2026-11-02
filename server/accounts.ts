@@ -1060,8 +1060,8 @@ export class AccountAdmin {
   stats(days: number): AdminStats {
     const since = Date.now() - days * DAY;
     const raw = this.db.prepare('SELECT at, online, lobbies, playing, players, visitors, anon FROM metrics WHERE at >= ? ORDER BY at').all(since) as unknown as AdminStats['samples'];
-    // über 2 Tage: je Stunde der höchste Wert (sonst zu viele Punkte für die Grafik)
-    const samples = days <= 2 ? raw : bucketMax(raw, 3600_000);
+    // über 2 Tage: je Stunde der höchste Wert, über 30 Tage je 3 Stunden (sonst zu viele Punkte für die Grafik)
+    const samples = days <= 2 ? raw : bucketMax(raw, (days > 30 ? 3 : 1) * 3600_000);
     const empty = (k: string): AdminStats['days'][number] => ({ day: k, route: 0, quiz: 0, players: 0, newUsers: 0, activeUsers: 0, visitors: 0, anonVisitors: 0 });
     const rows = new Map<string, AdminStats['days'][number]>();
     for (let t = since; t <= Date.now() + DAY / 2; t += DAY) rows.set(dayOf(t), empty(dayOf(t)));

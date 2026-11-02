@@ -47,23 +47,42 @@ export interface LineSeries {
 }
 
 /** Verlauf einer oder mehrerer Größen über die Zeit; Legende mit dem aktuellen Wert, Tooltip mit allen Werten */
-export function lineChart(id: string, title: string, series: LineSeries[], fmtT: (t: number) => string, wide = false, fmtTip: (t: number) => string = fmtT): string {
+/**
+ * Verlauf über die Zeit. `range` = gewählter Zeitraum: die Achse zeigt ihn ganz, auch wenn es erst später Messwerte gibt
+ * (dann steht „Aufzeichnung seit …“ dabei); Lücken in den Messwerten (Server aus) unterbrechen die Linie.
+ */
+export function lineChart(
+  id: string,
+  title: string,
+  series: LineSeries[],
+  fmtT: (t: number) => string,
+  wide = false,
+  fmtTip: (t: number) => string = fmtT,
+  range?: [number, number],
+): string {
   const z = wide ? WIDE : NORMAL;
   const pts = series[0]?.points ?? [];
   if (!pts.length) return `<figure class="chart ${wide ? 'wide' : ''}"><figcaption>${esc(title)}</figcaption><p class="muted ch-empty">Noch keine Daten – die ersten Werte kommen nach ein paar Minuten.</p></figure>`;
   const max = niceMax(Math.max(1, ...series.flatMap((x) => x.points.map((p) => p.v))));
-  const t0 = pts[0].t;
-  const t1 = pts[pts.length - 1].t;
+  const t0 = range ? Math.min(range[0], pts[0].t) : pts[0].t;
+  const t1 = range ? Math.max(range[1], pts[pts.length - 1].t) : pts[pts.length - 1].t;
+  // übliche Schrittweite der Messwerte – deutlich größere Abstände sind Lücken
+  const steps = pts
+    .slice(1)
+    .map((p, i) => p.t - pts[i].t)
+    .sort((a, b) => a - b);
+  const gap = (steps[Math.floor(steps.length / 2)] ?? Infinity) * 3;
+  const late = range && pts[0].t - range[0] > (range[1] - range[0]) * 0.05;
   const iw = z.w - PAD.l - PAD.r;
   const ih = z.h - PAD.t - PAD.b;
   const x = (t: number) => PAD.l + (t1 === t0 ? iw / 2 : ((t - t0) / (t1 - t0)) * iw);
   const y = (v: number) => PAD.t + ih * (1 - v / max);
   const paths = series
-    .map((se, k) => `<path d="${se.points.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join('')}" class="ch-line" style="stroke:${SERIES[k]}"/>`)
+    .map((se, k) => `<path d="${se.points.map((p, i) => `${i && p.t - se.points[i - 1].t <= gap ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join('')}" class="ch-line" style="stroke:${SERIES[k]}"/>`)
     .join('');
   const ticks = (wide ? [0, 0.25, 0.5, 0.75, 1] : [0, 0.5, 1]).map((f) => t0 + (t1 - t0) * f);
   const last = (se: LineSeries) => se.points[se.points.length - 1].v;
-  return `<figure class="chart ${wide ? 'wide' : ''}" data-chart="${esc(id)}"><figcaption>${esc(title)}${series.length === 1 ? ` <b>${last(series[0])}</b> <small class="muted">jetzt</small>` : ''}</figcaption>
+  return `<figure class="chart ${wide ? 'wide' : ''}" data-chart="${esc(id)}"><figcaption>${esc(title)}${series.length === 1 ? ` <b>${last(series[0])}</b> <small class="muted">jetzt</small>` : ''}${late ? ` <small class="muted">· Aufzeichnung seit ${esc(fmtTip(pts[0].t))}</small>` : ''}</figcaption>
     ${series.length > 1 ? legend(series.map((se) => ({ name: se.name, value: last(se) }))) : ''}
     <div class="ch-wrap"><svg viewBox="0 0 ${z.w} ${z.h}" role="img" aria-label="${esc(title)}">
       ${grid(max, z)}

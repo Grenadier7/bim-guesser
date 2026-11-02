@@ -5341,6 +5341,11 @@ figure.chart.wide {
 .ch-hit {
   fill: transparent;
 }
+/* „hidden“ wirkt bei SVG-Elementen nicht überall – Fadenkreuz und Punkte erst beim Zeigen */
+.ch-cross[hidden],
+.ch-dot[hidden] {
+  display: none;
+}
 .ch-bar:hover rect:not(.ch-hit) {
   opacity: 0.85;
 }
