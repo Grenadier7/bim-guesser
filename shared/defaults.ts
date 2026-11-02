@@ -46,6 +46,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   challenge: null,
   task: 'normal',
   start: null,
+  /** beim Eintippen nur Linien vorschlagen, die zu dieser Uhrzeit fahren */
+  onlyRunning: false,
   /** Start/Ziel: 'stations' Haltestellen · 'addresses' zufällige Adressen */
   endpoints: 'stations',
   /** Tipps: 'off' (keine) · 'cheap' (günstig) · 'expensive' (teuer – bei X-treme automatisch) */

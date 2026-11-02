@@ -408,11 +408,13 @@ export const RESTRICTIONS: Record<Restriction, { label: string; hint: string; ic
   oneLeg: { label: 'Fußbus', hint: 'Genau eine Linie – zu ihr hin und von ihr weg gehst du zu Fuß. Der Fußbus fährt immer!', icon: '🚶' },
   tramEnds: { label: 'Bim-Hüpfer', hint: 'Die erste und die letzte Fahrt mit der Bim.', icon: '🦘' },
   umland: { label: 'Aus dem Umland', hint: 'Du kommst mit dem Zug aus Niederösterreich – steig in Wien geschickt um.', icon: '🚆' },
-  sunny: { label: 'Sonnenschein', hint: 'Nichts, was unter der Erde fährt (U3, U-Bahn-Tunnel, S-Bahn-Stammstrecke, 18er am Hauptbahnhof …).', icon: '☀️' },
+  sunny: { label: 'Sonnenschein', hint: 'Nichts, was unter der Erde fährt (grau gestrichelt auf der Karte): U3, U-Bahn-Tunnel im Zentrum, S-Bahn-Stammstrecke Praterstern–Hauptbahnhof, 18er am Hauptbahnhof …', icon: '☀️' },
   avoidInner: { label: 'Innenstadt umfahren', hint: 'Keine Station in den Bezirken 1, 4, 5, 6, 7, 8, 9 – auch nicht durchfahren.', icon: '🚫' },
   min2Transfers: { label: 'Umsteige-Profi', hint: 'Mindestens 2-mal umsteigen (3 Fahrten).', icon: '🔀' },
   mustLine: { label: 'Pflicht-Linie', hint: 'Eine bestimmte Linie muss dabei sein.', icon: '📌' },
   anyLine: { label: 'Eine von drei', hint: 'Eine der drei Linien muss dabei sein.', icon: '🎲' },
+  noRail: { label: 'Ohne U- und S-Bahn', hint: 'Nur Bim und Bus – keine U-Bahn, keine S-Bahn.', icon: '🚋' },
+  avoidDistricts: { label: 'Fleckerlteppich', hint: 'Die roten Bezirke sind gesperrt – dort nicht ein-, aus- oder durchfahren.', icon: '🧩' },
 };
 
 /** Varianten: gelten für jede Runde (in der Lobby unter „Varianten“) */
@@ -439,6 +441,8 @@ export const VARIANTS: { id: Variant; label: string; icon: string; restriction: 
   { id: 'min2Transfers', label: 'Umsteige-Profi', icon: '🔀', restriction: 'min2Transfers' },
   { id: 'mustLine', label: 'Pflicht-Linie', icon: '📌', restriction: 'mustLine' },
   { id: 'anyLine', label: 'Eine von drei', icon: '🎲', restriction: 'anyLine' },
+  { id: 'noRail', label: 'Ohne U- und S-Bahn', icon: '🚋', restriction: 'noRail' },
+  { id: 'avoidDistricts', label: 'Fleckerlteppich', icon: '🧩', restriction: 'avoidDistricts' },
 ];
 
 export const RESTRICTION_FREQUENCIES: { id: RestrictionFrequency; label: string }[] = [
@@ -452,7 +456,7 @@ export const RESTRICTION_CHANCE = 0.3;
 /** Einschränkungs-Runden haben doppelte Zeit, aber höchstens 2:30 mehr … */
 export const RESTRICTION_EXTRA_MAX_SEC = 150;
 /** … schwere Einschränkungen (ohne U-Bahn) bekommen fix 4 Minuten mehr */
-export const HARD_RESTRICTIONS: Restriction[] = ['noU', 'onlyTram', 'insider', 'busOnly', 'oneLeg', 'sunny', 'avoidInner', 'anyLine', 'mustLine'];
+export const HARD_RESTRICTIONS: Restriction[] = ['noU', 'onlyTram', 'insider', 'busOnly', 'oneLeg', 'sunny', 'avoidInner', 'anyLine', 'mustLine', 'noRail', 'avoidDistricts'];
 export const HARD_RESTRICTION_EXTRA_SEC = 240;
 
 export function roundLimitSec(base: number | null, restriction: Restriction | null): number | null {
@@ -480,6 +484,7 @@ export function restrictionAllowsMode(r: Restriction | null, mode: Mode): boolea
   if (r === 'onlyTram') return mode === 'T' || mode === 'W';
   if (r === 'insider') return mode !== 'U';
   if (r === 'busOnly') return mode === 'B' || mode === 'N' || mode === 'W';
+  if (r === 'noRail') return mode !== 'U' && mode !== 'S';
   return true;
 }
 

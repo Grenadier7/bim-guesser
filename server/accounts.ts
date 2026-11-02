@@ -34,7 +34,7 @@ import type {
 import { isSpecialLine } from '../shared/rules.ts';
 import { MONOTONE_KEYS, mergeProgress } from '../shared/progress.ts';
 import type { DailyBoardRow } from '../shared/types.ts';
-import { CAREER_KEY, XP, levelOf, medalList, reachedKeys, streakOf, type Career, type MedalStats } from '../shared/career.ts';
+import { CAREER_KEY, XP, levelOf, medalList, reachedKeys, streakOf, viennaDay, type Career, type MedalStats } from '../shared/career.ts';
 import { GameError, type Lobby } from './lobby.ts';
 import type { Network } from './network.ts';
 import { STATE_DIR } from './paths.ts';
@@ -147,6 +147,7 @@ CREATE TABLE IF NOT EXISTS game_log (id INTEGER PRIMARY KEY, at INTEGER NOT NULL
 CREATE INDEX IF NOT EXISTS game_log_at ON game_log(at);
 CREATE TABLE IF NOT EXISTS visits (day TEXT NOT NULL, id TEXT NOT NULL, account INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, id));
 CREATE TABLE IF NOT EXISTS line_usage (day TEXT NOT NULL, line TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, line));
+CREATE TABLE IF NOT EXISTS challenge_days (user_id INTEGER NOT NULL, day TEXT NOT NULL, challenge TEXT NOT NULL, run TEXT NOT NULL, PRIMARY KEY (user_id, day, challenge));
 `;
 
 export interface AccountUser {
@@ -567,6 +568,20 @@ export class Accounts {
     g.on('finished', safe(() => this.recordGame(g)));
   }
 
+  /**
+   * XP-Faktor einer Tages-Challenge: das erste Spiel dieser Challenge am Tag (alle Runden und das Spiel selbst) zählt
+   * doppelt, jedes weitere normal.
+   */
+  private challengeFactor(g: Lobby, userId: number): number {
+    const run = g as unknown as { settings?: { challenge?: string | null }; runId?: string };
+    const id = run.settings?.challenge;
+    if (g.mode !== 'route' || !id || !run.runId) return 1;
+    const day = viennaDay();
+    this.db.prepare('INSERT OR IGNORE INTO challenge_days (user_id, day, challenge, run) VALUES (?, ?, ?, ?)').run(userId, day, id, run.runId);
+    const row = this.db.prepare('SELECT run FROM challenge_days WHERE user_id = ? AND day = ? AND challenge = ?').get(userId, day, id) as { run: string } | undefined;
+    return row?.run === run.runId ? XP.firstChallengeFactor : 1;
+  }
+
   private recordRound(g: Lobby, reveal: RoundReveal) {
     if (reveal.cancelled) return;
     const byPlayer = new Map(g.accounts().filter((a) => this.exists(a.userId)).map((a) => [a.playerId, a.userId]));
@@ -579,7 +594,7 @@ export class Accounts {
           .run(userId, Date.now(), ev.score.total, ev.score.route, ev.durationMin == null ? null : Math.round(ev.durationMin));
         this.recordLegs(userId, ev.legs, ev.error == null);
         // 5 fürs Mitspielen + bis zu ~130 für eine starke Runde
-        this.addXp(userId, XP.round(ev.score.total));
+        this.addXp(userId, XP.round(ev.score.total) * this.challengeFactor(g, userId));
       });
     }
     for (const id of new Set(byPlayer.values())) this.checkMedals(id);
@@ -598,7 +613,7 @@ export class Accounts {
       const ace = quiz && !!t && t.asked >= 5 && t.right === t.asked;
       this.tx(() => {
         this.db.prepare('INSERT INTO results (user_id, kind, at, points, rank, players, extra) VALUES (?, ?, ?, ?, ?, ?, ?)').run(a.userId, quiz ? 'quiz' : 'game', Date.now(), a.score, rank, players, ace ? 'ace' : null);
-        this.addXp(a.userId, quiz ? XP.quiz(a.score, won) : XP.game(won));
+        this.addXp(a.userId, quiz ? XP.quiz(a.score, won) : XP.game(won) * this.challengeFactor(g, a.userId));
       });
       this.checkMedals(a.userId);
     }

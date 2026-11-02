@@ -222,6 +222,17 @@ export function lobbyScreen(panel: HTMLElement): Screen {
             NET_MODES.map((n) => `<b>${esc(n.label)}:</b> ${n.id === 'regular' ? `${esc(n.hint)} ${regularHint({ ...st, network: 'regular' })}` : esc(n.hint)}`).join('<br>'),
           )}</span>${seg('network', NET_MODES.map((n) => ({ value: n.id, label: esc(n.label), title: n.hint })), st.network, ro)}</div>
           <div class="toggles">
+            ${
+              st.network === 'regular'
+                ? toggleInfo(
+                    'onlyRunning',
+                    'Nur fahrende Linien',
+                    'Beim Eintippen nur Linien vorschlagen, die zur gewählten Uhrzeit wirklich fahren – z.B. nachts keine Tagesbusse.',
+                    st.onlyRunning,
+                    ro,
+                  )
+                : ''
+            }
             ${toggleInfo(
               'focusOn',
               'Fokus-Gebiet',

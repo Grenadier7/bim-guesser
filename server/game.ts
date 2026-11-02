@@ -14,6 +14,7 @@ import type {
   Station,
   TipKind,
   TipResult,
+  UmlandStart,
   UserLeg,
 } from '../shared/types.ts';
 import {
@@ -38,7 +39,8 @@ import { DEADLINE_GRACE_MS, GameError, Lobby } from './lobby.ts';
 import { CancelledError } from './efa.ts';
 import { waterData } from './water.ts';
 import { nearestWater, walkMinutes, type WaterHit } from '../shared/water.ts';
-import { UMLAND, crossesCenter, pairFits, pickRequired, routeAllowed, ruleNetOf, umlandEntry } from './challengeRound.ts';
+import { UMLAND, avoidFor, crossesCenter, mergeRoutes, pairFits, pickDistricts, pickRequired, routeAllowed, ruleNetOf, searchVariants, umlandStart, withTrain } from './challengeRound.ts';
+import { runningLines } from './timetable.ts';
 import type { RuleNet, RuleRound } from '../shared/challengeRules.ts';
 import { withCancel } from './plancontext.ts';
 import { describeSlotDate, slotTime } from './timeslots.ts';
@@ -72,13 +74,15 @@ interface Round {
   /** Pause durch den Host */
   pausedAt: number | null;
   pausedTotalMs: number;
-  /** Tages-Challenges: Pflicht-Linien, Umland-Zug, Ziele/Punkte zur Auswahl */
+  /** Tages-Challenges: Pflicht-Linien, Umland-Start, gesperrte Bezirke, Ziele/Punkte zur Auswahl, Wasser */
   required: string[];
-  entryLines?: string[];
-  entryTown?: string;
+  umland?: UmlandStart;
+  districts?: number[];
   targets?: Station[];
   waypoints?: Station[];
-  water?: boolean;
+  water?: 'all' | 'bath';
+  /** Linien, die zu dieser Uhrzeit nicht fahren („nur fahrende Linien vorschlagen“) */
+  idle?: string[];
 }
 
 export class Game extends Lobby {
@@ -87,11 +91,15 @@ export class Game extends Lobby {
   currentRound = -1;
   private rounds: Round[] = [];
   private usedStations = new Set<string>();
-  /** Haltestellen nahe am Wasser („Ab ins Wasser“, einmal berechnet) */
-  private waterStops: { s: Station; hit: WaterHit }[] | undefined;
+  /** Haltestellen nahe am Wasser bzw. an einem Bad („Ab ins Wasser“/„Ab ins Bad“, einmal berechnet) */
+  private waterStops: Partial<Record<'all' | 'bath', { s: Station; hit: WaterHit }[]>> = {};
   /** bisherige Strecken dieses Spiels – neue sollen woanders liegen */
   private pastPairs: PastPair[] = [];
   private generation = 0;
+  /** dieses Spiel (Lobby + Durchgang) – z.B. für „erstes Spiel einer Challenge am Tag“ */
+  get runId(): string {
+    return `${this.id}:${this.generation}`;
+  }
   private net: Network;
   /** Netz zur Netz-Auswahl (Netzpläne der Admin-Seite) – gewählt beim Spielstart */
   private netFor: (mode: NetMode) => Network;
@@ -211,7 +219,8 @@ export class Game extends Lobby {
       time: slotTime(this.settings.slot, this.settings.network, this.net.data.regularDays),
       restriction,
       bannedLines: [],
-      limitSec: roundLimitSec(baseLimitSec(this.settings), restriction),
+      // Tages-Challenge mit fester Regel: ihr Zeitlimit gilt so (Extrazeit nur für wechselnde Hürden)
+      limitSec: this.settings.challenge && VARIANTS.some((v) => v.id === this.settings.variant && v.restriction) ? baseLimitSec(this.settings) : roundLimitSec(baseLimitSec(this.settings), restriction),
       ready: Promise.resolve([]),
       routes: null,
       status: 'preparing',
@@ -228,21 +237,36 @@ export class Game extends Lobby {
   }
 
   private ruleRound(round: Round): RuleRound {
-    return { restriction: round.restriction, banned: this.query(round).banned, required: round.required, entryLines: round.entryLines, entryTown: round.entryTown };
+    return {
+      restriction: round.restriction,
+      banned: round.restriction === 'insider' ? [...round.bannedLines, ...WELL_KNOWN_S] : round.bannedLines,
+      required: round.required,
+      entryLines: round.umland ? [...new Set(round.umland.options.flatMap((o) => o.lines))] : undefined,
+      entryTown: round.umland?.town,
+      districts: round.districts,
+    };
   }
 
-  private query(round: Round): RouteQuery {
-    // Insider: auch die bekannten S-Bahnen sind gesperrt
-    const banned = round.restriction === 'insider' ? [...round.bannedLines, ...WELL_KNOWN_S] : round.bannedLines;
+  /** Abfrage für die Runde; `avoid`: Gesperrtes (Bezirke, Tunnel, Insider-Linien) schon bei der Suche meiden */
+  private query(round: Round, avoid = true): RouteQuery {
+    const rr = this.ruleRound(round);
     return {
       countWait: this.settings.countWait,
       avgWait: this.settings.avgWait,
       restriction: round.restriction,
-      banned,
+      banned: rr.banned,
       required: round.required,
-      entryLines: round.entryLines,
-      entryTown: round.entryTown,
+      entryLines: rr.entryLines,
+      entryTown: rr.entryTown,
+      ...(avoid ? avoidFor(rr, this.net) : {}),
     };
+  }
+
+  /** Verbindungen a → b mit allen Suchen der Regel (siehe searchVariants), zusammengeführt und sortiert */
+  private async searchAll(round: Round, a: string, b: string, extra: Partial<RouteQuery> = {}): Promise<RouteOption[]> {
+    const q = { ...this.query(round), ...extra };
+    const lists = await Promise.all([q, ...searchVariants(round.restriction).map((v) => ({ ...q, ...v }))].map((x) => topRoutes(this.net, a, b, round.time, x)));
+    return sortRoutes(mergeRoutes(lists), this.settings);
   }
 
   /** Für "Linie gesperrt": eine Linie der schnellsten Verbindung sperren (U-Bahn bevorzugt) */
@@ -281,14 +305,13 @@ export class Game extends Lobby {
   /** Start/Ziel ziehen – mit festem Start (z.B. Schwedenplatz), Umland-Einstieg oder „quer durch die Innenstadt“ */
   private pickPair(round: Round): [Station, Station] {
     const s = this.settings;
-    round.entryLines = round.entryTown = undefined;
+    round.umland = undefined;
     let fixed: Station | null = null;
     if (round.restriction === 'umland') {
-      const opts = UMLAND.map((e) => ({ e, st: umlandEntry(this.net, e) })).filter((x) => x.st);
-      const pick = opts[Math.floor(Math.random() * opts.length)];
-      fixed = pick.st!;
-      round.entryLines = pick.e.lines;
-      round.entryTown = pick.e.town;
+      // Start im Ort – das Ziel liegt passend weit von der (ersten) Einstiegs-Station in Wien
+      const towns = UMLAND.map((u) => umlandStart(this.net, u)).filter((x): x is UmlandStart => !!x);
+      round.umland = towns[Math.floor(Math.random() * towns.length)];
+      fixed = this.net.station(round.umland.options[Math.floor(Math.random() * round.umland.options.length)].entry);
     } else if (s.start) fixed = this.net.stationByName(s.start);
     if (fixed) return [fixed, s.endpoints === 'addresses' && this.net.hasAddresses ? this.net.randomAddressFrom(fixed, s) : this.net.randomTarget(fixed, s, this.usedStations)];
     for (let i = 0; i < (round.restriction === 'avoidInner' ? 400 : 1); i++) {
@@ -300,8 +323,7 @@ export class Game extends Lobby {
 
   /** beste erlaubte Verbindungen a → b (für „3 Ziele“ und „3 Punkte“) */
   private async allowedRoutes(round: Round, a: string, b: string, rn: RuleNet): Promise<RouteOption[]> {
-    const all = sortRoutes(await topRoutes(this.net, a, b, round.time, this.query(round)), this.settings);
-    return all.filter((r) => routeAllowed(r, this.ruleRound(round), rn));
+    return (await this.searchAll(round, a, b)).filter((r) => routeAllowed(r, this.ruleRound(round), rn));
   }
 
   private async prepareInner(round: Round, gen: number): Promise<RouteOption[]> {
@@ -319,7 +341,8 @@ export class Game extends Lobby {
       const strict = attempt < 12;
       let routes: RouteOption[] | null;
       try {
-        if (this.settings.task === 'water') routes = await this.prepWater(round, a, rn);
+        if (this.settings.task === 'water' || this.settings.task === 'bath') routes = await this.prepWater(round, rn, this.settings.task === 'bath' ? 'bath' : 'all');
+        else if (round.umland) routes = await this.prepUmland(round, round.umland, b, strict);
         else if (this.settings.task === 'choose3') routes = await this.prepChoose3(round, a, b, rn, strict);
         else if (this.settings.task === 'visit3') routes = await this.prepVisit3(round, a, rn);
         else routes = await this.prepNormal(round, a, b, rn, strict, strict ? wanted : 0);
@@ -333,8 +356,11 @@ export class Game extends Lobby {
       this.usedStations.add(a.id).add(b.id);
       this.pastPairs.push({ a, b });
       if (!this.net.isAddress(a.id)) this.net.markUsed(a.id, b.id);
-      if (this.settings.task === 'water') a = round.from ?? a;
+      if (this.settings.task === 'water' || this.settings.task === 'bath') a = round.from ?? a;
+      // Umland: intern die Einstiegs-Station der besten Verbindung (gezeigt wird der Ort)
+      if (round.umland) a = this.net.station(round.umland.options.find((o) => routes![0].key.startsWith(`umland:${o.entry}:`))?.entry ?? a.id);
       round.from = a;
+      if (this.settings.onlyRunning) round.idle = this.idleLines(round.time);
       // „3 Ziele“: to = das Ziel der besten Verbindung; „3 Punkte“: der letzte Punkt der besten Reihenfolge
       const lastStop = routes[0].legs.findLast((l) => l.toStation)?.toStation;
       round.to =
@@ -368,19 +394,23 @@ export class Game extends Lobby {
       return ok.length && ok[0].legs.some((l) => l.mode === 'W') && ok[0].medianMin <= 45 ? ok : null;
     }
     // bei "beste Route" nach Zeit + Umstiegen sortieren – routes[0] ist dann die beste (auch für Tipps)
-    let all = sortRoutes(await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), minTransfers: wanted }), this.settings);
-    // Sonnenschein: zusätzlich ohne U-Bahn suchen – die oberirdischen Verbindungen sind oft nicht unter den schnellsten
-    if (round.restriction === 'sunny') {
-      const more = await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round), restriction: 'noU' });
-      const keys = new Set(all.map((r) => r.key));
-      all = sortRoutes([...all, ...more.filter((r) => !keys.has(r.key))], this.settings);
+    // erst ohne Meiden: die schnellste Verbindung überhaupt (Vergleich, Bezirke/Pflicht-Linien wählen)
+    round.districts = undefined;
+    const all = sortRoutes(await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round, false), minTransfers: wanted }), this.settings);
+    if (!all.length) return null;
+    if (round.restriction === 'avoidDistricts') {
+      round.districts = pickDistricts(all, a, b, rn) ?? undefined;
+      if (!round.districts) return null;
     }
     if (round.restriction === 'mustLine' || round.restriction === 'anyLine') {
-      round.required = pickRequired(round.restriction, all);
+      const more = await this.searchAll(round, a.id, b.id);
+      round.required = pickRequired(round.restriction, sortRoutes(mergeRoutes([all, more]), this.settings), (id) => this.net.lines.get(id)?.mode ?? null);
       if (!round.required.length) return null;
     }
-    // nur Verbindungen, die alle Regeln einhalten – die Auflösung zeigt keine Bestzeit mit verbotener Linie
-    const ok = all.filter((r) => routeAllowed(r, this.ruleRound(round), rn));
+    // dann mit allen Suchen der Regel – nur Verbindungen, die alle Regeln einhalten (die Auflösung zeigt keine
+    // Bestzeit mit verbotener Linie)
+    const merged = sortRoutes(mergeRoutes([all, await this.searchAll(round, a.id, b.id)]), this.settings);
+    const ok = merged.filter((r) => routeAllowed(r, this.ruleRound(round), rn));
     if (!pairFits(this.ruleRound(round), all, ok, rn, a, b, strict)) return null;
     // beste Verbindung muss mindestens so viele Umstiege haben (nach vielen Versuchen gelockert)
     if (ok[0].legs.filter((l) => l.mode !== 'W').length - 1 < wanted) return null;
@@ -417,23 +447,50 @@ export class Game extends Lobby {
   }
 
   /**
+   * Aus dem Umland: für jeden Zug des Orts die besten Verbindungen ab seiner ersten Station in Wien (dort weiterfahren
+   * oder umsteigen), plus die Fahrt bis zur Stadtgrenze. Die beste Wahl des Zugs gehört zur Aufgabe.
+   */
+  private async prepUmland(round: Round, um: UmlandStart, b: Station, strict: boolean): Promise<RouteOption[] | null> {
+    const q = { ...this.query(round), restriction: null, entryLines: undefined, entryTown: undefined };
+    const lists = await Promise.all(
+      um.options.map(async (o) => {
+        if (o.entry === b.id) return [];
+        const routes = await topRoutes(this.net, o.entry, b.id, round.time, q);
+        return routes.filter((r) => r.key !== 'walk').map((r) => withTrain(r, um, o, this.net));
+      }),
+    );
+    const all = sortRoutes(lists.flat(), this.settings);
+    if (!all.length) return null;
+    // nicht einfach sitzen bleiben: in Wien wird mindestens einmal umgestiegen (nach vielen Versuchen egal)
+    if (strict && all[0].legs.filter((l) => l.mode !== 'W').length < 2) return null;
+    return all;
+  }
+
+  /** Linien des Netzes, die zu dieser Uhrzeit nicht fahren (eigener Fahrplan; ohne ihn: keine Angabe) */
+  private idleLines(time: number): string[] | undefined {
+    const r = runningLines(time, this.net.planId);
+    if (!r) return undefined;
+    return [...this.net.lines.keys()].filter((id) => r.all.has(id) && !r.running.has(id));
+  }
+
+  /**
    * „Ab ins Wasser“: Start ≥ 2 km vom nächsten Wasser. Bestwert = schnellste Fahrt zu einer Haltestelle nahe am Wasser
    * (≤ 600 m) + Fußweg dorthin; geprüft werden die 30 Haltestellen in Wassernähe, die am nächsten am Start liegen.
    */
-  private async prepWater(round: Round, _a: Station, rn: RuleNet): Promise<RouteOption[] | null> {
+  private async prepWater(round: Round, rn: RuleNet, kind: 'all' | 'bath'): Promise<RouteOption[] | null> {
     const w = waterData();
     if (!w) return null;
-    // Start: mindestens 1,2 km vom nächsten Wasser (zu Fuß wäre man zu lange unterwegs)
+    // Start: mindestens 1,2 km vom nächsten Wasser/Bad (zu Fuß wäre man zu lange unterwegs)
     const starts = this.net.candidates(this.settings.stations, this.settings.slot, this.settings.network).filter((s) => !this.usedStations.has(s.id));
     let a: Station | null = null;
     for (let i = 0; i < 60 && !a; i++) {
       const s = starts[Math.floor(Math.random() * starts.length)];
-      if (s && nearestWater(w, s).dist >= 1200) a = s;
+      if (s && nearestWater(w, s, kind).dist >= 1200) a = s;
     }
     if (!a) return null;
     round.from = a;
-    this.waterStops ??= [...this.net.stations.values()].filter((s) => s.lines.length).map((s) => ({ s, hit: nearestWater(w, s) })).filter((x) => x.hit.dist <= 600);
-    const near = [...this.waterStops].sort((x, y) => distM(x.s, a) - distM(y.s, a)).slice(0, 30);
+    this.waterStops[kind] ??= [...this.net.stations.values()].filter((s) => s.lines.length).map((s) => ({ s, hit: nearestWater(w, s, kind) })).filter((x) => x.hit.dist <= 600);
+    const near = [...this.waterStops[kind]!].sort((x, y) => distM(x.s, a) - distM(y.s, a)).slice(0, 30);
     const out: RouteOption[] = [];
     for (const { s, hit } of near) {
       const r = (await this.allowedRoutes(round, a.id, s.id, rn)).find((x) => x.key !== 'walk');
@@ -442,8 +499,8 @@ export class Game extends Lobby {
     if (!out.length) return null;
     // mit den Öffis klar schneller als direkt hinzugehen
     const sorted = sortRoutes(out, this.settings);
-    if (sorted[0].medianMin + 3 >= walkMinutes(nearestWater(w, a).dist)) return null;
-    round.water = true;
+    if (sorted[0].medianMin + 3 >= walkMinutes(nearestWater(w, a, kind).dist)) return null;
+    round.water = kind;
     return sorted.slice(0, 4);
   }
 
@@ -733,9 +790,23 @@ export class Game extends Lobby {
     const fail = (error: string) => ({ route: null, durationMin: null, matchedRank: null, source: 'none' as const, error });
     let dest = round.to!.id;
     const end = legs.at(-1)?.to;
-    // Umland: man sitzt im Zug – die erste Fahrt beginnt an der Stadtgrenze
-    if (round.restriction === 'umland' && legs[0] && legs[0].from !== round.from!.id)
-      return fail(`🚆 Du sitzt in der ${round.entryLines?.join('/')}${round.entryTown ? ` aus ${round.entryTown}` : ''} – die erste Fahrt beginnt in ${round.from!.name}.`);
+    // Umland: erste Fahrt = einer der Züge des Orts (ab seiner ersten Station in Wien), dann wie sonst
+    if (round.umland && legs[0]) {
+      const um = round.umland;
+      const opt = um.options.find((o) => o.lines.includes(legs[0].line) && o.entry === legs[0].from);
+      if (!opt) return fail(`🚆 Von ${um.town} fährt die ${legs[0].line} nicht nach Wien.`);
+      // gleich an der Stadtgrenze ausgestiegen: diese Fahrt hat keine Strecke in Wien
+      const rest = legs[0].to === legs[0].from ? legs.slice(1) : legs;
+      if (!rest.length) return fail('🚆 Nach dem Aussteigen fehlt noch der Weg zum Ziel.');
+      try {
+        const r = await evaluateUserRoute(this.net, rest, opt.entry, dest, round.time, this.settings.network, { ...q, restriction: null, entryLines: undefined, entryTown: undefined }, []);
+        if (!r.route || r.durationMin == null) return r;
+        const route = withTrain(r.route, um, opt, this.net);
+        return { ...r, route, durationMin: route.medianMin, matchedRank: null };
+      } catch {
+        return fail('Deine Route konnte gerade nicht ausgewertet werden.');
+      }
+    }
     // „3 Ziele“: gewertet wird das Ziel, bei dem die Route ankommt (bzw. das nächste zum letzten Ausstieg)
     if (round.targets && end) {
       const at = this.net.station(end);
@@ -757,7 +828,7 @@ export class Game extends Lobby {
         const r = await evaluateUserRoute(this.net, legs, round.from!.id, end, round.time, this.settings.network, q, []);
         if (!r.route || r.durationMin == null || !w) return r;
         const st = this.net.station(end);
-        const route = this.withWaterWalk(r.route, st, nearestWater(w, st));
+        const route = this.withWaterWalk(r.route, st, nearestWater(w, st, round.water));
         return { ...r, route, durationMin: route.medianMin, matchedRank: null };
       } catch {
         return fail('Deine Route konnte gerade nicht ausgewertet werden.');
@@ -871,14 +942,16 @@ export class Game extends Lobby {
       return {
         index: r.index,
         status: r.status,
-        from: visible && r.from ? this.net.ref(r.from.id) : null,
+        // Umland: der Ort (außerhalb des Netzes)
+        from: visible && r.umland ? { id: `umland:${r.umland.town}`, name: r.umland.town, lat: r.umland.lat, lon: r.umland.lon } : visible && r.from ? this.net.ref(r.from.id) : null,
         // „Ab ins Wasser“: kein Ziel verraten (der Browser zeigt die Gewässer)
         to: visible && r.to ? this.net.ref((r.water ? r.from! : r.to).id) : null,
         when: describeSlotDate(r.time),
         restriction: visible ? r.restriction : null,
         required: visible ? r.required : [],
-        entryLines: visible ? r.entryLines : undefined,
-        entryTown: visible ? r.entryTown : undefined,
+        umland: visible ? r.umland : undefined,
+        districts: visible ? r.districts : undefined,
+        idle: visible ? r.idle : undefined,
         targets: visible && r.targets ? r.targets.map((t) => this.net.ref(t.id)) : undefined,
         waypoints: visible && r.waypoints ? r.waypoints.map((t) => this.net.ref(t.id)) : undefined,
         water: visible ? r.water : undefined,

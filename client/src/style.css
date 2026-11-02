@@ -6597,6 +6597,19 @@ details.adm-linechg li {
 .daily-card small {
   color: var(--muted);
 }
+/* schon gespielt: klein, eine Zeile */
+.daily-card.done {
+  gap: 8px;
+  padding: 8px 14px;
+  border-left-width: 4px;
+  border-radius: 12px;
+  box-shadow: none;
+  font-size: 0.9rem;
+}
+.daily-card.done > span:nth-child(1) {
+  flex: 1;
+  display: block;
+}
 .home-links {
   margin-top: 18px;
   text-align: center;

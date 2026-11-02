@@ -1,10 +1,12 @@
-// Tages-Challenges am Server: Regeln ans Netz anbinden, Verbindungen gegen die Regeln prüfen, Umland-Einstiege,
-// Auswahl-Kriterien je Challenge (z.B. Busfahrer: die besten Verbindungen sind Bus-Verbindungen).
-import type { NetMode, RouteOption, Station } from '../shared/types.ts';
-import { INNER_DISTRICTS, legProblem, routeProblem, undergroundStop, type LegLike, type RuleNet, type RuleRound } from '../shared/challengeRules.ts';
-import { linePatterns } from '../shared/rules.ts';
+// Tages-Challenges am Server: Regeln ans Netz anbinden, Verbindungen gegen die Regeln prüfen, Umland-Orte,
+// Auswahl-Kriterien je Challenge (z.B. Busfahrer: die besten Verbindungen sind Bus-Verbindungen) und zusätzliche
+// Suchen, damit die beste erlaubte Verbindung auch wirklich gefunden wird.
+import type { NetMode, Restriction, RouteLeg, RouteOption, Station, UmlandStart } from '../shared/types.ts';
+import { INNER_DISTRICTS, UNDERGROUND, legProblem, routeProblem, undergroundStop, type LegLike, type RuleNet, type RuleRound } from '../shared/challengeRules.ts';
+import { WELL_KNOWN_S, linePatterns } from '../shared/rules.ts';
 import { distM } from '../shared/geo.ts';
 import type { Network } from './network.ts';
+import type { RouteQuery } from './routing.ts';
 
 export function ruleNetOf(net: Network, mode: NetMode): RuleNet {
   const st = (id: string): Station | undefined => {
@@ -55,31 +57,173 @@ export function routeAllowed(route: RouteOption, rr: RuleRound, rn: RuleNet): bo
 /** Linien einer Verbindung (Einzel-IDs) */
 export const linesOf = (r: RouteOption) => r.legs.flatMap((l) => (l.mode !== 'W' && l.line ? l.line.split('/') : []));
 
+/** Stationen, an denen die Verbindung hält oder durchfährt */
+export function stationsOf(r: RouteOption, rn: RuleNet): string[] {
+  return r.legs.flatMap((l) => {
+    if (l.mode === 'W' || !l.line || !l.fromStation || !l.toStation) return [];
+    for (const id of l.line.split('/')) {
+      const s = rn.traversed(id, l.fromStation, l.toStation);
+      if (s.length) return s;
+    }
+    return [l.fromStation, l.toStation];
+  });
+}
+
+// ---------------------------------------------------------------- Suche
+
+/**
+ * Was die Suche gleich meiden soll (sonst liefert sie oft nur Verbindungen, die die Regel brechen):
+ * gesperrte Bezirke, unterirdische Abschnitte, Insider-Linien.
+ */
+export function avoidFor(rr: RuleRound, net: Network): Pick<RouteQuery, 'avoidStations' | 'avoidLines' | 'avoidLineStations'> {
+  const blocked = rr.restriction === 'avoidInner' ? INNER_DISTRICTS : rr.restriction === 'avoidDistricts' ? (rr.districts ?? []) : [];
+  if (blocked.length) return { avoidStations: [...net.stations.values()].filter((s) => blocked.includes(s.district)).map((s) => s.id) };
+  if (rr.restriction === 'sunny') {
+    const byName = new Map<string, string[]>();
+    for (const s of net.stations.values()) byName.set(s.name, [...(byName.get(s.name) ?? []), s.id]);
+    return {
+      avoidLines: ['U3'],
+      avoidLineStations: Object.fromEntries(Object.entries(UNDERGROUND).map(([l, names]) => [l, names.flatMap((n) => byName.get(n) ?? [])])),
+    };
+  }
+  if (rr.restriction === 'insider') return { avoidLines: WELL_KNOWN_S };
+  if (rr.restriction === 'banLines' && rr.banned?.length) return { avoidLines: rr.banned };
+  return {};
+}
+
+/**
+ * Zusätzliche Suchen je Regel: Die Suche liefert je Umstiegszahl nur die schnellste Verbindung – für „mind. eine
+ * S-Bahn“ ist die oft nicht dabei (Speising → Heiligenstadt: S80 → Hütteldorf → S45 findet erst die Suche nur mit
+ * S-Bahn). Deshalb auch mit eingeschränkten Verkehrsmitteln suchen und alles zusammen auswerten.
+ */
+export function searchVariants(r: Restriction | null): Partial<RouteQuery>[] {
+  switch (r) {
+    case 'needS':
+      return [{ onlyModes: ['S'] }, { onlyModes: ['S', 'T', 'B'] }];
+    case 'needTram':
+    case 'tramEnds':
+    case 'twoTrams':
+      return [{ onlyModes: ['T'] }, { onlyModes: ['S', 'T', 'B'] }];
+    case 'needBus':
+      return [{ onlyModes: ['S', 'T', 'B'] }, { onlyModes: ['T', 'B'] }];
+    case 'mixModes':
+    case 'noSameMode':
+    case 'maxOneU':
+    case 'min2Transfers':
+    case 'mustLine':
+    case 'anyLine':
+      return [{ onlyModes: ['S', 'T', 'B'] }, { onlyModes: ['U', 'S', 'T'] }];
+    case 'sunny':
+    case 'avoidInner':
+    case 'avoidDistricts':
+      return [{ onlyModes: ['S', 'T', 'B'] }];
+    default:
+      return [];
+  }
+}
+
+/** Verbindungen mehrerer Suchen zusammenführen (gleiche Verbindung nur einmal) */
+export function mergeRoutes(lists: RouteOption[][]): RouteOption[] {
+  const seen = new Map<string, RouteOption>();
+  for (const r of lists.flat()) {
+    const old = seen.get(r.key);
+    if (!old || r.medianMin < old.medianMin) seen.set(r.key, r);
+  }
+  return [...seen.values()];
+}
+
 // ---------------------------------------------------------------- Umland
 
 /**
- * Aus dem Umland: Stadt in Niederösterreich → Linie(n) und erste Station in Wien. Das Netz endet an der Stadtgrenze –
- * gestartet wird dort, die erste Fahrt ist der Zug, in dem man sitzt (umsteigen in NÖ geht so gar nicht).
+ * Aus dem Umland: Orte in Niederösterreich und die Züge von dort nach Wien – Linie(n), erste Station in Wien und die
+ * Fahrzeit bis dorthin (ca., der eigene Fahrplan endet an der Stadtgrenze). Manche Orte haben zwei Züge zur Wahl.
  */
-export const UMLAND: { town: string; entry: string; lines: string[] }[] = [
-  { town: 'Gänserndorf', entry: 'Süßenbrunn', lines: ['S1'] },
-  { town: 'Mistelbach', entry: 'Leopoldau', lines: ['S2'] },
-  { town: 'Wolkersdorf', entry: 'Leopoldau', lines: ['S2'] },
-  { town: 'Korneuburg', entry: 'Strebersdorf', lines: ['S3'] },
-  { town: 'Absdorf-Hippersdorf', entry: 'Strebersdorf', lines: ['S4'] },
-  { town: 'Absdorf-Hippersdorf', entry: 'Nußdorf', lines: ['S40'] },
-  { town: 'Tulln', entry: 'Nußdorf', lines: ['S40'] },
-  { town: 'St. Pölten', entry: 'Weidlingau Bahnhof', lines: ['S50'] },
-  { town: 'Wiener Neustadt', entry: 'Liesing', lines: ['S1', 'S3', 'S4'] },
-  { town: 'Wiener Neustadt', entry: 'Blumental', lines: ['S60'] },
-  { town: 'Bruck an der Leitha', entry: 'Grillgasse', lines: ['S60'] },
-  { town: 'Baden', entry: 'Liesing', lines: ['S1'] },
-  { town: 'Marchegg', entry: 'Aspern Nord', lines: ['S80'] },
+export const UMLAND: { town: string; lat: number; lon: number; options: { lines: string[]; entry: string; min: number }[] }[] = [
+  { town: 'Gänserndorf', lat: 48.3407, lon: 16.7189, options: [{ lines: ['S1'], entry: 'Süßenbrunn', min: 17 }] },
+  { town: 'Wolkersdorf', lat: 48.379, lon: 16.5164, options: [{ lines: ['S2'], entry: 'Leopoldau', min: 14 }] },
+  { town: 'Mistelbach', lat: 48.5664, lon: 16.5684, options: [{ lines: ['S2'], entry: 'Leopoldau', min: 38 }] },
+  { town: 'Korneuburg', lat: 48.3443, lon: 16.3326, options: [{ lines: ['S3'], entry: 'Strebersdorf', min: 6 }] },
+  { town: 'Stockerau', lat: 48.3866, lon: 16.2148, options: [{ lines: ['S3'], entry: 'Strebersdorf', min: 15 }] },
+  {
+    town: 'Absdorf-Hippersdorf',
+    lat: 48.4011,
+    lon: 15.9719,
+    options: [
+      { lines: ['S4'], entry: 'Strebersdorf', min: 33 },
+      { lines: ['S40'], entry: 'Nußdorf', min: 35 },
+    ],
+  },
+  { town: 'Tulln', lat: 48.3302, lon: 16.0565, options: [{ lines: ['S40'], entry: 'Nußdorf', min: 24 }] },
+  { town: 'Neulengbach', lat: 48.1958, lon: 15.905, options: [{ lines: ['S50'], entry: 'Weidlingau Bahnhof', min: 30 }] },
+  {
+    town: 'Wiener Neustadt',
+    lat: 47.8115,
+    lon: 16.234,
+    options: [
+      { lines: ['S1', 'S3', 'S4'], entry: 'Liesing', min: 36 },
+      { lines: ['S60'], entry: 'Blumental', min: 38 },
+    ],
+  },
+  { town: 'Mödling', lat: 48.086, lon: 16.2935, options: [{ lines: ['S1', 'S2', 'S3', 'S4'], entry: 'Liesing', min: 6 }] },
+  { town: 'Baden', lat: 48.006, lon: 16.2363, options: [{ lines: ['S1'], entry: 'Liesing', min: 16 }] },
+  { town: 'Bruck an der Leitha', lat: 48.026, lon: 16.7787, options: [{ lines: ['S60'], entry: 'Grillgasse', min: 33 }] },
+  { town: 'Marchegg', lat: 48.2795, lon: 16.9062, options: [{ lines: ['S80'], entry: 'Aspern Nord', min: 24 }] },
 ];
 
-/** Einstieg finden: Station dieses Namens, an der eine der Linien hält */
-export function umlandEntry(net: Network, e: (typeof UMLAND)[number]): Station | null {
-  return [...net.stations.values()].find((s) => s.name === e.entry && e.lines.some((l) => s.lines.includes(l))) ?? null;
+/** Ort mit den Einstiegs-Stationen im Netz (Station dieses Namens, an der eine der Linien hält) */
+export function umlandStart(net: Network, u: (typeof UMLAND)[number]): UmlandStart | null {
+  const options = u.options.flatMap((o) => {
+    const st = [...net.stations.values()].find((s) => s.name === o.entry && o.lines.some((l) => s.lines.includes(l)));
+    const lines = o.lines.filter((l) => st?.lines.includes(l));
+    return st && lines.length ? [{ lines, entry: st.id, min: o.min }] : [];
+  });
+  return options.length ? { town: u.town, lat: u.lat, lon: u.lon, options } : null;
+}
+
+/** Zugfahrt vom Ort bis zur Stadtgrenze vor eine Verbindung setzen (fährt sie mit demselben Zug weiter: verlängern) */
+export function withTrain(r: RouteOption, um: UmlandStart, opt: UmlandStart['options'][number], net: Network): RouteOption {
+  const entry = net.station(opt.entry);
+  const first = r.legs[0];
+  const sameTrain = first && first.mode !== 'W' && first.fromStation === opt.entry && first.line?.split('/').some((l) => opt.lines.includes(l));
+  const train: RouteLeg = {
+    mode: 'S',
+    line: opt.lines.join('/'),
+    color: net.lines.get(opt.lines[0])?.color ?? '#1a6fb5',
+    fromName: um.town,
+    toName: entry.name,
+    fromStation: null,
+    toStation: entry.id,
+    dep: '',
+    arr: first?.dep ?? '',
+    path: [
+      [um.lat, um.lon],
+      [entry.lat, entry.lon],
+    ],
+  };
+  const legs = sameTrain ? [{ ...first, fromName: um.town, path: [[um.lat, um.lon] as [number, number], ...first.path] }, ...r.legs.slice(1)] : [train, ...r.legs];
+  const m = opt.min;
+  return { ...r, key: `umland:${opt.entry}:${r.key}`, legs, medianMin: r.medianMin + m, minMin: r.minMin + m, maxMin: r.maxMin + m, rideMin: r.rideMin + m, steps: undefined };
+}
+
+// ---------------------------------------------------------------- Fleckerlteppich
+
+/**
+ * Gesperrte Bezirke ziehen: 2–3, durch die die guten Verbindungen fahren (mind. einer der besten), dazu 1–2 andere –
+ * nie der Bezirk von Start oder Ziel. null = Strecke führt durch keinen fremden Bezirk.
+ */
+export function pickDistricts(routes: RouteOption[], a: Station, b: Station, rn: RuleNet): number[] | null {
+  const valid = routes.filter((r) => r.key !== 'walk');
+  if (!valid.length) return null;
+  const own = new Set([a.district, b.district]);
+  const districtsOf = (r: RouteOption) => new Set(stationsOf(r, rn).map((id) => rn.district(id) ?? 0).filter((d) => d && !own.has(d)));
+  const onBest = [...districtsOf(valid[0])];
+  if (!onBest.length) return null;
+  const shuffle = <T>(l: T[]) => l.map((x) => ({ x, k: Math.random() })).sort((p, q) => p.k - q.k).map((p) => p.x);
+  const picked = new Set<number>([shuffle(onBest)[0]]);
+  for (const d of shuffle([...new Set(valid.slice(1, 4).flatMap((r) => [...districtsOf(r)]))])) if (picked.size < 2 + Math.round(Math.random())) picked.add(d);
+  const others = shuffle(Array.from({ length: 23 }, (_, i) => i + 1).filter((d) => !own.has(d) && !picked.has(d)));
+  for (const d of others.slice(0, 1 + Math.round(Math.random()))) picked.add(d);
+  return [...picked].sort((x, y) => x - y);
 }
 
 // ---------------------------------------------------------------- Kriterien je Challenge
@@ -130,24 +274,32 @@ export function pairFits(rr: RuleRound, all: RouteOption[], ok: RouteOption[], r
       return !a.lines.some((l) => b.lines.includes(l)) && ok[0].legs.some((l) => l.mode === 'W');
     case 'avoidInner':
       return crossesCenter(a, b) && !routeAllowed(best, rr, rn);
+    case 'avoidDistricts':
+      // die Sperre kostet etwas, aber nicht die halbe Stadt
+      return !routeAllowed(best, rr, rn) && ok[0].medianMin <= best.medianMin + 15;
     case 'sunny': {
       // sonst wäre es keine Herausforderung: die schnellste Verbindung führt unter die Erde
       const legs = rides(best);
       return legs.some((l) => l.line && l.fromStation && l.toStation && l.line.split('/').some((id) => undergroundStop(rn, { line: id, from: l.fromStation!, to: l.toStation! })));
     }
     case 'mustLine':
-    case 'anyLine':
       return ok[0].medianMin <= best.medianMin + 12;
+    case 'anyLine': {
+      // die beste erlaubte Verbindung nimmt genau eine der drei – nie zwei (sonst wäre es keine Entscheidung)
+      const req = new Set(rr.required ?? []);
+      return ok[0].medianMin <= best.medianMin + 12 && new Set(linesOf(ok[0]).filter((l) => req.has(l))).size === 1;
+    }
     default:
       return true;
   }
 }
 
 /**
- * Pflicht-Linien wählen: Linien aus anderen guten Verbindungen, die die schnellste nicht nimmt – sie „stören“.
- * `mustLine`: eine, `anyLine`: drei mit ähnlich guten Verbindungen (die Wahl soll nicht leicht fallen).
+ * Pflicht-Linien wählen: Linien aus anderen Verbindungen, die die schnellste nicht nimmt – sie „stören“.
+ * `mustLine`: eine. `anyLine`: drei lästige (jede kostet Umweg, Bim/Bus/S-Bahn vor U-Bahn) mit ähnlichen Zeiten,
+ * und keine Verbindung mit zweien davon ist die beste – man muss sich für eine entscheiden.
  */
-export function pickRequired(kind: 'mustLine' | 'anyLine', routes: RouteOption[]): string[] {
+export function pickRequired(kind: 'mustLine' | 'anyLine', routes: RouteOption[], mode: (id: string) => string | null): string[] {
   const valid = routes.filter((r) => r.key !== 'walk');
   if (valid.length < 2) return [];
   const bestLines = new Set(linesOf(valid[0]));
@@ -155,10 +307,22 @@ export function pickRequired(kind: 'mustLine' | 'anyLine', routes: RouteOption[]
   // Kandidat: Linie → beste Zeit einer Verbindung mit ihr
   const cand = new Map<string, number>();
   for (const r of valid.slice(1)) for (const id of linesOf(r)) if (!bestLines.has(id) && !cand.has(id)) cand.set(id, r.medianMin);
-  const list = [...cand].filter(([, m]) => m <= bestMin + 12).sort((a, b) => a[1] - b[1]);
-  if (kind === 'mustLine') return list.length ? [list[Math.floor(Math.random() * Math.min(3, list.length))][0]] : [];
-  if (list.length < 3) return [];
-  // drei mit ähnlichen Zeiten (höchstens 5 min Unterschied)
-  for (let i = 0; i + 2 < list.length; i++) if (list[i + 2][1] - list[i][1] <= 5) return list.slice(i, i + 3).map(([id]) => id);
+  if (kind === 'mustLine') {
+    const list = [...cand].filter(([, m]) => m <= bestMin + 12).sort((a, b) => a[1] - b[1]);
+    return list.length ? [list[Math.floor(Math.random() * Math.min(3, list.length))][0]] : [];
+  }
+  // lästig: mindestens 2 min Umweg, höchstens 15; U-Bahn nur, wenn es sonst nicht reicht
+  const annoying = [...cand].filter(([, m]) => m >= bestMin + 2 && m <= bestMin + 15).sort((a, b) => a[1] - b[1]);
+  const pool = annoying.filter(([id]) => mode(id) !== 'U').length >= 3 ? annoying.filter(([id]) => mode(id) !== 'U') : annoying;
+  for (let i = 0; i + 2 < pool.length; i++)
+    for (let j = i + 1; j + 1 < pool.length; j++)
+      for (let k = j + 1; k < pool.length; k++) {
+        const three = [pool[i], pool[j], pool[k]];
+        if (three[2][1] - three[0][1] > 6) continue;
+        const ids = new Set(three.map(([id]) => id));
+        // die schnellste Verbindung mit einer der drei darf nicht zwei davon nehmen
+        const first = valid.find((r) => linesOf(r).some((l) => ids.has(l)));
+        if (first && new Set(linesOf(first).filter((l) => ids.has(l))).size === 1) return [...ids];
+      }
   return [];
 }

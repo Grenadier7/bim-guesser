@@ -8,7 +8,7 @@ import { netLayer } from '../netmap.ts';
 import { app, routeState, currentRound, isHost, serverNow, setMapBig } from '../store.ts';
 import { esc, h, lineChip, modeChip, toast } from '../ui.ts';
 import { hostBar } from './host.ts';
-import { INNER_DISTRICTS, ruleSummary, type RuleRound } from '../../../shared/challengeRules.ts';
+import { UNDERGROUND, blockedDistricts, ruleSummary, type RuleRound } from '../../../shared/challengeRules.ts';
 import { nearestWater } from '../../../shared/water.ts';
 import { loadWater, waterNow } from '../challenges.ts';
 import type { Screen } from './screen.ts';
@@ -44,7 +44,14 @@ export function roundScreen(panel: HTMLElement): Screen {
   let alive = true;
   // Tages-Challenges: Regeln, Ziele/Punkte, Wasser
   const rules: RuleRound | undefined = round.restriction
-    ? { restriction: round.restriction, banned: round.bannedLines, required: round.required, entryLines: round.entryLines, entryTown: round.entryTown }
+    ? {
+        restriction: round.restriction,
+        banned: round.bannedLines,
+        required: round.required,
+        entryLines: round.umland ? [...new Set(round.umland.options.flatMap((o) => o.lines))] : undefined,
+        entryTown: round.umland?.town,
+        districts: round.districts,
+      }
     : undefined;
   const targets = round.targets?.map((t) => app.net.ensure(t));
   const waypoints = round.waypoints?.map((t) => app.net.ensure(t));
@@ -57,7 +64,9 @@ export function roundScreen(panel: HTMLElement): Screen {
     rules,
     targets,
     waypoints,
-    water: round.water ? (p) => (waterNow() ? nearestWater(waterNow()!, p) : { name: 'Wasser', dist: 0, lat: p.lat, lon: p.lon }) : undefined,
+    water: round.water ? (p) => (waterNow() ? nearestWater(waterNow()!, p, round.water) : { name: 'Wasser', dist: 0, lat: p.lat, lon: p.lon }) : undefined,
+    umland: round.umland,
+    idle: round.idle,
   });
   const b = builder;
 
@@ -92,14 +101,15 @@ export function roundScreen(panel: HTMLElement): Screen {
           }${round.limitSec && baseLimitSec(s.settings) && round.limitSec > baseLimitSec(s.settings)! ? ` <small>⏱ +${fmtDuration(round.limitSec - baseLimitSec(s.settings)!)} Extrazeit</small>` : ''}</div>`
         : ''
     }
-    <div class="od"><div class="od-row"><span class="pin-dot a">A</span><b>${showNames ? esc(from.name) : 'Start <small>(nur auf der Karte)</small>'}</b>${round.entryTown ? ` <small>(${esc(round.entryLines!.join('/'))} aus ${esc(round.entryTown)})</small>` : ''}</div>
+    <div class="od"><div class="od-row"><span class="pin-dot a">A</span><b>${showNames ? esc(from.name) : 'Start <small>(nur auf der Karte)</small>'}</b>${round.umland ? ' <small>(Niederösterreich)</small>' : ''}</div>
     ${goalRows()}</div>`;
 
   /** Ziel-Zeilen: B, „eines von 3 Zielen“, „alle 3 Punkte“ oder „nächstes Wasser“ */
   function goalRows(): string {
     if (targets) return `<div class="od-row"><span class="pin-dot b">🎯</span><span>Eines dieser Ziele: ${targets.map((t, i) => `<b>${i + 1}. ${esc(t.name)}</b>`).join(' · ')}</span></div>`;
     if (waypoints) return `<div class="od-row"><span class="pin-dot b">📍</span><span>Alle befahren, Reihenfolge egal: ${waypoints.map((t, i) => `<b>${i + 1}. ${esc(t.name)}</b>`).join(' · ')}</span></div>`;
-    if (round.water) return '<div class="od-row"><span class="pin-dot b">🏊</span><span><b>Zum nächsten Wasser</b> – Donau, Donaukanal, Wienfluss, Alte Donau oder ein Bad (blau auf der Karte). Gewertet wird bis dorthin, auch der Fußweg.</span></div>';
+    if (round.water === 'bath') return '<div class="od-row"><span class="pin-dot b">🩱</span><span><b>Zum nächsten Bad</b> – Strandbad, Freibad oder Hallenbad (blau auf der Karte). Gewertet wird bis dorthin, auch der Fußweg.</span></div>';
+    if (round.water) return '<div class="od-row"><span class="pin-dot b">🏊</span><span><b>Zum nächsten Wasser</b> – Donau, Donaukanal, Wienfluss, Alte Donau, Liesing oder ein Bad (blau auf der Karte). Gewertet wird bis dorthin, auch der Fußweg.</span></div>';
     return `<div class="od-row"><span class="pin-dot b">B</span><b>${showNames ? esc(to.name) : 'Ziel <small>(nur auf der Karte)</small>'}</b></div>`;
   }
 
@@ -136,7 +146,7 @@ export function roundScreen(panel: HTMLElement): Screen {
     // Handy: zum Orten die Karte groß machen, danach wieder normal
     setMapBig(view === 'locate');
     if (view === 'locate') return renderLocate();
-    if (showMap && (targets || waypoints || round.water || round.restriction === 'avoidInner')) showChallengeMap(true);
+    if (showMap && (targets || waypoints || round.water || round.umland || (rules && blockedDistricts(rules).length) || round.restriction === 'sunny')) showChallengeMap(true);
     else if (showMap) app.map.showEndpoints(round.from!, round.to!, true, showNames);
     else app.map.clear();
     const transferTip = tips.find((t) => t.kind === 'transfers');
@@ -334,10 +344,35 @@ export function roundScreen(panel: HTMLElement): Screen {
       to: targets || waypoints || round.water ? null : round.to,
       targets: round.targets,
       waypoints: round.waypoints?.map((w) => ({ s: w, done: !missing.has(w.id) })),
-      water: round.water ? waterNow() : null,
-      inner: round.restriction === 'avoidInner' ? app.net.data.districts.filter((d) => INNER_DISTRICTS.includes(d.id)) : undefined,
+      // „Ab ins Bad“: nur die Bäder
+      water: round.water && waterNow() ? (round.water === 'bath' ? { waters: [], baths: waterNow()!.baths } : waterNow()) : null,
+      inner: rules && blockedDistricts(rules).length ? app.net.data.districts.filter((d) => blockedDistricts(rules).includes(d.id)) : undefined,
+      underground: round.restriction === 'sunny' ? undergroundPaths() : undefined,
+      // Umland: Wien umrahmt – man startet draußen
+      outline: round.umland ? app.net.data.districts : undefined,
       fit,
     });
+  }
+
+  /** Sonnenschein: wo die Linien (grob) unter der Erde fahren – Abschnitte, die eine unterirdische Station berühren */
+  function undergroundPaths(): { line: string; path: [number, number][] }[] {
+    const out: { line: string; path: [number, number][] }[] = [];
+    for (const [id, names] of Object.entries(UNDERGROUND)) {
+      const l = app.net.lines.get(id);
+      if (!l) continue;
+      const seen = new Set<string>();
+      for (const p of app.net.patterns(l))
+        for (let i = 0; i + 1 < p.length; i++) {
+          const a = app.net.station(p[i]);
+          const b = app.net.station(p[i + 1]);
+          if (id !== 'U3' && !names.includes(a.name) && !names.includes(b.name)) continue;
+          const k = [a.id, b.id].sort().join();
+          if (seen.has(k)) continue;
+          seen.add(k);
+          out.push({ line: id, path: [[a.lat, a.lon], [b.lat, b.lon]] });
+        }
+    }
+    return out;
   }
 
   // -------------------------------------------------------------- Abgabe

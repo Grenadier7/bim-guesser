@@ -103,8 +103,23 @@ export type StationKind = 'Ukey' | 'U' | 'Skey' | 'S' | 'Tkey' | 'T' | 'hub' | '
 
 export type DistanceRange = 'short' | 'medium' | 'long' | 'xlong';
 
-/** Aufgabe einer Runde: normal (A → B), eines von 3 Zielen, 3 Punkte abklappern, zum nächsten Wasser */
-export type RoundTask = 'normal' | 'choose3' | 'visit3' | 'water';
+/** Aufgabe einer Runde: normal (A → B), eines von 3 Zielen, 3 Punkte abklappern, zum nächsten Wasser / Bad */
+export type RoundTask = 'normal' | 'choose3' | 'visit3' | 'water' | 'bath';
+
+/** Aus dem Umland: ein Zug vom Ort nach Wien (Linien, erste Station in Wien, Fahrzeit bis dorthin ca.) */
+export interface UmlandOption {
+  lines: string[];
+  entry: string;
+  min: number;
+}
+
+/** Aus dem Umland: Start im Ort (außerhalb von Wien) mit den Zügen, die von dort nach Wien fahren */
+export interface UmlandStart {
+  town: string;
+  lat: number;
+  lon: number;
+  options: UmlandOption[];
+}
 
 /**
  * X-treme: 'off' · 'noHints' (Haltestellen selbst eintippen, keine Route auf der Karte) ·
@@ -149,7 +164,9 @@ export type Restriction =
   | 'avoidInner'
   | 'min2Transfers'
   | 'mustLine'
-  | 'anyLine';
+  | 'anyLine'
+  | 'noRail'
+  | 'avoidDistricts';
 
 /** Spielvariante für alle Runden (Tages-Challenges): ohne U-Bahn, ohne Bus, nur Bim, max. 1 Umstieg */
 export type Variant =
@@ -174,7 +191,9 @@ export type Variant =
   | 'avoidInner'
   | 'min2Transfers'
   | 'mustLine'
-  | 'anyLine';
+  | 'anyLine'
+  | 'noRail'
+  | 'avoidDistricts';
 
 /** Wie oft Einschränkungs-Runden vorkommen */
 export type RestrictionFrequency = 'never' | 'sometimes' | 'always';
@@ -217,6 +236,8 @@ export interface GameSettings {
   task: RoundTask;
   /** fester Start (Stationsname, z.B. „Schwedenplatz“) – Tages-Challenges */
   start: string | null;
+  /** beim Eintippen nur Linien vorschlagen, die zu dieser Uhrzeit fahren */
+  onlyRunning: boolean;
 }
 
 // ---------------------------------------------------------------- Routen
@@ -391,15 +412,18 @@ export interface RoundPublic {
   pausedAt: number | null;
   /** Tages-Challenges: Pflicht-Linien („mustLine“: eine, „anyLine“: drei zur Wahl) */
   required?: string[];
-  /** Umland: Zug, in dem man sitzt, und woher */
-  entryLines?: string[];
-  entryTown?: string;
+  /** Umland: Start im Ort, die Züge nach Wien */
+  umland?: UmlandStart;
+  /** Fleckerlteppich: gesperrte Bezirke */
+  districts?: number[];
+  /** diese Linien fahren zu dieser Uhrzeit nicht (wenn „nur fahrende Linien“ an ist) */
+  idle?: string[];
   /** „3 Ziele“: eines davon erreichen (to ist dann eines davon) */
   targets?: StationRef[];
   /** „3 Punkte“: alle befahren, Reihenfolge egal */
   waypoints?: StationRef[];
-  /** „Ab ins Wasser“: Ziel ist das nächste Wasser */
-  water?: boolean;
+  /** „Ab ins Wasser“: Ziel ist das nächste Wasser (oder nur Bäder) */
+  water?: 'all' | 'bath';
 }
 
 export type GamePhase = 'lobby' | 'playing' | 'finished';

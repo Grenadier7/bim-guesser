@@ -3,7 +3,7 @@ import { fmtTimeLeft, maxRoundPoints } from '../../../shared/rules.ts';
 import { app, routeState, getReveal } from '../store.ts';
 import { esc } from '../ui.ts';
 import { XP } from '../../../shared/career.ts';
-import { record } from '../career.ts';
+import { challengeXpFactor, record } from '../career.ts';
 import { findChallenge } from '../challenges.ts';
 import { bindEndActions, earlyNote, endActions, levelSuggestion, podium, soloCard } from './result.ts';
 import type { Screen } from './screen.ts';
@@ -19,7 +19,7 @@ export function finalScreen(panel: HTMLElement): Screen {
     const myId = app.session!.playerId;
     const ranking = [...s.players].sort((a, b) => b.score - a.score);
     const won = ranking.length > 1 && ranking[0]?.id === myId && ranking[0].score > 0;
-    record(`game:${s.id}:${s.rounds.map((r) => `${r.from?.id}-${r.to?.id}`).join()}`, { activity: true, xp: XP.game(won), count: { games: 1, wins: won ? 1 : 0 } });
+    record(`game:${s.id}:${s.rounds.map((r) => `${r.from?.id}-${r.to?.id}`).join()}`, { activity: true, xp: XP.game(won) * challengeXpFactor(s.settings.challenge, `${s.id}:${s.rounds.map((r) => r.from?.id).join()}`), count: { games: 1, wins: won ? 1 : 0 } });
     // Tages-Challenge: gespielt – geschafft, wenn eine Runde die Schwelle der Challenge erreicht (meist volle Routenpunkte)
     const ch = findChallenge(s.settings.challenge);
     if (ch)
@@ -65,7 +65,7 @@ export function finalScreen(panel: HTMLElement): Screen {
         ${multi ? podium(s.players, myId) : soloCard(me?.score ?? 0, max)}
         <h3>Deine Runden</h3>
         <table><thead><tr><th>#</th><th>Strecke</th><th>Du / Beste</th><th title="Zeit übrig / Zeitlimit">⏱ übrig</th><th>Pkt.</th></tr></thead><tbody>${rows}</tbody></table>
-        ${endActions({ suggestion: multi ? null : levelSuggestion(pct, s.settings.difficulty) })}
+        ${endActions({ suggestion: multi || s.settings.challenge ? null : levelSuggestion(pct, s.settings.difficulty) })}
       </div>`;
     bindEndActions(panel);
   }

@@ -649,6 +649,35 @@ function dayOf(d: Data, time: number): Day | null {
   return d.days.get(`${x.getUTCFullYear()}-${x.getUTCMonth() + 1}-${x.getUTCDate()}`) ?? null;
 }
 
+/**
+ * Linien, die um diese Zeit fahren (unterwegs irgendwann in der Stunde ab `time`), und alle Linien des
+ * Fahrplans – für „nur fahrende Linien vorschlagen“. null = kein eigener Fahrplan für diesen Tag.
+ */
+export function runningLines(time: number, plan = currentPlan()): { running: Set<string>; all: Set<string> } | null {
+  const d = load(plan);
+  const day = d && dayOf(d, time);
+  if (!d || !day) return null;
+  const t = time - day.start;
+  const out = new Set<string>();
+  const all = new Set<string>();
+  d.patterns.forEach((pat, p) => {
+    const dp = day.patterns[p];
+    const name = d.lines[pat.line].name;
+    all.add(name);
+    if (!dp || out.has(name)) return;
+    const len = pat.stops.length;
+    for (let i = 0; i < dp.count; i++) {
+      const a = dp.times[i * len];
+      const b = dp.times[i * len + len - 1];
+      if (b >= t && a <= t + 60) {
+        out.add(name);
+        return;
+      }
+    }
+  });
+  return { running: out, all };
+}
+
 // ---------------------------------------------------------------- RAPTOR
 
 interface Access {
@@ -667,7 +696,24 @@ interface Journey {
   arr: number;
 }
 
-function raptor(d: Data, day: Day, origins: Access[], targets: Access[], t0: number, maxRides: number, mots: Set<number> | null): Journey[] {
+/** gesperrte Halte / Linien (Tages-Challenges) – als Knoten-Nummern */
+interface Avoid {
+  stops: Set<number>;
+  lines: Set<string>;
+  lineStops: Map<string, Set<number>>;
+}
+
+function avoidOf(d: Data, q: TripQuery): Avoid | null {
+  if (!q.avoidStops?.length && !q.avoidLines?.length && !q.avoidLineStops) return null;
+  const nodes = (ids: string[]) => new Set(ids.map((id) => d.byEfa.get(id)).filter((n): n is number => n != null));
+  return {
+    stops: nodes(q.avoidStops ?? []),
+    lines: new Set(q.avoidLines ?? []),
+    lineStops: new Map(Object.entries(q.avoidLineStops ?? {}).map(([l, ids]) => [l, nodes(ids)])),
+  };
+}
+
+function raptor(d: Data, day: Day, origins: Access[], targets: Access[], t0: number, maxRides: number, mots: Set<number> | null, avoid: Avoid | null = null): Journey[] {
   const n = d.nodes.length;
   const INF = 1e9;
   const best = new Float64Array(n).fill(INF);
@@ -699,6 +745,7 @@ function raptor(d: Data, day: Day, origins: Access[], targets: Access[], t0: num
     for (const s of marked)
       for (const [p, pos] of d.stopPatterns[s]) {
         if (mots && !mots.has(d.lines[d.patterns[p].line].mot)) continue;
+        if (avoid?.lines.has(d.lines[d.patterns[p].line].name)) continue;
         if (!day.patterns[p]) continue;
         const cur = queue.get(p);
         if (cur == null || pos < cur) queue.set(p, pos);
@@ -709,10 +756,16 @@ function raptor(d: Data, day: Day, origins: Access[], targets: Access[], t0: num
       const dp = day.patterns[p]!;
       const stops = d.patterns[p].stops;
       const len = stops.length;
+      const lineAvoid = avoid?.lineStops.get(d.lines[d.patterns[p].line].name);
       let trip = -1;
       let board = -1;
       for (let pos = start; pos < len; pos++) {
         const s = stops[pos];
+        // gesperrter Halt: hier weder aus- noch einsteigen, und auch nicht durchfahren
+        if (avoid && (avoid.stops.has(s) || lineAvoid?.has(s))) {
+          trip = -1;
+          continue;
+        }
         if (trip >= 0) {
           const arr = dp.times[trip * len + pos];
           if (arr < best[s] && arr < bound()) {
@@ -744,6 +797,7 @@ function raptor(d: Data, day: Day, origins: Access[], targets: Access[], t0: num
     marked = new Set(newly);
     for (const s of newly)
       for (const [j, m] of d.footpaths[s]) {
+        if (avoid?.stops.has(j)) continue;
         const t = tau[k][s] + m;
         if (t < best[j] && t < targetBest()) {
           tau[k][j] = best[j] = t;
@@ -905,8 +959,9 @@ export function localTrip(q: TripQuery): EfaTrip[] | null {
   // überflüssig, die Auskunft brauchte ihn nur, weil sie sonst bloß die schnellste Linie liefert
   if (q.maxChanges === 0 && !q.walkDirect && !from.address && !to.address) return direct(d, day, from.list[0].node, to.list[0].node, t, count, mots);
   const maxRides = q.maxChanges != null ? q.maxChanges + 1 : d.params.maxRides;
+  const avoid = avoidOf(d, q);
   const search = (tt: number, f: Access[], g: Access[], fp: EfaPoint | null, gp: EfaPoint | null) =>
-    raptor(d, day, f, g, tt, maxRides, mots).map((j) => toTrip(d, day, j, fp, gp));
+    raptor(d, day, f, g, tt, maxRides, mots, avoid).map((j) => toTrip(d, day, j, fp, gp));
   const run = (tt: number): EfaTrip[] => {
     if (!q.via) return search(tt, from.list, to.list, from.point, to.point);
     // über einen Zwischenhalt: erst bis dorthin, dann weiter

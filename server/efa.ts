@@ -313,6 +313,14 @@ export interface TripQuery {
   plan?: string;
   /** mit maxChanges 0: trotzdem zu Fuß zu/von nahen Haltestellen (Fußbus) – sonst nur direkt von Station zu Station */
   walkDirect?: boolean;
+  /**
+   * Tages-Challenges (nur der eigene Fahrplan): an diesen Halten (EFA-IDs) weder ein-, aus- noch durchfahren
+   * (gesperrte Bezirke); diese Linien gar nicht; Linie → Halte, an denen genau diese Linie nicht fahren darf
+   * (Sonnenschein: unterirdische Abschnitte). Die Auskunft kennt das nicht – dort wird hinterher gefiltert.
+   */
+  avoidStops?: string[];
+  avoidLines?: string[];
+  avoidLineStops?: Record<string, string[]>;
 }
 
 /** „coord:lon:lat“ (Adresse) oder EFA-Haltestellen-ID */

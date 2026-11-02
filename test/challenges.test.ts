@@ -5,7 +5,9 @@ import { test } from 'node:test';
 import { CHALLENGES, DAILY_COUNT, allChallenges, dailyChallenges, districtChallenge, districtOfDay, type ChallengeContext } from '../shared/challenges.ts';
 import { DEFAULT_SETTINGS } from '../shared/defaults.ts';
 import { sanitizeSettings } from '../server/settings.ts';
-import { lineProblem, legProblem, routeProblem, stationProblem, type RuleNet } from '../shared/challengeRules.ts';
+import { lineProblem, legProblem, routeProblem, ruleSummary, stationProblem, type RuleNet } from '../shared/challengeRules.ts';
+import { pickRequired } from '../server/challengeRound.ts';
+import type { RouteOption } from '../shared/types.ts';
 
 const full: ChallengeContext = { night: { id: 'sa02', time: '02:00' }, sunday: { id: 'su12', time: '12:00' }, current: true, addresses: true, water: true };
 const bare: ChallengeContext = { night: null, sunday: null, current: false, addresses: false, water: false };
@@ -66,6 +68,7 @@ test('jede Challenge: Standard-Rundenzahl unter den Optionen, stimmige Einstellu
   for (const c of [...allChallenges(full), district]) {
     assert.ok(c.roundOptions.includes(c.settings.rounds!), `${c.id}: ${c.settings.rounds} nicht in ${c.roundOptions}`);
     assert.ok(c.settings.rounds! <= 4 || c.id === 'thriller', `${c.id}: ${c.settings.rounds} Runden sind mehr als 5 Minuten`);
+    assert.ok(c.roundOptions.includes(5), `${c.id}: 5 Runden nicht wählbar`);
     const base: Record<string, unknown> = { ...DEFAULT_SETTINGS, focus: null, locate: false };
     if (c.settings.difficulty) for (const k of ['stations', 'distance', 'minTransfers']) delete base[k];
     const st = sanitizeSettings({ ...base, ...c.settings, challenge: c.id });
@@ -77,7 +80,7 @@ test('jede Challenge: Standard-Rundenzahl unter den Optionen, stimmige Einstellu
       assert.deepEqual(norm(st[k as keyof typeof st]), norm(v), `${c.id}: ${k}`);
     }
   }
-  assert.equal(CHALLENGES.filter((c) => ['coffee', 'marathon', 'purist', 'comfy', 'rail', 'rush', 'blind', 'no-names', 'locals', 'city'].includes(c.id)).length, 0, 'entfernte Challenges');
+  assert.equal(CHALLENGES.filter((c) => ['coffee', 'marathon', 'purist', 'comfy', 'rail', 'rush', 'blind', 'no-names', 'locals', 'city', 'timetable'].includes(c.id)).length, 0, 'entfernte Challenges');
 });
 
 // ---------------------------------------------------------------- Regeln
@@ -112,7 +115,13 @@ test('Regeln: Linien sofort sperren – mit Begründung', () => {
   assert.match(lineProblem({ restriction: 'maxOneU' }, [leg('U1', 'a', 'c')], 'U2', net)!, /Eine U reicht/);
   assert.match(lineProblem({ restriction: 'noSameMode' }, [leg('U1', 'a', 'c')], 'U2', net)!, /nach U-Bahn nicht wieder U-Bahn/);
   assert.match(lineProblem({ restriction: 'oneLeg' }, [leg('U1', 'a', 'c')], '43', net)!, /Fußbus: nur eine Linie/);
-  assert.match(lineProblem({ restriction: 'umland', entryLines: ['S60'], entryTown: 'Bruck' }, [], 'U1', net)!, /S60 aus Bruck/);
+  // Umland: falscher Zug – ohne den richtigen zu verraten
+  const um = lineProblem({ restriction: 'umland', entryLines: ['S60'], entryTown: 'Bruck' }, [], 'U1', net)!;
+  assert.match(um, /Von Bruck fährt die U1 nicht nach Wien/);
+  assert.doesNotMatch(um, /S60/);
+  assert.equal(lineProblem({ restriction: 'umland', entryLines: ['S60'], entryTown: 'Bruck' }, [], 'S60', net), null);
+  assert.match(lineProblem({ restriction: 'noRail' }, [], 'S60', net)!, /Ohne U- und S-Bahn/);
+  assert.equal(lineProblem({ restriction: 'noRail' }, [], '43', net), null);
   assert.match(lineProblem({ restriction: 'insider' }, [], 'S45', net)!, /Insider/);
   assert.equal(lineProblem({ restriction: 'insider' }, [], 'S60', net), null);
 });
@@ -129,4 +138,25 @@ test('Regeln: Halte (unterirdisch, innere Bezirke) und ganze Route', () => {
   assert.match(routeProblem({ restriction: 'anyLine', required: ['13A', '43', 'S60'] }, [leg('U1', 'a', 'c')], net)!, /Eine von 13A, 43, S60/);
   assert.equal(routeProblem({ restriction: 'anyLine', required: ['13A', '43', 'S60'] }, [leg('U1', 'a', 'c'), leg('43', 'c', 'd')], net), null);
   assert.match(routeProblem({ restriction: 'needBus' }, [leg('U1', 'a', 'c')], net)!, /Busfahrer/);
+});
+
+test('Fleckerlteppich: gesperrte Bezirke – Einstieg und Durchfahrt, klare Meldung', () => {
+  const rr = { restriction: 'avoidDistricts' as const, districts: [1] };
+  assert.match(stationProblem(rr, 'U1', 'b', net)!, /1\. Bezirk – der ist heute gesperrt/);
+  assert.match(legProblem(rr, [], leg('U1', 'a', 'c'), net)!, /Karlsplatz liegt im 1\. Bezirk/);
+  assert.equal(legProblem({ ...rr, districts: [3] }, [], leg('U1', 'a', 'c'), net), null);
+  assert.match(ruleSummary(rr)!, /Bezirke 1 \(rot auf der Karte\)/);
+});
+
+test('Eine von drei: lästige Linien, die beste erlaubte Verbindung nimmt genau eine', () => {
+  const r = (lines: string[], min: number): RouteOption =>
+    ({ key: lines.join('>'), legs: lines.map((line) => ({ mode: 'B', line })), medianMin: min, minMin: min, maxMin: min, rideMin: min, samples: 1 }) as unknown as RouteOption;
+  const routes = [r(['U1'], 20), r(['13A', '43'], 23), r(['13A'], 24), r(['43'], 25), r(['S60'], 26), r(['D'], 27)];
+  const mode = (id: string) => (id === 'U1' ? 'U' : id === 'S60' ? 'S' : 'T');
+  for (let i = 0; i < 5; i++) {
+    const req = pickRequired('anyLine', routes, mode);
+    assert.equal(req.length, 3);
+    assert.ok(!req.includes('U1'), 'nicht die Linie der schnellsten Verbindung');
+    assert.ok(!(req.includes('13A') && req.includes('43')), `13A und 43 zusammen wären eine Verbindung mit zweien: ${req}`);
+  }
 });

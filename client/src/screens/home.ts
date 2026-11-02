@@ -72,10 +72,13 @@ async function showInvite(slot: HTMLElement, code: string, codeIn: HTMLInputElem
 
 /** Strecke des Tages: Hinweis, ob heute schon gespielt (Gäste wissen es lokal, mit Account sagt es die Seite selbst) */
 function dailyCard(): string {
-  const done = account.me ? null : dailyPlayedLocally();
+  const done = dailyPlayedLocally();
+  // schon gespielt: nur noch eine kleine Zeile (Ergebnis, Bestenliste)
+  if (done)
+    return `<button class="daily-card done" data-mode="daily">📅 <span>Strecke des Tages: <b>${done.points.toLocaleString('de-AT')} Punkte</b></span><small>Bestenliste ›</small></button>`;
   return `<button class="daily-card" data-mode="daily"><span class="mt-icon">📅</span><span><b>Strecke des Tages</b>
-    <small>${done ? `Heute gespielt: <b>${done.points.toLocaleString('de-AT')} Punkte</b> – Bestenliste ansehen` : 'Für alle dieselbe Strecke – ein Versuch am Tag. Teilen, vergleichen, Serie halten.'}</small></span>
-    <span class="btn ${done ? 'btn-ghost' : 'btn-primary'}">${done ? 'Ansehen' : 'Spielen'}</span></button>`;
+    <small>Für alle dieselbe Strecke – ein Versuch am Tag. Teilen, vergleichen, Serie halten. <b>3× XP</b></small></span>
+    <span class="btn btn-primary">Spielen</span></button>`;
 }
 
 export function homeScreen(panel: HTMLElement): Screen {

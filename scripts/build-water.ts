@@ -36,7 +36,7 @@ function sample(line: LL[], step = 40): LL[] {
   return out;
 }
 
-const NAME: Record<string, string> = { Wien: 'Wienfluss', Wienfluss: 'Wienfluss', 'Obere Alte Donau': 'Alte Donau', 'Untere Alte Donau': 'Alte Donau' };
+const NAME: Record<string, string> = { Wien: 'Wienfluss', Wienfluss: 'Wienfluss', 'Obere Alte Donau': 'Alte Donau', 'Untere Alte Donau': 'Alte Donau', Liesing: 'Liesing (Fluss)' };
 
 interface El {
   type: string;

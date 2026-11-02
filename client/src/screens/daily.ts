@@ -127,7 +127,7 @@ export function dailyScreen(panel: HTMLElement, onBack: () => void): Screen {
       play();
       return;
     }
-    if (!account.me) saveLocal(res, legs);
+    saveLocal(res, legs);
     record(`daily:${res.day}`, { activity: true, xp: XP.daily(res.points), count: { daily: 1 }, legs: res.error ? undefined : legs });
     // verpasste Linien der schnellsten Verbindung → Fehlerliste
     if (res.points < 900 && res.routes[0]) {

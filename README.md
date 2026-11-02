@@ -142,11 +142,19 @@ Verbindung, die nur mit bekannten Linien und alle Versuche mit Begründung. Die 
     Busse, kurz) · 🚶 Fußbus (genau eine Linie, Rest zu Fuß) · ☀️ Sonnenschein (nichts Unterirdisches) · 🍩 Innenstadt
     umfahren (keine Station in 1, 4–9; Bezirke rot auf der Karte) · 🚆 S-Bahn-Fan · 🚌 Busfahrer (Strecken, auf denen der Bus
     die besten Verbindungen stellt) · ☝️ Eine U reicht · 🎨 Bunt gemischt (≥ 3 Verkehrsmittel) · 🔁 Nie zweimal dasselbe ·
-    🦘 Bim-Hüpfer (erste und letzte Fahrt Bim) · 📌 Pflicht-Linie · 🎲 Eine von drei · 🎯 Drei Ziele (zu einem davon) ·
-    📍 Drei Punkte (alle befahren) · 🏊 Ab ins Wasser · 🚆 Aus dem Umland (im Zug aus Gänserndorf, Mistelbach, Tulln,
-    St. Pölten, Wr. Neustadt …; erste Fahrt ab der Stadtgrenze) · 🎡 Ring-Runde (Innere Stadt ohne U-Bahn) · 🏠 Tür zu Tür ·
-    🌄 Stadtrand-Tour (12–25 km) · 🧮 Fahrplan-Fuchs · 🚧 Aktuelles Netz · 🍔 Dickmacks Donnerstag (01:30 unter der Woche,
-    Schwedenplatz → Adresse, nur Nightline) · 🌙 Nachtschicht · 🧺 Sonntagsausflug.
+    🦘 Bim-Hüpfer (erste und letzte Fahrt Bim) · 📌 Pflicht-Linie · 🎲 Eine von drei (drei lästige Linien; die beste
+    erlaubte Verbindung nimmt genau eine) · 🧩 Fleckerlteppich (zufällige Bezirke gesperrt, mind. einer liegt auf der
+    besten Verbindung) · 🎯 Drei Ziele (zu einem davon) · 📍 Drei Punkte (alle befahren) · 🏊 Ab ins Wasser · 🩱 Ab ins Bad
+    (nur Bäder) · 🚆 Aus dem Umland (Start im Ort in Niederösterreich, den richtigen Zug selbst finden – manche Orte haben
+    zwei, z.B. Absdorf-Hippersdorf: S4 oder S40; Fahrzeit bis zur Stadtgrenze ca., `UMLAND` in `server/challengeRound.ts`)
+    · 🎡 Ring-Runde (Innere Stadt nur mit Bim und Bus) · 🏠 Tür zu Tür · 🌄 Stadtrand-Tour (12–25 km) · 🚧 Aktuelles Netz ·
+    🍻 Dickmacks Donnerstag (01:30 unter der Woche, Schwedenplatz → Adresse, nur Nightline) · 🌙 Nachtschicht ·
+    🧺 Sonntagsausflug.
+  - Zeitlimit: Challenges mit fester Regel bekommen keine Extrazeit (meist 4 Minuten, lange Strecken 5) – nur der
+    Hindernislauf mit wechselnden Hürden. Rundenzahl immer bis 5 wählbar.
+  - **Suche je Regel:** Gesperrtes (Bezirke, unterirdische Abschnitte, Insider-Linien) meidet schon der eigene Fahrplan
+    (`avoidStops`/`avoidLines`/`avoidLineStops` in `server/timetable.ts`); dazu Suchen mit weniger Verkehrsmitteln
+    (`searchVariants`) – sonst fehlt z.B. Speising → Heiligenstadt mit S80 › S45 bei „mind. eine S-Bahn“.
   - **Sofort korrigiert:** Der Baukasten bietet nur an, was die Regel erlaubt – gesperrte Linien mit Begründung beim
     Eintippen („🦘 Die erste Fahrt muss mit der Bim sein – U3 ist U-Bahn“), gesperrte Ein-/Ausstiege grau mit Grund
     („☁️ unter der Erde“, „🚫 innerer Bezirk“), das Ziel erst, wenn die Route die Regel erfüllt („noch nicht: Es fehlt
@@ -186,7 +194,7 @@ Oben rechts **👤 Anmelden** – ohne Account geht alles wie bisher. Mit Accoun
   Einstellungen. Beim Anmelden auf einem Gerät wird der Browser-Stand mit dem Account zusammengeführt (Fortschritt
   geht nie verloren), danach gilt der Account (`client/src/account.ts`, `client/src/boot.ts`).
 - **Level & XP** (auch ohne Account, siehe „Mein Wien“): Runde 5 + Punkte/20, Routenjagd 20 (+30 Sieg), Quiz 10 +
-  Punkte/50 (+20 Sieg), Trainingsstrecke 10–20, Strecke des Tages 15 + Punkte/20, Kurs 40 (+60 gemeistert), Tutorial 50.
+  Punkte/50 (+20 Sieg), Trainingsstrecke 10–20, Strecke des Tages 3 × (15 + Punkte/20), Tages-Challenge: das erste Spiel einer Challenge am Tag ×2, Kurs 40 (+60 gemeistert), Tutorial 50.
   Level 2 bei 100 XP, jedes weitere Level 50 XP mehr (`shared/career.ts`). Als Gast gesammelte XP zählen nach dem
   Anmelden mit.
 - **Medaillen** (17, davon 2 geheim) in Stufen Bronze/Silber/Gold, z.B. Stammgast (1/10/50 Routenjagden), Volltreffer,
@@ -304,7 +312,9 @@ verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der S
    - **Uhrzeit** (unter „Erweitert“): Mo–Fr 12 Uhr, Mo–Fr 17 Uhr, Sa 2 Uhr (Nacht), So 12 Uhr
    - **Netz**: *Regulär* = Referenztag ohne Baustellen, aus dem **eigenen Referenzfahrplan** (siehe unten) – mit
      Regionalzügen (R, REX, CJX), ganz ohne Abfrage bei der Auskunft · *Aktuell* = nächster echter Tag inkl. Sperren
-     (Wiener-Linien-Auskunft).
+     (Wiener-Linien-Auskunft). Bei *Regulär*: **Nur fahrende Linien** – beim Eintippen nur Linien vorschlagen, die in
+     der Stunde ab der gewählten Uhrzeit unterwegs sind (`runningLines` in `server/timetable.ts`; Nachtschicht und
+     Dickmacks Donnerstag haben es immer an).
      Referenztage derzeit **Di 30.6., Sa 27.6., So 28.6.2026** (`PREFERRED_DAYS` in `scripts/build-network.ts`):
      nur Ende Juni fährt die S-Bahn-Stammstrecke (ab ca. 8.7. bis mindestens Dezember gesperrt) und Bim/Bus sind
      fast im Normalbetrieb. Ohne passende Wunschtage sucht das Build-Skript selbst (Tag ohne Ersatzverkehr, mit

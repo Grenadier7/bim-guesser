@@ -323,6 +323,11 @@ export class Network {
     return { id, name, lat, lon };
   }
 
+  /** alle EFA-Halte einer Station (Steige) – leer bei Adressen */
+  efaIdsOf(stationId: string): string[] {
+    return this.data.efaIds[stationId] ?? [];
+  }
+
   mainEfaId(stationId: string): string {
     const v = this.virtual.get(stationId);
     if (v) return `coord:${v.lon}:${v.lat}`;

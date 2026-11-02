@@ -48,6 +48,22 @@ export interface RuleRound {
   entryLines?: string[];
   /** Umland: Name der Stadt (für die Meldung) */
   entryTown?: string;
+  /** Fleckerlteppich: gesperrte Bezirke */
+  districts?: number[];
+}
+
+/** gesperrte Bezirke der Runde (Innenstadt umfahren: 1, 4–9; Fleckerlteppich: die gezogenen) */
+export function blockedDistricts(round: RuleRound): number[] {
+  if (round.restriction === 'avoidInner') return INNER_DISTRICTS;
+  if (round.restriction === 'avoidDistricts') return round.districts ?? [];
+  return [];
+}
+
+/** Meldung für eine Station in einem gesperrten Bezirk */
+function districtText(round: RuleRound, name: string, d: number): string {
+  return round.restriction === 'avoidInner'
+    ? `🚫 ${name} liegt im ${d}. Bezirk – die inneren Bezirke (1, 4–9) sind tabu.`
+    : `🧩 ${name} liegt im ${d}. Bezirk – der ist heute gesperrt (rot auf der Karte).`;
 }
 
 export interface LegLike {
@@ -79,6 +95,7 @@ export function lineProblem(round: RuleRound, prev: LegLike[], lineId: string, n
   const mode = net.mode(lineId);
   if (!mode) return `Linie ${lineId} gibt es nicht.`;
   if (r === 'busOnly' && mode !== 'B' && mode !== 'N') return `🚌 Busreise: nur Busse – ${lineId} ist ${MODE_WORD[mode]}.`;
+  if (r === 'noRail' && (mode === 'U' || mode === 'S')) return `🚋 Ohne U- und S-Bahn: nur Bim und Bus – ${lineId} ist ${MODE_WORD[mode]}.`;
   if (r && !restrictionAllowsLine(r, round.banned ?? [], { id: lineId, mode })) {
     if (r === 'insider') return `🕵️ ${lineId} ist für Insider tabu – keine U-Bahn und keine bekannte S-Bahn (S1–S4, S7, S45, S80).`;
     if (r === 'banLines') return `⛔ ${lineId} ist in dieser Runde gesperrt.`;
@@ -88,7 +105,7 @@ export function lineProblem(round: RuleRound, prev: LegLike[], lineId: string, n
   if (r === 'oneLeg' && prev.length) return '🚶 Fußbus: nur eine Linie – den Rest gehst du zu Fuß.';
   if (r === 'tramEnds' && !prev.length && mode !== 'T') return `🦘 Bim-Hüpfer: Die erste Fahrt muss mit der Bim sein – ${lineId} ist ${MODE_WORD[mode]}.`;
   if (r === 'umland' && !prev.length && !(round.entryLines ?? []).includes(lineId))
-    return `🚆 Du sitzt in der ${(round.entryLines ?? []).join('/')}${round.entryTown ? ` aus ${round.entryTown}` : ''} – die erste Fahrt ist diese.`;
+    return `🚆 Von ${round.entryTown ?? 'dort'} fährt die ${lineId} nicht nach Wien – welcher Zug bringt dich hin?`;
   if (r === 'maxOneU' && mode === 'U' && prev.some((l) => net.mode(l.line) === 'U')) return '☝️ Eine U reicht: Du bist schon mit der U-Bahn gefahren.';
   if (r === 'noSameMode' && last && sameMode(net.mode(last.line), mode)) return `🔁 Nie zweimal dasselbe: nach ${MODE_WORD[net.mode(last.line)!]} nicht wieder ${MODE_WORD[mode]}.`;
   if (r === 'sunny' && allUnderground(lineId)) return `☀️ Sonnenschein: Die ${lineId} fährt fast nur unter der Erde.`;
@@ -97,8 +114,8 @@ export function lineProblem(round: RuleRound, prev: LegLike[], lineId: string, n
 
 /** Einstieg an dieser Station mit dieser Linie möglich? (Innenstadt umfahren, Sonnenschein) */
 export function stationProblem(round: RuleRound, lineId: string, stationId: string, net: RuleNet): string | null {
-  if (round.restriction === 'avoidInner' && INNER_DISTRICTS.includes(net.district(stationId) ?? 0))
-    return `🚫 ${net.name(stationId)} liegt im ${net.district(stationId)}. Bezirk – die inneren Bezirke (1, 4–9) sind tabu.`;
+  const d = net.district(stationId) ?? 0;
+  if (blockedDistricts(round).includes(d)) return districtText(round, net.name(stationId), d);
   if (round.restriction === 'sunny' && UNDERGROUND[lineId]?.includes(net.name(stationId))) return `☁️ Die ${lineId} hält bei ${net.name(stationId)} unter der Erde.`;
   return null;
 }
@@ -107,6 +124,7 @@ export function stationProblem(round: RuleRound, lineId: string, stationId: stri
 export function problemBadge(round: RuleRound): string {
   if (round.restriction === 'sunny') return '☁️ unter der Erde';
   if (round.restriction === 'avoidInner') return '🚫 innerer Bezirk';
+  if (round.restriction === 'avoidDistricts') return '🧩 gesperrter Bezirk';
   return '⛔ nicht erlaubt';
 }
 
@@ -119,9 +137,10 @@ export function legProblem(round: RuleRound, prev: LegLike[], leg: LegLike, net:
     const u = undergroundStop(net, leg);
     if (u) return `☁️ Die ${leg.line} fährt bei ${u} unter der Erde – heute nur an der Sonne.`;
   }
-  if (r === 'avoidInner') {
-    const hit = net.traversed(leg.line, leg.from, leg.to).find((id) => INNER_DISTRICTS.includes(net.district(id) ?? 0));
-    if (hit) return `🚫 ${net.name(hit)} liegt im ${net.district(hit)}. Bezirk – die inneren Bezirke (1, 4–9) sind tabu.`;
+  const blocked = blockedDistricts(round);
+  if (blocked.length) {
+    const hit = net.traversed(leg.line, leg.from, leg.to).find((id) => blocked.includes(net.district(id) ?? 0));
+    if (hit) return districtText(round, net.name(hit), net.district(hit)!);
   }
   return null;
 }
@@ -157,7 +176,8 @@ export function ruleSummary(round: RuleRound): string | null {
   if (!r) return null;
   if (r === 'mustLine' && round.required?.length) return `📌 Pflicht-Linie: ${round.required[0]} muss mindestens einmal dabei sein.`;
   if (r === 'anyLine' && round.required?.length) return `🎲 Eine dieser Linien muss dabei sein: ${round.required.join(', ')}.`;
-  if (r === 'umland' && round.entryLines?.length) return `🚆 Du sitzt in der ${round.entryLines.join('/')}${round.entryTown ? ` aus ${round.entryTown}` : ''} – steig in Wien aus, wo es sich lohnt.`;
+  if (r === 'umland') return `🚆 Du startest in ${round.entryTown ?? 'Niederösterreich'}. Welcher Zug bringt dich nach Wien? Umsteigen erst in Wien – die Fahrt bis zur Stadtgrenze zählt mit.`;
+  if (r === 'avoidDistricts') return `🧩 Fleckerlteppich: gesperrt sind die Bezirke ${(round.districts ?? []).join(', ')} (rot auf der Karte) – dort nicht ein-, aus- oder durchfahren.`;
   if (r === 'insider') return `${RESTRICTIONS.insider.icon} Insider – nicht erlaubt: U1–U6 und die bekannten S-Bahnen S1, S2, S3, S4, S7, S45, S80. Erlaubt: Bim, Bus und die übrigen S-Bahnen (z.B. S40, S50, S60).`;
   return `${RESTRICTIONS[r].icon} ${RESTRICTIONS[r].label}: ${RESTRICTIONS[r].hint}`;
 }

@@ -93,6 +93,18 @@ interface Event {
 
 const once = new Set<string>();
 
+const CHALLENGE_DAYS = 'oeffi-challenge-days-v1';
+
+/** Gäste: XP-Faktor einer Tages-Challenge – das erste Spiel dieser Challenge am Tag zählt doppelt (wie am Server) */
+export function challengeXpFactor(challenge: string | null, run: string): number {
+  if (!challenge) return 1;
+  const day = viennaDay();
+  const all = loadJson<Record<string, string>>(CHALLENGE_DAYS, {});
+  const key = `${day}:${challenge}`;
+  if (!all[key]) saveJson(CHALLENGE_DAYS, Object.fromEntries([...Object.entries(all).filter(([k]) => k.startsWith(day)), [key, run]]));
+  return (all[key] ?? run) === run ? XP.firstChallengeFactor : 1;
+}
+
 /**
  * Fortschritt verbuchen. `key` verhindert doppeltes Zählen (z.B. Endstand nach Neuladen).
  * Gast-XP nur ohne Account – mit Account rechnet der Server selbst.

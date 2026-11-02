@@ -53,10 +53,13 @@ export const XP = {
   game: (won: boolean) => 20 + (won ? 30 : 0),
   quiz: (points: number, won: boolean) => 10 + points / 50 + (won ? 20 : 0),
   training: (good: boolean) => (good ? 20 : 10),
-  daily: (points: number) => 15 + points / 20,
+  /** Strecke des Tages zählt dreifach */
+  daily: (points: number) => 3 * (15 + points / 20),
   course: 40,
   mastered: 60,
   tutorial: 50,
+  /** Tages-Challenge: das erste Spiel einer Challenge am Tag zählt doppelt (Runden und Spiel) */
+  firstChallengeFactor: 2,
 };
 
 /** XP bis zum nächsten Level: 100, 150, 200, … */

@@ -28,7 +28,7 @@ for (const c of allChallenges({ night: { id: 'sa02', time: '02:00' }, sunday: { 
     // @ts-ignore
     const r0 = g.rounds[0];
     const best = r0.routes?.[0];
-    out = bad ? `${bad}/${n} ohne Strecke: ${(rs.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason?.message}` : `ok – ${r0.from?.name} → ${r0.to?.name}${r0.entryTown ? ` (${r0.entryTown})` : ''}${r0.required?.length ? ` [${r0.required}]` : ''}: ${best?.legs.filter((l: any) => l.mode !== 'W').map((l: any) => l.line).join('›')} ${best?.medianMin}′`;
+    out = bad ? `${bad}/${n} ohne Strecke: ${(rs.find((r) => r.status === 'rejected') as PromiseRejectedResult).reason?.message}` : `ok – ${r0.from?.name} → ${r0.to?.name}${r0.umland ? ` (aus ${r0.umland.town})` : ''}${r0.districts ? ` {Bezirke ${r0.districts}}` : ''}${r0.required?.length ? ` [${r0.required}]` : ''}: ${best?.legs.filter((l: any) => l.mode !== 'W').map((l: any) => l.line).join('›')} ${best?.medianMin}′`;
   } catch (e) {
     out = 'FEHLER ' + (e as Error).message;
   }

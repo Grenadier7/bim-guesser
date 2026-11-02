@@ -126,6 +126,23 @@ export interface RouteQuery {
   minTransfers?: number;
   /** nur Stichproben (ohne Nachrechnen) – z.B. um die Linie für „Linie gesperrt“ zu bestimmen */
   sampleOnly?: boolean;
+  /**
+   * Tages-Challenges: schon bei der Suche meiden (sonst findet sie oft nur Verbindungen, die die Regel brechen):
+   * Stationen (gesperrte Bezirke), Linien, und Linie → Stationen (Sonnenschein: unterirdische Abschnitte)
+   */
+  avoidStations?: string[];
+  avoidLines?: string[];
+  avoidLineStations?: Record<string, string[]>;
+}
+
+/** Meiden-Angaben einer Abfrage als EFA-Halte */
+function avoidParams(net: Network, q: RouteQuery): Pick<efa.TripQuery, 'avoidStops' | 'avoidLines' | 'avoidLineStops'> {
+  const efaOf = (ids: string[]) => ids.flatMap((id) => net.efaIdsOf(id));
+  return {
+    ...(q.avoidStations?.length ? { avoidStops: efaOf(q.avoidStations) } : {}),
+    ...(q.avoidLines?.length ? { avoidLines: q.avoidLines } : {}),
+    ...(q.avoidLineStations ? { avoidLineStops: Object.fromEntries(Object.entries(q.avoidLineStations).map(([l, ids]) => [l, efaOf(ids)])) } : {}),
+  };
 }
 
 /** EFA-Parameter für eine Einschränkung */
@@ -135,6 +152,7 @@ function restrictionQuery(r: Restriction | null): { mots?: number[]; maxChanges?
   if (r === 'onlyTram') return { mots: [3, 4] };
   if (r === 'insider') return { mots: [1, 3, 4, 5] }; // ohne U-Bahn; bekannte S-Bahnen sperrt die Abfrage (banned)
   if (r === 'busOnly') return { mots: [5] };
+  if (r === 'noRail') return { mots: [3, 4, 5] };
   if (r === 'oneLeg') return { maxChanges: 0, walkDirect: true };
   if (r === 'oneTransfer') return { maxChanges: 1 };
   return {};
@@ -525,7 +543,7 @@ export function topRoutes(net: Network, fromId: string, toId: string, slotTime: 
 async function topRoutesIn(net: Network, fromId: string, toId: string, slotTime: number, q: RouteQuery): Promise<RouteOption[]> {
   const from = net.mainEfaId(fromId);
   const to = net.mainEfaId(toId);
-  const rq = q.onlyModes ? { mots: efa.motsForModes(q.onlyModes) } : restrictionQuery(q.restriction);
+  const rq = { ...(q.onlyModes ? { mots: efa.motsForModes(q.onlyModes) } : restrictionQuery(q.restriction)), ...avoidParams(net, q) };
   let failures = 0;
   const batches = await Promise.all(
     SAMPLE_OFFSETS.map((o) =>

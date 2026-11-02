@@ -271,6 +271,10 @@ export class GameMap {
     waypoints?: { s: StationRef; done: boolean }[];
     water?: WaterData | null;
     inner?: District[];
+    /** Sonnenschein: unterirdische Abschnitte */
+    underground?: { line: string; path: [number, number][] }[];
+    /** Umland: Wien umrahmen (Start liegt außerhalb) */
+    outline?: District[];
     fit?: boolean;
   }) {
     this.endpoints.clearLayers();
@@ -292,6 +296,11 @@ export class GameMap {
     });
     for (const d of o.inner ?? [])
       this.challenge.addLayer(L.polygon(d.rings, { color: '#c81e1e', weight: 1.5, fillColor: '#c81e1e', fillOpacity: 0.16, interactive: false }).bindTooltip(`🚫 ${esc(d.name)}`, { sticky: true }));
+    for (const d of o.outline ?? []) this.challenge.addLayer(L.polygon(d.rings, { color: '#5a6b7d', weight: 1, fillColor: '#5a6b7d', fillOpacity: 0.05, interactive: false }));
+    for (const u of o.underground ?? [])
+      this.challenge.addLayer(
+        L.polyline(u.path, { color: '#4a4a4a', weight: 7, opacity: 0.45, dashArray: '2 8', lineCap: 'round' }).bindTooltip(`☁️ ${esc(u.line)} unter der Erde`, { sticky: true }),
+      );
     if (o.water) {
       for (const w of o.water.waters)
         for (const line of w.lines)
@@ -304,7 +313,9 @@ export class GameMap {
       const d = 0.032;
       pts.push([o.from.lat - d, o.from.lon - d * 1.5], [o.from.lat + d, o.from.lon + d * 1.5]);
     }
-    if (o.fit !== false) this.fit(L.latLngBounds(pts).pad(0.3), 14);
+    // Umland: Ort und ganz Wien im Bild
+    if (o.outline?.length) for (const d of o.outline) for (const ring of d.rings) for (const p of ring) pts.push(p);
+    if (o.fit !== false) this.fit(L.latLngBounds(pts).pad(o.outline ? 0.05 : 0.3), 14);
   }
 
   clearEndpoints() {

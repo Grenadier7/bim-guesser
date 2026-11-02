@@ -1,5 +1,5 @@
 // Routen-Eingabe: Linie wählen -> Einstieg (auto, ggf. Fußweg) -> Ausstieg -> nächste Linie …
-import type { Line, Restriction, Station, UserLeg } from '../../shared/types.ts';
+import type { Line, Restriction, Station, UmlandStart, UserLeg } from '../../shared/types.ts';
 import { RESTRICTIONS, restrictionAllowsLine, restrictionAllowsRoute, restrictionLabel, restrictionMaxLegs } from '../../shared/rules.ts';
 import { legProblem, lineProblem, problemBadge, routeProblem, stationProblem, type RuleRound } from '../../shared/challengeRules.ts';
 import { clientRuleNet } from './challenges.ts';
@@ -41,6 +41,10 @@ export interface BuilderOptions {
   waypoints?: Station[];
   /** „Ab ins Wasser“: nächstes Wasser zu einem Punkt */
   water?: (p: { lat: number; lon: number }) => { name: string; dist: number; lat: number; lon: number };
+  /** Aus dem Umland: Start im Ort – die erste Fahrt ist einer seiner Züge (ab der ersten Station in Wien) */
+  umland?: UmlandStart;
+  /** Linien, die zu dieser Uhrzeit nicht fahren – nicht vorschlagen */
+  idle?: string[];
 }
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -135,8 +139,14 @@ export class RouteBuilder {
     return this.opts.waypoints.filter((w) => !seen.has(w.id));
   }
 
-  /** Warum diese Linie jetzt nicht geht (Challenge-Regeln) – null = ok */
+  /** Umland: noch im Zug (erste Fahrt fehlt) */
+  private get inTrain(): boolean {
+    return !!this.opts.umland && !this.legs.length;
+  }
+
+  /** Warum diese Linie jetzt nicht geht (Challenge-Regeln, fährt gerade nicht) – null = ok */
   lineBlocked(lineId: string): string | null {
+    if (this.opts.idle?.includes(lineId)) return `🌙 Die ${lineId} fährt um diese Uhrzeit nicht.`;
     return this.opts.rules ? lineProblem(this.opts.rules, this.plain(), lineId, this.rn) : null;
   }
 
@@ -195,8 +205,11 @@ export class RouteBuilder {
     this.legs.forEach((l, i) => {
       const from = this.net.station(l.from);
       const to = this.net.station(l.to);
+      // Umland: die erste Fahrt kommt aus dem Ort – kein Fußweg, sondern der Zug bis zur Stadtgrenze
+      const train = i === 0 && this.opts.umland ? this.opts.umland.options.find((o) => o.entry === l.from && o.lines.includes(l.line.id)) : undefined;
+      if (train) list.append(h('li', { class: 'leg-walk walk-quiet' }, `🚆 Im Zug aus ${esc(this.opts.umland!.town)} – ca. ${train.min} min bis ${esc(from.name)}`));
       // Fußweg vor dieser Teilstrecke: zwischendurch und über 250 m als eigener Block (wie eine Fahrt)
-      if (from.id !== pos.id) {
+      else if (from.id !== pos.id) {
         const d = distM(pos, from);
         const level = d > WALK_LOUD_M ? 'walk-loud' : d > WALK_QUIET_M ? 'walk-mid' : 'walk-quiet';
         if (i > 0 && d > WALK_QUIET_M && !hideD)
@@ -210,7 +223,7 @@ export class RouteBuilder {
       const last = i === this.legs.length - 1;
       const fromName = this.opts.hideStart && from.id === this.start.id ? 'Start' : from.name;
       // Einbahn/Schleife: die Linie hält hier, aber nicht in diese Richtung → Einstieg woanders (Punkt 11)
-      const oneWay = from.id !== pos.id && this.net.patterns(l.line).some((p) => p.includes(pos.id));
+      const oneWay = !train && from.id !== pos.id && this.net.patterns(l.line).some((p) => p.includes(pos.id));
       const li = h(
         'li',
         { class: 'leg' },
@@ -221,7 +234,8 @@ export class RouteBuilder {
       );
       if (!typed) {
         // Ausstieg jeder Teilstrecke änderbar (z.B. 71 bis St. Marx statt Rennweg) – folgende Strecken passen sich an
-        const sel = this.alightSelect(l.line, l.from, l.to);
+        // Regeln nur mit den Teilstrecken davor prüfen (sonst sperrt z.B. der Fußbus die eigene Linie)
+        const sel = this.alightSelect(l.line, l.from, l.to, this.plain(this.legs.slice(0, i)), !!train);
         sel.classList.add('leg-alight');
         sel.title = 'Ausstieg ändern';
         sel.addEventListener('change', () => {
@@ -325,7 +339,8 @@ export class RouteBuilder {
       let active = 0;
       let found: Line[] = [];
       const update = () => {
-        found = this.net.searchLines(input.value, this.restriction, this.banned).filter((l) => !this.lineBlocked(l.id));
+        // Umland: im Zug alle Linien zeigen – welcher Zug der richtige ist, gehört zur Aufgabe
+        found = this.net.searchLines(input.value, this.restriction, this.banned).filter((l) => !this.lineBlocked(l.id) || (this.inTrain && !this.opts.idle?.includes(l.id)));
         active = Math.min(active, Math.max(0, found.length - 1));
         results.innerHTML = found
           .map((l, i) => `<button class="line-opt ${i === active && input.value.trim() ? 'active' : ''}" data-line="${esc(l.id)}" role="option" aria-selected="${i === active}" tabindex="-1">${lineChip(l.mode, l.id, l.color)}</button>`)
@@ -379,13 +394,14 @@ export class RouteBuilder {
 
     // Einstieg: hier, oder nächstgelegene Haltestellen der Linie (Fußweg)
     // Umland: man sitzt im Zug – die erste Fahrt beginnt an der Stadtgrenze
-    const fixedBoard = this.opts.rules?.restriction === 'umland' && !this.legs.length;
-    const opts = fixedBoard ? [{ station: pos, dist: 0 }] : this.net.boardOptions(line, pos);
+    const train = this.inTrain ? this.opts.umland!.options.find((o) => o.lines.includes(line.id)) : undefined;
+    const opts = train ? [{ station: this.net.station(train.entry), dist: 0 }] : this.net.boardOptions(line, pos);
     const boardSel = h('select', { class: 'board-select' });
     const stProblem = (id: string) => (this.opts.rules ? stationProblem(this.opts.rules, line.id, id, this.rn) : null);
     boardSel.innerHTML = opts
       .map((o) => {
         const bad = stProblem(o.station.id);
+        if (train) return `<option value="${o.station.id}">${esc(this.opts.umland!.town)} – im Zug (in Wien ab ${esc(o.station.name)})</option>`;
         return `<option value="${o.station.id}" ${bad ? 'disabled' : ''} title="${esc(bad ?? '')}">${o.dist === 0 ? `${esc(o.station.name)} (hier)` : `${esc(o.station.name)} · 🚶 ${fmtDist(o.dist)}`}${bad ? ` – ${problemBadge(this.opts.rules!)}` : ''}</option>`;
       })
       .join('');
@@ -438,7 +454,7 @@ export class RouteBuilder {
     else if (boardDist > 0 && !this.opts.hideDistances) form.append(h('div', { class: 'walk-note' }, `🚶 ${fmtDist(boardDist)} zum Einstieg ${esc(boardName)}`));
 
     // Ausstieg nach Richtung gruppiert
-    const alightSel = this.alightSelect(line, this.board!, null);
+    const alightSel = this.alightSelect(line, this.board!, null, this.plain(), !!train);
     const commit = () => {
       if (!alightSel.value) return;
       const [from, to] = parseAlight(alightSel.value, this.board!);
@@ -491,14 +507,14 @@ export class RouteBuilder {
     return best;
   }
 
-  private alightSelect(line: Line, board: string, selected: string | null): HTMLSelectElement {
+  /** `prev`: Teilstrecken davor (für die Regeln); `stayHere`: Umland – gleich an der Stadtgrenze aussteigen geht */
+  private alightSelect(line: Line, board: string, selected: string | null, prev = this.plain(), stayHere = false): HTMLSelectElement {
     const sel = h('select', { class: 'alight-select' });
     const { up, down } = this.net.lineThrough(line, board);
     // Ziel ist eine Adresse: die Haltestelle der Linie, die ihr am nächsten liegt (bis 1,5 km), markieren
     const nearDest = isAddress(this.dest) ? (this.net.boardOptions(line, this.dest, 1).find((o) => o.dist <= 1500) ?? null) : null;
     // Gegenrichtung mit anderem Einstieg: Wert "einstieg>ausstieg"
     const rules = this.opts.rules;
-    const prev = this.plain();
     const opt = (s: Station, alt?: Station) => {
       const leg = { line: line.id, from: alt?.id ?? board, to: s.id };
       let bad = rules ? legProblem(rules, prev, leg, this.rn) : null;
@@ -515,7 +531,9 @@ export class RouteBuilder {
     // Ohne Vorauswahl ist die aktuelle Station markiert → die Liste öffnet sich genau dort.
     sel.innerHTML =
       (up ? up.stations.map((s) => opt(s, up.board)).join('') + `<optgroup label="↑ ${esc(up.label)}"></optgroup>` : '') +
-      `<option value="" disabled class="here" ${selected ? '' : 'selected'}>● ${esc(here.name)} – Ausstieg wählen …</option>` +
+      (stayHere
+        ? `<option value="${board}">● ${esc(here.name)} – gleich hier aussteigen (Stadtgrenze)</option>`
+        : `<option value="" disabled class="here" ${selected ? '' : 'selected'}>● ${esc(here.name)} – Ausstieg wählen …</option>`) +
       (down ? `<optgroup label="↓ ${esc(down.label)}"></optgroup>` + down.stations.map((s) => opt(s, down.board)).join('') : '');
     if (selected) sel.value = selected;
     return sel;
@@ -588,7 +606,9 @@ export class RouteBuilder {
       if (opts.length && bad.every(Boolean)) return toast(bad[0]!, 'info');
     }
     this.pickedLine = line;
-    this.board = this.net.boardOptions(line, this.position, 1)[0].station.id;
+    // Umland: man sitzt im Zug – „Einstieg“ ist seine erste Station in Wien
+    const train = this.inTrain ? this.opts.umland!.options.find((o) => o.lines.includes(line.id)) : undefined;
+    this.board = train?.entry ?? this.net.boardOptions(line, this.position, 1)[0].station.id;
     this.render();
   }
 }

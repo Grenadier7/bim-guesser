@@ -35,7 +35,7 @@ interface ChallengeDef {
   title: string;
   text: (c: ChallengeContext) => string;
   settings: (c: ChallengeContext) => Partial<GameSettings>;
-  /** Standard-Rundenzahl (≈ 5 Minuten: leicht 2, schwer 1, Sprints 3+) und Auswahl */
+  /** Standard-Rundenzahl (≈ 5 Minuten: halbwegs leicht 2, schwer 1, Sprints 3+) und Auswahl (immer bis 5) */
   rounds: number;
   roundOptions: number[];
   done?: number;
@@ -47,7 +47,7 @@ const STEPHANSPLATZ = { lat: 48.2085, lon: 16.3731 };
 const fixed = (text: string, settings: Partial<GameSettings>) => ({ text: () => text, settings: () => settings });
 const SPRINT = [2, 3, 5];
 const EASY = [1, 2, 3, 5];
-const HARD = [1, 2, 3];
+const HARD = [1, 2, 3, 5];
 
 /**
  * Katalog – nur stimmige Kombinationen. Jede Challenge ist auf etwa 5 Minuten ausgelegt (Standard-Rundenzahl).
@@ -60,7 +60,7 @@ export const CHALLENGES: ChallengeDef[] = [
   { id: 'pro', icon: '🏆', title: 'Profi-Sprint', ...fixed('Profi-Strecken (lang, alle Haltestellen) mit 3 Minuten', { difficulty: 'expert', roundTimeLimitSec: 180 }), rounds: 1, roundOptions: HARD, done: 900 },
   // ---- Netz-Regeln (je Linie)
   { id: 'no-u', icon: '🚫', title: 'Ohne U-Bahn', ...fixed('Ans Ziel mit Bim, Bus und S-Bahn – die U-Bahn bleibt heute im Depot', { difficulty: 'medium', variant: 'noU' }), rounds: 2, roundOptions: EASY },
-  { id: 'tram', icon: '🚋', title: 'Bim-Tour', ...fixed('Nur mit der Bim – Start und Ziel an Bim-Stationen', { variant: 'tram', roundTimeLimitSec: 300 }), rounds: 2, roundOptions: EASY },
+  { id: 'tram', icon: '🚋', title: 'Bim-Tour', ...fixed('Nur mit der Bim – Start und Ziel an Bim-Stationen', { variant: 'tram' }), rounds: 2, roundOptions: EASY },
   {
     id: 'insider',
     icon: '🕵️',
@@ -73,21 +73,21 @@ export const CHALLENGES: ChallengeDef[] = [
   { id: 'direct', icon: '1️⃣', title: 'Direkt-Profi', ...fixed('Höchstens 1 Umstieg – die beste Zweier-Kombination finden', { difficulty: 'medium', variant: 'one' }), rounds: 2, roundOptions: EASY },
   { id: 'transfers', icon: '🔀', title: 'Umsteige-Profi', ...fixed('Mindestens 2-mal umsteigen – kürzer geht nicht', { difficulty: 'hard', variant: 'min2Transfers' }), rounds: 1, roundOptions: HARD },
   { id: 'obstacles', icon: '⛔', title: 'Hindernislauf', ...fixed('Jede Runde eine andere Hürde: gesperrte Linie, ohne Bus, max. 1 Umstieg …', { difficulty: 'medium', restrictions: 'always' }), rounds: 2, roundOptions: EASY },
-  { id: 'bus-trip', icon: '🚐', title: 'Busreise', ...fixed('Nur Busse – kurze Strecken mit 1–2 Umstiegen', { stations: ['hub'], distance: 'short', minTransfers: 1, variant: 'busOnly', roundTimeLimitSec: 300 }), rounds: 2, roundOptions: EASY },
+  { id: 'bus-trip', icon: '🚐', title: 'Busreise', ...fixed('Nur Busse – kurze Strecken mit 1–2 Umstiegen', { stations: ['hub'], distance: 'short', minTransfers: 1, variant: 'busOnly' }), rounds: 2, roundOptions: EASY },
   {
     id: 'foot-bus',
     icon: '🚶',
     title: 'Fußbus',
-    ...fixed('Der Fußbus fährt immer: genau eine Linie, den Rest gehst du. Welche bringt dich insgesamt am schnellsten hin?', { stations: ['U', 'S', 'Tkey'], distance: 'short', minTransfers: 0, variant: 'oneLeg', roundTimeLimitSec: 300 }),
-    rounds: 1,
+    ...fixed('Der Fußbus fährt immer: genau eine Linie, den Rest gehst du. Welche bringt dich insgesamt am schnellsten hin?', { stations: ['U', 'S', 'Tkey'], distance: 'short', minTransfers: 0, variant: 'oneLeg' }),
+    rounds: 2,
     roundOptions: HARD,
   },
   {
     id: 'sunny',
     icon: '☀️',
     title: 'Sonnenschein',
-    ...fixed('Nichts Unterirdisches: keine U3, keine U-Bahn-Tunnel, keine S-Bahn-Stammstrecke, kein 18er am Hauptbahnhof', { difficulty: 'medium', variant: 'sunny', roundTimeLimitSec: 300 }),
-    rounds: 1,
+    ...fixed('Nichts Unterirdisches: keine U3, keine U-Bahn-Tunnel, keine S-Bahn-Stammstrecke (Praterstern–Hauptbahnhof), kein 18er am Hauptbahnhof', { difficulty: 'medium', variant: 'sunny' }),
+    rounds: 2,
     roundOptions: HARD,
     done: 900,
   },
@@ -100,47 +100,70 @@ export const CHALLENGES: ChallengeDef[] = [
     roundOptions: HARD,
     done: 900,
   },
+  {
+    id: 'patchwork',
+    icon: '🧩',
+    title: 'Fleckerlteppich',
+    ...fixed('Ein paar Bezirke sind rot und gesperrt – genau die, die du brauchen könntest. Finde den Weg drumherum', { stations: ['U', 'S', 'Tkey'], distance: 'long', minTransfers: 0, variant: 'avoidDistricts' }),
+    rounds: 2,
+    roundOptions: EASY,
+  },
   // ---- Routen-Regeln (ganze Route)
   { id: 's-fan', icon: '🚆', title: 'S-Bahn-Fan', ...fixed('Start und Ziel an der S-Bahn – und mindestens eine S-Bahn-Fahrt', { stations: ['S'], variant: 'needS' }), rounds: 2, roundOptions: EASY },
   { id: 'bus-driver', icon: '🚌', title: 'Busfahrer', ...fixed('Strecken, auf denen der Bus König ist – mindestens eine Bus-Fahrt', { stations: ['hub'], distance: 'medium', minTransfers: 1, variant: 'needBus' }), rounds: 2, roundOptions: EASY },
   { id: 'one-u', icon: '☝️', title: 'Eine U reicht', ...fixed('Höchstens eine U-Bahn-Fahrt – von U zu U umsteigen ist tabu', { difficulty: 'hard', variant: 'maxOneU' }), rounds: 2, roundOptions: EASY },
-  { id: 'mix', icon: '🎨', title: 'Bunt gemischt', ...fixed('Mindestens 3 verschiedene Verkehrsmittel (U-Bahn, S-Bahn, Bim, Bus)', { difficulty: 'hard', variant: 'mixModes', roundTimeLimitSec: 300 }), rounds: 1, roundOptions: HARD },
-  { id: 'no-same', icon: '🔁', title: 'Nie zweimal dasselbe', ...fixed('Nach der U-Bahn keine U-Bahn, nach der Bim keine Bim – immer wechseln', { difficulty: 'hard', variant: 'noSameMode' }), rounds: 1, roundOptions: HARD },
-  { id: 'tram-hop', icon: '🦘', title: 'Bim-Hüpfer', ...fixed('Erste und letzte Fahrt mit der Bim – Start und Ziel an der Bim', { stations: ['T'], variant: 'tramEnds', roundTimeLimitSec: 300 }), rounds: 1, roundOptions: HARD },
-  { id: 'must-line', icon: '📌', title: 'Pflicht-Linie', ...fixed('Eine bestimmte Linie muss dabei sein – sie liegt dir garantiert im Weg', { difficulty: 'medium', variant: 'mustLine', roundTimeLimitSec: 300 }), rounds: 1, roundOptions: HARD },
-  { id: 'any-line', icon: '🎲', title: 'Eine von drei', ...fixed('Eine von drei Linien muss dabei sein – welche ist die klügste?', { difficulty: 'medium', variant: 'anyLine', roundTimeLimitSec: 300 }), rounds: 1, roundOptions: HARD },
+  { id: 'mix', icon: '🎨', title: 'Bunt gemischt', ...fixed('Mindestens 3 verschiedene Verkehrsmittel (U-Bahn, S-Bahn, Bim, Bus)', { difficulty: 'hard', variant: 'mixModes' }), rounds: 2, roundOptions: HARD },
+  { id: 'no-same', icon: '🔁', title: 'Nie zweimal dasselbe', ...fixed('Nach der U-Bahn keine U-Bahn, nach der Bim keine Bim – immer wechseln', { difficulty: 'hard', variant: 'noSameMode' }), rounds: 2, roundOptions: HARD },
+  { id: 'tram-hop', icon: '🦘', title: 'Bim-Hüpfer', ...fixed('Erste und letzte Fahrt mit der Bim – Start und Ziel an der Bim', { stations: ['T'], variant: 'tramEnds' }), rounds: 2, roundOptions: HARD },
+  { id: 'must-line', icon: '📌', title: 'Pflicht-Linie', ...fixed('Eine bestimmte Linie muss dabei sein – sie liegt dir garantiert im Weg', { difficulty: 'medium', variant: 'mustLine' }), rounds: 2, roundOptions: HARD },
+  { id: 'any-line', icon: '🎲', title: 'Eine von drei', ...fixed('Eine von drei lästigen Linien muss dabei sein – welche kostet am wenigsten Umweg?', { difficulty: 'medium', variant: 'anyLine' }), rounds: 1, roundOptions: HARD },
   // ---- Aufgaben
-  { id: 'choose3', icon: '🎯', title: 'Drei Ziele', ...fixed('Drei Ziele – du musst nur zu einem. Welches erreichst du am schnellsten?', { difficulty: 'medium', task: 'choose3', tips: 'off', roundTimeLimitSec: 300 }), rounds: 1, roundOptions: HARD },
-  { id: 'visit3', icon: '📍', title: 'Drei Punkte', ...fixed('Fahr bei allen drei Punkten vorbei – die Reihenfolge ist egal', { difficulty: 'medium', task: 'visit3', tips: 'off', roundTimeLimitSec: 420 }), rounds: 1, roundOptions: [1, 2], done: 900 },
+  { id: 'choose3', icon: '🎯', title: 'Drei Ziele', ...fixed('Drei Ziele – du musst nur zu einem. Welches erreichst du am schnellsten?', { difficulty: 'medium', task: 'choose3', tips: 'off' }), rounds: 2, roundOptions: HARD },
+  { id: 'visit3', icon: '📍', title: 'Drei Punkte', ...fixed('Fahr bei allen drei Punkten vorbei – die Reihenfolge ist egal', { difficulty: 'medium', task: 'visit3', tips: 'off', roundTimeLimitSec: 300 }), rounds: 1, roundOptions: HARD, done: 900 },
   {
     id: 'water',
     icon: '🏊',
     title: 'Ab ins Wasser',
-    ...fixed('Zum nächsten Wasser – Donau, Donaukanal, Wienfluss, Alte Donau oder ein Bad. Wo steigst du aus?', { difficulty: 'medium', task: 'water', tips: 'off', roundTimeLimitSec: 300 }),
-    rounds: 1,
-    roundOptions: HARD,
+    ...fixed('Zum nächsten Wasser – Donau, Donaukanal, Wienfluss, Alte Donau, Liesing oder ein Bad. Wo steigst du aus?', { difficulty: 'medium', task: 'water', tips: 'off' }),
+    rounds: 2,
+    roundOptions: EASY,
+    needs: (c) => !!c.water,
+  },
+  {
+    id: 'bath',
+    icon: '🩱',
+    title: 'Ab ins Bad',
+    ...fixed('Zum nächsten Bad – Strandbad, Freibad oder Hallenbad (blau auf der Karte). Flüsse zählen nicht', { difficulty: 'medium', task: 'bath', tips: 'off' }),
+    rounds: 2,
+    roundOptions: EASY,
     needs: (c) => !!c.water,
   },
   // ---- Ort & Zeit
-  { id: 'umland', icon: '🚆', title: 'Aus dem Umland', ...fixed('Du sitzt im Zug aus Niederösterreich – wo steigst du in Wien am besten um?', { stations: ['U', 'S', 'Tkey'], distance: 'medium', minTransfers: 1, variant: 'umland' }), rounds: 1, roundOptions: HARD },
+  {
+    id: 'umland',
+    icon: '🚆',
+    title: 'Aus dem Umland',
+    ...fixed('Du startest in einem Ort in Niederösterreich – nimm den richtigen Zug nach Wien und steig geschickt um', { stations: ['U', 'S', 'Tkey'], distance: 'medium', minTransfers: 0, variant: 'umland' }),
+    rounds: 2,
+    roundOptions: EASY,
+  },
   {
     id: 'ring-round',
     icon: '🎡',
     title: 'Ring-Runde',
-    ...fixed('Kurze Strecken rund um die Innere Stadt – ohne U-Bahn, mit Bim und Bus rund um den Ring', { stations: ['Tkey', 'S'], distance: 'short', variant: 'noU', focus: { ...STEPHANSPLATZ, radiusM: 2500, share: 0.9 } }),
+    ...fixed('Kurze Strecken rund um die Innere Stadt – ohne U- und S-Bahn, nur mit Bim und Bus rund um den Ring', { stations: ['Tkey'], distance: 'short', variant: 'noRail', focus: { ...STEPHANSPLATZ, radiusM: 2500, share: 0.9 } }),
     rounds: 2,
     roundOptions: EASY,
   },
   { id: 'doors', icon: '🏠', title: 'Tür zu Tür', ...fixed('Start und Ziel sind echte Adressen – erst zur richtigen Haltestelle gehen', { endpoints: 'addresses' }), rounds: 2, roundOptions: EASY, needs: (c) => c.addresses !== false },
   { id: 'outskirts', icon: '🌄', title: 'Stadtrand-Tour', ...fixed('Von Rand zu Rand: 12 bis 25 Kilometer quer durch Wien', { stations: ['U', 'S', 'Tkey'], distance: 'xlong', minTransfers: 1, roundTimeLimitSec: 300 }), rounds: 1, roundOptions: HARD },
-  { id: 'timetable', icon: '🧮', title: 'Fahrplan-Fuchs', ...fixed('Echte Abfahrten statt Durchschnitt – wer den Anschluss erwischt, gewinnt', { difficulty: 'medium', avgWait: false, countWait: true }), rounds: 2, roundOptions: EASY },
   { id: 'current', icon: '🚧', title: 'Aktuelles Netz', ...fixed('Mit allen Baustellen, Sperren und Ersatzverkehren von heute', { difficulty: 'medium', network: 'current' }), rounds: 2, roundOptions: EASY, needs: (c) => !!c.current },
   {
     id: 'dickmacks',
-    icon: '🍔',
+    icon: '🍻',
     title: 'Dickmacks Donnerstag',
-    ...fixed('Unter der Woche, 01:30: vom Schwedenplatz heim zu einer zufälligen Adresse – keine U-Bahn mehr, nur Nightline', { start: 'Schwedenplatz', endpoints: 'addresses', slot: 'wd-night', distance: 'short', roundTimeLimitSec: 300 }),
-    rounds: 1,
+    ...fixed('Unter der Woche, 01:30: vom Schwedenplatz heim zu einer zufälligen Adresse – keine U-Bahn mehr, nur Nightline', { start: 'Schwedenplatz', endpoints: 'addresses', slot: 'wd-night', distance: 'short', onlyRunning: true }),
+    rounds: 2,
     roundOptions: HARD,
     needs: (c) => c.addresses !== false,
   },
@@ -149,8 +172,8 @@ export const CHALLENGES: ChallengeDef[] = [
     icon: '🌙',
     title: 'Nachtschicht',
     text: (c) => `Unterwegs um ${c.night!.time} am Wochenende – Nachtbus und Nacht-U-Bahn`,
-    settings: (c) => ({ difficulty: 'medium', slot: c.night!.id }),
-    rounds: 1,
+    settings: (c) => ({ difficulty: 'medium', slot: c.night!.id, onlyRunning: true }),
+    rounds: 2,
     roundOptions: HARD,
     needs: (c) => !!c.night,
   },

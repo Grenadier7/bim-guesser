@@ -109,9 +109,9 @@ test('Strecke des Tages: spielen, Ergebnis zum Teilen, Bestenliste; danach Start
   assert.match(share, /Punkte/);
   await p.locator('#board').filter({ hasText: /Einträge|Freunden|\d/ }).waitFor();
   await t.shot('daily-result');
-  // Startseite: Strecke des Tages als gespielt, Serie läuft
+  // Startseite: Strecke des Tages als gespielt (nur noch eine kleine Zeile), Serie läuft
   await p.locator('#back').click();
-  await p.locator('.daily-card', { hasText: 'Heute gespielt' }).waitFor();
+  await p.locator('.daily-card.done', { hasText: 'Punkte' }).waitFor();
   await p.locator('.progress-strip', { hasText: '1 Tag' }).waitFor();
   await p.locator('.progress-strip').click();
   await p.locator('.me h3', { hasText: 'Sammelkarte' }).waitFor();

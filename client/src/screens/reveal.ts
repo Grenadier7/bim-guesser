@@ -8,7 +8,7 @@ import { starMini } from '../learn/model.ts';
 import { chain, esc, h, makeExpandable, routeDetails, toast, viaText } from '../ui.ts';
 import { hostBar } from './host.ts';
 import { XP } from '../../../shared/career.ts';
-import { record } from '../career.ts';
+import { challengeXpFactor, record } from '../career.ts';
 import { addMistakes } from '../mistakes.ts';
 import { loadingHtml, type Screen } from './screen.ts';
 
@@ -243,7 +243,7 @@ export function revealScreen(panel: HTMLElement): Screen {
     const s = routeState();
     const route = ev.score.route;
     record(`round:${s.id}:${idx}:${s.rounds[idx].from?.id}`, {
-      xp: XP.round(ev.score.total),
+      xp: XP.round(ev.score.total) * challengeXpFactor(s.settings.challenge, `${s.id}:${s.rounds.map((r) => r.from?.id).join()}`),
       count: { rounds: 1, perfect: route >= 1000 ? 1 : 0, beat: route > 1000 ? 1 : 0, night: isNightSlot(s.settings.slot) ? 1 : 0, blindPerfect: s.settings.xtreme === 'noMap' && route >= 1000 ? 1 : 0 },
       legs: ev.error ? undefined : ev.legs,
     });

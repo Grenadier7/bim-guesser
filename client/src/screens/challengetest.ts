@@ -49,7 +49,7 @@ export function challengeTestScreen(panel: HTMLElement, onBack: () => void): Scr
         <ul class="ch-list">${rest
           .map(
             (c) => `<li><span class="cb-icon">${c.icon}</span><span class="cb-text"><b>${esc(c.title)}${today.has(c.id) ? ' ⭐' : ''}</b><small>${esc(c.text)}</small>
-              <small class="muted">${c.settings.rounds} Runde${c.settings.rounds === 1 ? '' : 'n'} (wählbar ${c.roundOptions.join('/')}) · geschafft ab ${c.done} Routenpunkten</small></span>
+              <small class="muted">${c.settings.rounds} Runde${c.settings.rounds === 1 ? '' : 'n'}</small></span>
               <button class="btn btn-primary" data-play="${c.id}">Spielen</button></li>`,
           )
           .join('')}</ul>
