@@ -15,6 +15,7 @@ import {
   NET_MODES,
   stationKindsFromPool,
   xtremeBlocksLocate,
+  VARIANTS,
 } from '../shared/rules.ts';
 
 export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: GameSettings = DEFAULT_SETTINGS): GameSettings {
@@ -50,7 +51,7 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   if (Number.isInteger(s.rounds)) out.rounds = Math.min(10, Math.max(1, s.rounds!));
   if (s.roundTimeLimitSec === null) out.roundTimeLimitSec = null;
   else if (typeof s.roundTimeLimitSec === 'number') out.roundTimeLimitSec = Math.min(600, Math.max(20, Math.round(s.roundTimeLimitSec)));
-  for (const k of ['locate', 'countWait', 'avgWait'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
+  for (const k of ['locate', 'countWait', 'avgWait', 'onlyRunning', 'scooter'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
   // Tipps: keine / günstig / teuer (alte Einstellung true/false)
   const tl = s.tips as unknown;
   if (tl === 'off' || tl === 'cheap' || tl === 'expensive') out.tips = tl;
@@ -73,6 +74,23 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   if (r === 'never' || r === 'sometimes' || r === 'always') out.restrictions = r;
   else if (r === true) out.restrictions = 'sometimes';
   else if (r === false) out.restrictions = 'never';
+  if (VARIANTS.some((v) => v.id === s.variant)) out.variant = s.variant!;
+  if (s.task === 'normal' || s.task === 'choose3' || s.task === 'visit3' || s.task === 'water' || s.task === 'bath' || s.task === 'heli' || s.task === 'future') out.task = s.task;
+  if (s.districts === null) out.districts = null;
+  else if (Array.isArray(s.districts)) {
+    const ds = [...new Set(s.districts.filter((d) => Number.isInteger(d) && d >= 1 && d <= 23))].sort((a, b) => a - b);
+    out.districts = ds.length ? ds : null;
+  }
+  if (s.start === null) out.start = null;
+  else if (typeof s.start === 'string' && s.start.length <= 60) out.start = s.start;
+  if (s.challenge === null) out.challenge = null;
+  else if (typeof s.challenge === 'string' && /^[a-z0-9-]{1,24}$/.test(s.challenge)) out.challenge = s.challenge;
+  // Nur Bim: Start und Ziel an Bim-Stationen (sonst gäbe es oft gar keine Verbindung)
+  if (out.variant === 'tram') {
+    out.stations = ['T'];
+    out.endpoints = 'stations';
+    out.difficulty = matchPreset(out);
+  }
   return out;
 }
 

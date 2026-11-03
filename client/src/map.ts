@@ -1,5 +1,9 @@
 // Leere Wien-Karte (ohne Beschriftungen) + Routen-Darstellung
 import L from 'leaflet';
+import { isDark } from './theme.ts';
+import type { WaterData } from '../../shared/water.ts';
+import type { Mode } from '../../shared/types.ts';
+import { MODE_COLOR, MODE_ICON } from '../../shared/rules.ts';
 import 'leaflet/dist/leaflet.css';
 import type { District, FocusArea, LatLon, RouteLeg, RouteOption, StationRef } from '../../shared/types.ts';
 import { chain, esc } from './ui.ts';
@@ -36,18 +40,28 @@ export class GameMap {
   private areas = L.layerGroup();
   private learnArea = L.layerGroup();
   private learnMarks = L.layerGroup();
+  /** Tages-Challenges: Ziele/Punkte, Gewässer, innere Bezirke */
+  private challenge = L.layerGroup();
   private tapHandler: ((e: L.LeafletMouseEvent) => void) | null = null;
 
   constructor(el: HTMLElement) {
     this.map = L.map(el, { zoomControl: true, attributionControl: true, minZoom: 10, maxZoom: 16, zoomSnap: 0.25 });
     // Basiskarte ohne Beschriftungen ("leere Karte")
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-      // ab Zoomstufe 15 enthalten die Kacheln Straßen- und Parknamen – darüber nur vergrößern
-      maxNativeZoom: 14,
-      attribution: 'Karte: Esri, HERE, Garmin, &copy; OpenStreetMap · Daten: Wiener Linien (CC BY 4.0) · Fahrplan: Mobilitätsverbünde Österreich OG – data.mobilitaetsverbuende.at (verarbeitet)',
-    }).addTo(this.map);
+    // Basiskarte hell bzw. dunkel (Dunkelmodus, theme.ts)
+    const tiles = (dark: boolean) =>
+      L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_${dark ? 'Dark' : 'Light'}_Gray_Base/MapServer/tile/{z}/{y}/{x}`, {
+        // ab Zoomstufe 15 enthalten die Kacheln Straßen- und Parknamen – darüber nur vergrößern
+        maxNativeZoom: 14,
+        attribution: 'Karte: Esri, HERE, Garmin, &copy; OpenStreetMap · Daten: Wiener Linien (CC BY 4.0) · Fahrplan: Mobilitätsverbünde Österreich OG – data.mobilitaetsverbuende.at (verarbeitet)',
+      });
+    let base = tiles(isDark()).addTo(this.map);
+    window.addEventListener('themechange', () => {
+      base.remove();
+      base = tiles(isDark()).addTo(this.map);
+      base.bringToBack();
+    });
     this.map.fitBounds(VIENNA);
-    for (const g of [this.areas, this.learnArea, this.learnMarks, this.guesses, this.endpoints, this.hints, this.draft, this.routes]) g.addTo(this.map);
+    for (const g of [this.areas, this.learnArea, this.learnMarks, this.challenge, this.guesses, this.endpoints, this.hints, this.draft, this.routes]) g.addTo(this.map);
   }
 
   /** die Leaflet-Karte selbst – für eigene Ebenen wie die Netzkarte */
@@ -86,7 +100,7 @@ export class GameMap {
     for (const fn of this.clearHooks) fn();
     this.stopLocate();
     this.onTap(null);
-    for (const g of [this.areas, this.learnArea, this.learnMarks, this.guesses, this.endpoints, this.hints, this.draft, this.routes]) g.clearLayers();
+    for (const g of [this.areas, this.learnArea, this.learnMarks, this.guesses, this.endpoints, this.hints, this.draft, this.routes, this.challenge]) g.clearLayers();
     this.routeLayers.clear();
   }
 
@@ -176,6 +190,7 @@ export class GameMap {
 
   zoomTo(lat: number, lon: number, zoom: number) {
     this.lastView = null;
+    if (!this.map.getSize().x) return void this.map.setView([lat, lon], zoom);
     this.map.flyTo([lat, lon], zoom, { duration: 0.5 });
   }
 
@@ -216,8 +231,8 @@ export class GameMap {
   }
 
   overview() {
-    this.lastView = null;
-    this.map.flyToBounds(VIENNA, { duration: 0.5 });
+    // über fit: ohne Kartengröße (ausgeblendet) wird nachgeholt statt mit NaN zu rechnen
+    this.fit(L.latLngBounds(VIENNA as L.LatLngExpression[]));
   }
 
   /** Innenstadt bis etwas über den Gürtel hinaus – Startansicht zum Lernen */
@@ -246,6 +261,119 @@ export class GameMap {
       ]);
       this.fit(b.pad(0.6), 14);
     }
+  }
+
+  /**
+   * Tages-Challenges: Start (A) und – statt B – drei Ziele (1–3), drei Punkte (✓ wenn befahren), die Gewässer
+   * („Ab ins Wasser“) oder die gesperrten inneren Bezirke. Passt die Karte auf alles ein.
+   */
+  showChallenge(o: {
+    from: StationRef;
+    to?: StationRef | null;
+    targets?: StationRef[];
+    waypoints?: { s: StationRef; done: boolean }[];
+    water?: WaterData | null;
+    inner?: District[];
+    /** Sonnenschein: unterirdische Abschnitte */
+    underground?: { line: string; path: [number, number][] }[];
+    /** Umland: Wien umrahmen (Start liegt außerhalb) */
+    outline?: District[];
+    /** Zielnetz 2040: neue/geänderte Linien (Verlauf) und neue Stationen */
+    future?: { lines: { id: string; color: string; path: [number, number][] }[]; stations: StationRef[] };
+    /** Brückenkenner: alle Brücken, über die Öffis fahren – Abschnitte je Verkehrsmittel, Linien darüber */
+    bridges?: { name: string; river: string; lat: number; lon: number; modes: Mode[]; lines: string[]; segs: { mode: Mode; path: [number, number][] }[] }[];
+    /** Hubschrauber-Linien: rosa Strich mit Flugzeit */
+    helis?: { id: string; a: StationRef; b: StationRef; min: number }[];
+    fit?: boolean;
+  }) {
+    this.endpoints.clearLayers();
+    this.challenge.clearLayers();
+    const pts: [number, number][] = [[o.from.lat, o.from.lon]];
+    const label = (m: L.Marker, text: string) => m.bindTooltip(esc(text), { permanent: true, direction: 'top', offset: [0, -14], className: 'pin-label' });
+    this.endpoints.addLayer(label(L.marker([o.from.lat, o.from.lon], { icon: pin('pin-start', 'A'), zIndexOffset: 1000 }), o.from.name));
+    if (o.to) {
+      this.endpoints.addLayer(label(L.marker([o.to.lat, o.to.lon], { icon: pin('pin-end', 'B'), zIndexOffset: 1000 }), o.to.name));
+      pts.push([o.to.lat, o.to.lon]);
+    }
+    o.targets?.forEach((t, i) => {
+      this.endpoints.addLayer(label(L.marker([t.lat, t.lon], { icon: pin('pin-end', String(i + 1)), zIndexOffset: 1000 }), `Ziel ${i + 1}: ${t.name}`));
+      pts.push([t.lat, t.lon]);
+    });
+    o.waypoints?.forEach(({ s, done }, i) => {
+      this.endpoints.addLayer(label(L.marker([s.lat, s.lon], { icon: pin(done ? 'pin-way done' : 'pin-way', done ? '✓' : String(i + 1)), zIndexOffset: 900 }), s.name));
+      pts.push([s.lat, s.lon]);
+    });
+    for (const d of o.inner ?? [])
+      this.challenge.addLayer(L.polygon(d.rings, { color: '#c81e1e', weight: 1.5, fillColor: '#c81e1e', fillOpacity: 0.16, interactive: false }).bindTooltip(`🚫 ${esc(d.name)}`, { sticky: true }));
+    for (const d of o.outline ?? []) this.challenge.addLayer(L.polygon(d.rings, { color: '#5a6b7d', weight: 1, fillColor: '#5a6b7d', fillOpacity: 0.05, interactive: false }));
+    if (o.future) {
+      for (const l of o.future.lines) {
+        this.challenge.addLayer(L.polyline(l.path, { color: '#fff', weight: 8, opacity: 0.85, interactive: false }));
+        this.challenge.addLayer(L.polyline(l.path, { color: l.color, weight: 5, opacity: 0.9 }).bindTooltip(`🔮 ${esc(l.id)}`, { sticky: true }));
+      }
+      for (const s of o.future.stations)
+        this.challenge.addLayer(L.circleMarker([s.lat, s.lon], { radius: 6, color: '#222', weight: 2, fillColor: '#fff', fillOpacity: 1 }).bindTooltip(`🆕 ${esc(s.name)}`, { direction: 'top' }));
+    }
+    for (const b of o.bridges ?? []) {
+      const tip = `<b>🌉 ${esc(b.name)}</b> (${esc(b.river)})${b.lines.length ? `<br>${b.lines.map(esc).join('<br>')}` : ''}`;
+      // Abschnitt über die Brücke in der Farbe des Verkehrsmittels (mehrere nebeneinander leicht versetzt)
+      b.segs.forEach((sg, i) => {
+        const off = (i % 3) * 0.00012;
+        const path = sg.path.map(([la, lo]) => [la + off, lo + off] as [number, number]);
+        this.challenge.addLayer(L.polyline(path, { color: '#fff', weight: 9, opacity: 0.9 }));
+        this.challenge.addLayer(L.polyline(path, { color: MODE_COLOR[sg.mode], weight: 5, opacity: 0.95 }).bindTooltip(tip, { sticky: true }));
+      });
+      const icons = b.modes.map((m) => MODE_ICON[m]).join('');
+      this.challenge.addLayer(
+        L.marker([b.lat, b.lon], {
+          icon: L.divIcon({ className: 'bridge-pin', html: `<span>🌉</span>${icons ? `<small>${icons}</small>` : ''}`, iconSize: [22 + 14 * b.modes.length, 22] }),
+          zIndexOffset: 500,
+        }).bindTooltip(tip, { direction: 'top' }),
+      );
+    }
+    // Beschriftung je Hubschrauber an einer anderen Stelle der Linie (35 / 50 / 65 %), damit sie sich nicht überdecken
+    const at = [0.5, 0.3, 0.7];
+    for (const [k, x] of (o.helis ?? []).entries()) {
+      const line = L.polyline(
+        [
+          [x.a.lat, x.a.lon],
+          [x.b.lat, x.b.lon],
+        ],
+        { color: '#c2185b', weight: 4, opacity: 0.85, dashArray: '10 8' },
+      );
+      this.challenge.addLayer(line.bindTooltip(`🚁 ${esc(x.id)}: ${esc(x.a.name)} ↔ ${esc(x.b.name)} · ${x.min} min`, { sticky: true }));
+      const f = at[k % at.length];
+      this.challenge.addLayer(
+        L.marker([x.a.lat + (x.b.lat - x.a.lat) * f, x.a.lon + (x.b.lon - x.a.lon) * f], {
+          icon: L.divIcon({ className: 'heli-label', html: `🚁 ${esc(x.id)} · ${x.min} min`, iconSize: [88, 20], iconAnchor: [44, 10] }),
+          interactive: false,
+          zIndexOffset: 600,
+        }),
+      );
+      for (const s of [x.a, x.b]) {
+        this.challenge.addLayer(L.circleMarker([s.lat, s.lon], { radius: 7, color: '#c2185b', weight: 3, fillColor: '#fff', fillOpacity: 1 }).bindTooltip(`🚁 ${esc(x.id)}: ${esc(s.name)}`, { direction: 'top' }));
+        pts.push([s.lat, s.lon]);
+      }
+    }
+    for (const u of o.underground ?? [])
+      this.challenge.addLayer(
+        L.polyline(u.path, { color: '#4a4a4a', weight: 7, opacity: 0.45, dashArray: '2 8', lineCap: 'round' }).bindTooltip(`☁️ ${esc(u.line)} unter der Erde`, { sticky: true }),
+      );
+    if (o.water) {
+      for (const w of o.water.waters)
+        for (const line of w.lines)
+          this.challenge.addLayer(L.polyline(line, { color: '#1e88e5', weight: w.kind === 'river' ? 5 : 3, opacity: 0.55, interactive: false }));
+      for (const b of o.water.baths)
+        this.challenge.addLayer(L.circleMarker([b.lat, b.lon], { radius: 6, color: '#1e88e5', weight: 2, fillColor: '#bbdefb', fillOpacity: 1 }).bindTooltip(`🏊 ${esc(b.name)}`, { direction: 'top' }));
+    }
+    if (o.water) {
+      // Wasser: Umgebung des Starts (~3,5 km), damit Flüsse und Bäder in der Nähe zu sehen sind
+      const d = 0.032;
+      pts.push([o.from.lat - d, o.from.lon - d * 1.5], [o.from.lat + d, o.from.lon + d * 1.5]);
+    }
+    // Umland: Ort und ganz Wien im Bild
+    if (o.outline?.length) for (const d of o.outline) for (const ring of d.rings) for (const p of ring) pts.push(p);
+    if (o.fit !== false) this.fit(L.latLngBounds(pts).pad(o.outline ? 0.05 : 0.3), 14);
   }
 
   clearEndpoints() {

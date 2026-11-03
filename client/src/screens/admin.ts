@@ -7,7 +7,7 @@ import { plansTab, type Tab as SubTab } from '../admin/plans.ts';
 import { settingsTab } from '../admin/settings.ts';
 import { openAccount } from '../accountui.ts';
 import { app } from '../store.ts';
-import { esc, lineChip, toast } from '../ui.ts';
+import { ask, esc, lineChip, toast } from '../ui.ts';
 import { infoTip } from '../widgets.ts';
 import { loadingHtml, type Screen } from './screen.ts';
 
@@ -140,6 +140,8 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
     const card = (v: string | number, l: string) => `<div class="adm-card"><b>${v}</b><small>${l}</small></div>`;
     const fmtT = (t: number) =>
       statDays <= 2 ? new Date(t).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' }) : new Date(t).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' });
+    // gewählter Zeitraum – die Verlaufs-Grafiken zeigen ihn ganz, auch wenn es erst später Messwerte gibt
+    const range: [number, number] = [Date.now() - statDays * 864e5, Date.now()];
     const fmtTip = (t: number) => new Date(t).toLocaleString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
     const pts = (f: 'online' | 'players' | 'visitors' | 'anon') => s.samples.map((x) => ({ t: x.at, v: x[f] }));
     const lineRow = (line: string) => {
@@ -153,11 +155,11 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
       </div>
       <div class="adm-range">Zeitraum ${[1, 7, 30, 90].map((d) => `<button class="${d === statDays ? 'on' : ''}" data-days="${d}">${d === 1 ? '24 h' : `${d} Tage`}</button>`).join('')}</div>
       <div class="adm-charts">
-        ${lineChart('visitors', 'Besucher online', [{ name: 'alle', points: pts('visitors') }, { name: 'ohne Account', points: pts('anon') }], fmtT, true, fmtTip)}
+        ${lineChart('visitors', 'Besucher online', [{ name: 'alle', points: pts('visitors') }, { name: 'ohne Account', points: pts('anon') }], fmtT, true, fmtTip, range)}
         ${barChart('visits', 'Besucher je Tag', ['mit Account', 'ohne Account'], s.days.map((d) => ({ label: dayLabel(d.day), values: [d.visitors - d.anonVisitors, d.anonVisitors] })))}
         ${barChart('games', 'Fertige Spiele je Tag', ['Routenjagd', 'Quiz'], s.days.map((d) => ({ label: dayLabel(d.day), values: [d.route, d.quiz] })))}
         ${rankChart('Meistgewählte Linien', s.lines.slice(0, 15).map((l) => ({ label: lineRow(l.line), n: l.n })), statDays === 1 ? 'heute' : `letzte ${statDays} Tage`)}
-        ${lineChart('players', 'Spieler in Lobbys', [{ name: 'Spieler', points: pts('players') }], fmtT, false, fmtTip)}
+        ${lineChart('players', 'Spieler in Lobbys', [{ name: 'Spieler', points: pts('players') }], fmtT, false, fmtTip, range)}
         ${barChart('users', 'Accounts je Tag', ['aktiv', 'neu'], s.days.map((d) => ({ label: dayLabel(d.day), values: [d.activeUsers, d.newUsers] })))}
       </div>
       <dl class="adm-facts">
@@ -249,7 +251,7 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
         <dt>Angemeldet auf</dt><dd>${u.sessions} Gerät(en)</dd>
         <dt>Level</dt><dd>${u.level} · ${u.xp} XP</dd>
         <dt>Spiele</dt><dd>${s.games} Routenjagd (${s.wins} Siege, ${s.rounds} Runden, Ø ${s.avgRoute} Punkte) · ${s.quizGames} Quiz · ${s.trainings} Training</dd>
-        <dt>Medaillen</dt><dd>${u.medals.filter((m) => m.at).map((m) => `<span title="${esc(m.title)}">${m.icon}</span>`).join(' ') || '–'}</dd>
+        <dt>Medaillen</dt><dd>${u.medals.filter((m) => m.tier).map((m) => `<span title="${esc(m.title)}${m.tiers > 1 ? ` · Stufe ${m.tier}` : ''}">${m.icon}</span>`).join(' ') || '–'}</dd>
         <dt>Freunde</dt><dd>${u.friends.map(esc).join(', ') || '–'}${u.incoming.length ? ` · Anfragen von ${u.incoming.map(esc).join(', ')}` : ''}${u.outgoing.length ? ` · angefragt: ${u.outgoing.map(esc).join(', ')}` : ''}</dd>
         <dt>Spielstand</dt><dd>${dataKeys.length ? dataKeys.map(([k, n]) => `${esc(k.replace(/^oeffi-/, ''))} <small>(${n} B)</small>`).join(', ') : '–'}</dd>
       </dl>
@@ -323,8 +325,8 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
     root.querySelectorAll<HTMLButtonElement>('[data-days]').forEach((b) => b.addEventListener('click', () => ((statDays = Number(b.dataset.days)), rerender())));
     // Übersicht und Lobby
     root.querySelectorAll<HTMLButtonElement>('[data-close]').forEach((b) =>
-      b.addEventListener('click', () => {
-        if (!confirm(`Lobby ${b.dataset.close} für alle beenden?`)) return;
+      b.addEventListener('click', async () => {
+        if (!(await ask(`Lobby ${b.dataset.close} für alle beenden?`, { ok: 'Beenden', danger: true }))) return;
         void run(async () => {
           await adm('POST', `/api/admin/lobbies/${b.dataset.close}/close`);
           lobbyCode = null;
@@ -337,8 +339,8 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
     root.querySelectorAll<HTMLButtonElement>('[data-lact]').forEach((b) => b.addEventListener('click', () => void lobbyPost(b.dataset.lact!, {}, '')));
     root.querySelectorAll<HTMLButtonElement>('[data-host]').forEach((b) => b.addEventListener('click', () => void lobbyPost('host', { playerId: b.dataset.host, on: b.dataset.on === '1' }, '')));
     root.querySelectorAll<HTMLButtonElement>('[data-kick]').forEach((b) =>
-      b.addEventListener('click', () => {
-        if (confirm(`${b.dataset.name} aus der Lobby entfernen?`)) void lobbyPost('kick', { playerId: b.dataset.kick }, `${b.dataset.name} entfernt`);
+      b.addEventListener('click', async () => {
+        if (await ask(`${b.dataset.name} aus der Lobby entfernen?`, { ok: 'Entfernen', danger: true })) void lobbyPost('kick', { playerId: b.dataset.kick }, `${b.dataset.name} entfernt`);
       }),
     );
     root.querySelector<HTMLFormElement>('#adm-say')?.addEventListener('submit', (e) => {
@@ -400,11 +402,11 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
       }
     });
     root.querySelector('[data-act="logout"]')?.addEventListener('click', () => void run(() => adm('POST', `/api/admin/users/${u}/logout`), 'Auf allen Geräten abgemeldet'));
-    root.querySelector('[data-act="reset-stats"]')?.addEventListener('click', () => {
-      if (confirm(`Statistik, Medaillen und Spiel-XP von ${name} wirklich zurücksetzen?`)) void run(() => adm('POST', `/api/admin/users/${u}/reset-stats`), 'Statistik zurückgesetzt');
+    root.querySelector('[data-act="reset-stats"]')?.addEventListener('click', async () => {
+      if (await ask(`Statistik, Medaillen und Spiel-XP von ${name} wirklich zurücksetzen?`, { ok: 'Zurücksetzen', danger: true })) void run(() => adm('POST', `/api/admin/users/${u}/reset-stats`), 'Statistik zurückgesetzt');
     });
-    root.querySelector('[data-act="delete"]')?.addEventListener('click', () => {
-      if (!confirm(`Account „${name}“ endgültig löschen? Das lässt sich nicht rückgängig machen.`)) return;
+    root.querySelector('[data-act="delete"]')?.addEventListener('click', async () => {
+      if (!(await ask(`Account „${name}“ endgültig löschen? Das lässt sich nicht rückgängig machen.`, { ok: 'Endgültig löschen', danger: true }))) return;
       void run(async () => {
         await adm('DELETE', `/api/admin/users/${u}`);
         detail = null;

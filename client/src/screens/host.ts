@@ -3,7 +3,7 @@
 import { api } from '../api.ts';
 import { icon } from '../icons.ts';
 import { app, isHost, openTimer } from '../store.ts';
-import { accountTag, esc, h, toast } from '../ui.ts';
+import { accountTag, ask, esc, h, toast } from '../ui.ts';
 
 async function run(fn: () => Promise<unknown>) {
   try {
@@ -18,12 +18,13 @@ const isQuiz = () => app.state?.mode === 'quiz';
 export const hostActions = {
   pause: () => run(() => api.pause(app.session!)),
   resume: () => run(() => api.resume(app.session!)),
-  cancel: () => {
+  cancel: async () => {
     const msg = isQuiz() ? 'Frage überspringen? Die Lösung wird gezeigt, niemand bekommt Punkte.' : 'Runde abbrechen? Die Lösung wird gezeigt, niemand bekommt Punkte.';
-    if (confirm(msg)) void run(() => api.cancel(app.session!));
+    if (await ask(msg, { ok: isQuiz() ? 'Überspringen' : 'Abbrechen', cancel: 'Weiterspielen' })) void run(() => api.cancel(app.session!));
   },
-  end: () => {
-    if (confirm('Spiel beenden und alle zurück in die Lobby schicken?')) void run(() => api.lobby(app.session!));
+  end: async () => {
+    if (await ask('Spiel jetzt beenden? Alle sehen den Endstand der bisher gespielten Runden.', { ok: 'Spiel beenden', cancel: 'Weiterspielen', danger: true }))
+      void run(() => api.end(app.session!));
   },
 };
 
@@ -39,8 +40,8 @@ export const kickButton = playerActions;
 /** Klicks auf 👑 und ✕ in einer Spielerliste */
 export function bindKick(root: HTMLElement) {
   root.querySelectorAll<HTMLButtonElement>('[data-kick]').forEach((b) =>
-    b.addEventListener('click', () => {
-      if (!confirm(`${b.dataset.name} aus der Lobby entfernen?`)) return;
+    b.addEventListener('click', async () => {
+      if (!(await ask(`${b.dataset.name} aus der Lobby entfernen?`, { ok: 'Entfernen', danger: true }))) return;
       b.disabled = true;
       void run(() => api.kick(app.session!, b.dataset.kick!));
     }),

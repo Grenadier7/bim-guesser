@@ -1,6 +1,6 @@
 import type { QuizSettings } from '../../shared/quiz.ts';
 import type { PublicConfig } from '../../shared/config.ts';
-import type { ChatMessage, GameMode, GameSettings, Guesses, JoinResponse, LatLon, LobbyState, NetworkPublic, RoundReveal, SubmitResponse, TipKind, TipResult, TrainingResult, TrainingRound, UserLeg } from '../../shared/types.ts';
+import type { ChatMessage, DailyBoard, DailyResult, DailyRound, GameMode, GameSettings, Guesses, JoinResponse, LatLon, LobbyState, NetworkPublic, RoundReveal, SubmitResponse, TipKind, TipResult, TrainingResult, TrainingRound, UserLeg } from '../../shared/types.ts';
 
 export class ApiError extends Error {
   status: number;
@@ -42,6 +42,7 @@ export const api = {
   start: (a: Auth) => call<LobbyState>('POST', `${g(a.code)}/start`, { token: a.token }),
   next: (a: Auth) => call<LobbyState>('POST', `${g(a.code)}/next`, { token: a.token }),
   lobby: (a: Auth) => call<LobbyState>('POST', `${g(a.code)}/lobby`, { token: a.token }),
+  end: (a: Auth) => call<LobbyState>('POST', `${g(a.code)}/end`, { token: a.token }),
   leave: (a: Auth) => call<{ ok: boolean }>('POST', `${g(a.code)}/leave`, { token: a.token }),
   kick: (a: Auth, playerId: string) => call<LobbyState>('POST', `${g(a.code)}/kick`, { token: a.token, playerId }),
   setHost: (a: Auth, playerId: string, on: boolean) => call<LobbyState>('POST', `${g(a.code)}/host`, { token: a.token, playerId, on }),
@@ -52,8 +53,8 @@ export const api = {
   cancel: (a: Auth) => call<LobbyState>('POST', `${g(a.code)}/cancel`, { token: a.token }),
   tip: (a: Auth, round: number, kind: TipKind) => call<TipResult>('POST', `${g(a.code)}/rounds/${round}/tips`, { token: a.token, kind }),
   tips: (a: Auth, round: number) => call<TipResult[]>('GET', `${g(a.code)}/rounds/${round}/tips?${q(a)}`),
-  submit: (a: Auth, round: number, legs: UserLeg[], guesses: Guesses | null) =>
-    call<SubmitResponse>('POST', `${g(a.code)}/rounds/${round}/submit`, { token: a.token, legs, guesses }),
+  submit: (a: Auth, round: number, legs: UserLeg[], guesses: Guesses | null, gaveUp = false) =>
+    call<SubmitResponse>('POST', `${g(a.code)}/rounds/${round}/submit`, { token: a.token, legs, guesses, ...(gaveUp ? { gaveUp: true } : {}) }),
   forceReveal: (a: Auth, round: number) => call<RoundReveal>('POST', `${g(a.code)}/rounds/${round}/reveal`, { token: a.token }),
   reveal: (a: Auth, round: number) => call<RoundReveal>('GET', `${g(a.code)}/rounds/${round}/reveal?${q(a)}`),
   eventsUrl: (a: Auth) => `${g(a.code)}/events?${q(a)}`,
@@ -62,5 +63,8 @@ export const api = {
   quizReveal: (a: Auth) => call<LobbyState>('POST', `${g(a.code)}/quiz/reveal`, { token: a.token }),
   trainingRound: (settings: Partial<GameSettings>, pair?: { from: string; to: string }) =>
     call<TrainingRound>('POST', '/api/training/round', { settings, pair }),
+  daily: () => call<DailyRound>('GET', '/api/daily'),
+  dailySubmit: (legs: UserLeg[]) => call<DailyResult>('POST', '/api/daily/submit', { legs }),
+  dailyBoard: (scope: 'day' | 'week', friends: boolean) => call<DailyBoard>('GET', `/api/daily/board?scope=${scope}&friends=${friends ? 1 : 0}`),
   trainingEvaluate: (id: string, legs: UserLeg[]) => call<TrainingResult>('POST', `/api/training/${encodeURIComponent(id)}/evaluate`, { legs }),
 };

@@ -1,9 +1,11 @@
 // Routen-Eingabe: Linie wählen -> Einstieg (auto, ggf. Fußweg) -> Ausstieg -> nächste Linie …
-import type { Line, Restriction, Station, UserLeg } from '../../shared/types.ts';
-import { restrictionAllowsLine, restrictionLabel, restrictionMaxLegs } from '../../shared/rules.ts';
+import type { Line, Restriction, Station, UmlandStart, UserLeg } from '../../shared/types.ts';
+import { RESTRICTIONS, moveMinutes, restrictionAllowsLine, restrictionAllowsRoute, restrictionLabel, restrictionMaxLegs } from '../../shared/rules.ts';
+import { legProblem, lineProblem, problemBadge, routeProblem, stationProblem, type RuleRound } from '../../shared/challengeRules.ts';
+import { clientRuleNet } from './challenges.ts';
 import { distM, fmtDist, type NetIndex } from './net.ts';
 import { smoothPath } from './netmap.ts';
-import { esc, h, lineChip } from './ui.ts';
+import { esc, h, lineChip, toast } from './ui.ts';
 
 export interface DraftLeg {
   line: Line;
@@ -22,7 +24,13 @@ const WALK_QUIET_M = 250;
 const WALK_LOUD_M = 700;
 /** Gehzeit wie in der Auswertung: Luftlinie × 1,3 bei 80 m/min */
 const walkMinutes = (m: number) => Math.max(1, Math.round((m * 1.3) / 80));
-const walkText = (m: number) => `${fmtDist(m)} zu Fuß (≈ ${walkMinutes(m)} min)`;
+/** E-Scooter-Challenge: Wege mit 30 km/h (immer nur ein Baukasten zugleich zu sehen) */
+let scooterMode = false;
+const walkText = (m: number) => (scooterMode ? `${fmtDist(m)} mit dem Scooter (≈ ${moveMinutes(m, true)} min)` : `${fmtDist(m)} zu Fuß (≈ ${walkMinutes(m)} min)`);
+const walkIcon = () => (scooterMode ? '🛴' : '🚶');
+/** ab hier ist ein Weg „weit“ – mit dem Scooter fünfmal so weit */
+const loud = () => WALK_LOUD_M * (scooterMode ? 5 : 1);
+const quiet = () => WALK_QUIET_M * (scooterMode ? 5 : 1);
 
 export interface BuilderOptions {
   /** X-treme: Ein-/Ausstieg selbst eintippen, keine Auswahllisten und keine Stationszahl */
@@ -31,6 +39,20 @@ export interface BuilderOptions {
   hideStart?: boolean;
   /** keine Fußweg-Entfernungen zeigen (X-treme "ohne Namen" / "ohne Karte") */
   hideDistances?: boolean;
+  /** Tages-Challenges: Regeln – nicht Erlaubtes gar nicht erst anbieten (shared/challengeRules.ts) */
+  rules?: RuleRound;
+  /** „3 Ziele“: jedes zählt als Ziel */
+  targets?: Station[];
+  /** „3 Punkte“: alle befahren, Ende bei einem davon */
+  waypoints?: Station[];
+  /** „Ab ins Wasser“: nächstes Wasser zu einem Punkt */
+  water?: (p: { lat: number; lon: number }) => { name: string; dist: number; lat: number; lon: number };
+  /** Aus dem Umland: Start im Ort – die erste Fahrt ist einer seiner Züge (ab der ersten Station in Wien) */
+  umland?: UmlandStart;
+  /** Linien, die zu dieser Uhrzeit nicht fahren – nicht vorschlagen */
+  idle?: string[];
+  /** E-Scooter statt zu Fuß; ganz ohne Öffis abgeben geht auch */
+  scooter?: boolean;
 }
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -74,7 +96,78 @@ export class RouteBuilder {
     this.dest = dest;
     this.onChange = onChange;
     this.onSubmit = onSubmit;
+    scooterMode = !!opts.scooter;
+    // Strg+Enter (Mac: ⌘+Enter): Route abgeben – auf der ganzen Seite, solange dieser Baukasten zu sehen ist (auch wenn
+    // der Fokus nach dem letzten Ausstieg nirgends mehr steht)
+    const onKey = (e: KeyboardEvent) => {
+      // nicht (mehr) zu sehen, z.B. alte Runde: nichts tun
+      if (!this.el.isConnected) return;
+      if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || document.querySelector('dialog[open]')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if ((this.legs.length || scooterMode) && !this.locked) this.onSubmit();
+    };
+    queueMicrotask(() => document.addEventListener('keydown', onKey, true));
     this.render();
+  }
+
+  /** Regeln als Netz-Ansicht (für shared/challengeRules.ts) */
+  private get rn() {
+    return clientRuleNet(this.net);
+  }
+
+  /** Teilstrecken als einfache Liste (für die Regeln) */
+  private plain(legs = this.legs) {
+    return legs.map((l) => ({ line: l.line.id, from: l.from, to: l.to }));
+  }
+
+  /** an diesen Stationen ist man am Ziel (normal: B; „3 Ziele“: jedes; „3 Punkte“: einer, wenn alle befahren sind) */
+  private isGoal(id: string, legs = this.plain()): boolean {
+    if (this.opts.water) return false;
+    if (this.opts.targets) return this.opts.targets.some((t) => t.id === id);
+    if (this.opts.waypoints) {
+      const seen = new Set(legs.flatMap((l) => this.rn.traversed(l.line, l.from, l.to)));
+      return this.opts.waypoints.every((w) => seen.has(w.id)) && this.opts.waypoints.some((w) => w.id === id);
+    }
+    return id === this.dest.id;
+  }
+
+  /** nächstes Ziel zu einem Punkt: Ziel, eines der 3 Ziele, ein noch fehlender Punkt oder das Wasser */
+  private goalNear(p: Station): { name: string; dist: number; lat: number; lon: number } {
+    if (this.opts.water) return this.opts.water(p);
+    const list = this.opts.targets ?? (this.opts.waypoints ? this.missingWaypoints() : null) ?? [this.dest];
+    const pool = list.length ? list : (this.opts.waypoints ?? [this.dest]);
+    const best = pool.reduce((m, s) => (distM(s, p) < distM(m, p) ? s : m));
+    return { name: best.name, dist: distM(best, p), lat: best.lat, lon: best.lon };
+  }
+
+  /**
+   * Warum die Route (noch) nicht abgegeben werden kann – Tages-Challenges: Regel der ganzen Route (mind. 3
+   * Verkehrsmittel, 2 Umstiege, Pflicht-Linie …) oder fehlende Punkte. null = abgeben geht.
+   */
+  submitProblem(): string | null {
+    if (!this.legs.length) return null;
+    const missing = this.missingWaypoints();
+    if (missing.length) return `📍 Noch nicht befahren: ${missing.map((w) => w.name).join(', ')}.`;
+    return this.opts.rules ? routeProblem(this.opts.rules, this.plain(), this.rn) : null;
+  }
+
+  /** „3 Punkte“: noch nicht befahren */
+  missingWaypoints(legs = this.plain()): Station[] {
+    if (!this.opts.waypoints) return [];
+    const seen = new Set(legs.flatMap((l) => this.rn.traversed(l.line, l.from, l.to)));
+    return this.opts.waypoints.filter((w) => !seen.has(w.id));
+  }
+
+  /** Umland: noch im Zug (erste Fahrt fehlt) */
+  private get inTrain(): boolean {
+    return !!this.opts.umland && !this.legs.length;
+  }
+
+  /** Warum diese Linie jetzt nicht geht (Challenge-Regeln, fährt gerade nicht) – null = ok */
+  lineBlocked(lineId: string): string | null {
+    if (this.opts.idle?.includes(lineId)) return `🌙 Die ${lineId} fährt um diese Uhrzeit nicht.`;
+    return this.opts.rules ? lineProblem(this.opts.rules, this.plain(), lineId, this.rn) : null;
   }
 
   get position(): Station {
@@ -96,7 +189,10 @@ export class RouteBuilder {
       segs.push({ path: smoothPath(l.line.id, l.from, l.to, this.net.legPath(l.line, l.from, l.to)), color: l.line.color, walk: false });
       pos = this.net.station(l.to);
     }
-    if (this.legs.length && pos.id !== this.dest.id) segs.push({ path: [ll(pos), ll(this.dest)], color: '#666', walk: true });
+    if (this.legs.length && !this.isGoal(pos.id)) {
+      const g = this.goalNear(pos);
+      segs.push({ path: [ll(pos), [g.lat, g.lon]], color: '#666', walk: true });
+    }
     if (this.pickedLine && this.board && this.board !== pos.id)
       segs.push({ path: [ll(pos), ll(this.net.station(this.board))], color: '#666', walk: true });
     return segs;
@@ -115,6 +211,10 @@ export class RouteBuilder {
 
   /** Hinweis, nachdem eine frühere Teilstrecke geändert wurde (z.B. „ab hier neu wählen“) */
   private notice = '';
+  /** Linie per Tastatur gewählt → Fokus beim Ausstieg bzw. (hält woanders) beim Einstieg */
+  private openPicker = false;
+  /** Einstieg gerade geändert → Fokus bleibt dort */
+  private focusBoard = false;
 
   private render() {
     this.el.innerHTML = '';
@@ -125,22 +225,25 @@ export class RouteBuilder {
     this.legs.forEach((l, i) => {
       const from = this.net.station(l.from);
       const to = this.net.station(l.to);
+      // Umland: die erste Fahrt kommt aus dem Ort – kein Fußweg, sondern der Zug bis zur Stadtgrenze
+      const train = i === 0 && this.opts.umland ? this.opts.umland.options.find((o) => o.entry === l.from && o.lines.includes(l.line.id)) : undefined;
+      if (train) list.append(h('li', { class: 'leg-walk walk-quiet' }, `🚆 Im Zug aus ${esc(this.opts.umland!.town)} – ca. ${train.min} min bis ${esc(from.name)}`));
       // Fußweg vor dieser Teilstrecke: zwischendurch und über 250 m als eigener Block (wie eine Fahrt)
-      if (from.id !== pos.id) {
+      else if (from.id !== pos.id) {
         const d = distM(pos, from);
-        const level = d > WALK_LOUD_M ? 'walk-loud' : d > WALK_QUIET_M ? 'walk-mid' : 'walk-quiet';
-        if (i > 0 && d > WALK_QUIET_M && !hideD)
+        const level = d > loud() ? 'walk-loud' : d > quiet() ? 'walk-mid' : 'walk-quiet';
+        if (i > 0 && d > quiet() && !hideD)
           list.append(
-            h('li', { class: `leg walk-leg ${level}` }, `<div class="leg-main"><span class="walk-icon">🚶</span>
+            h('li', { class: `leg walk-leg ${level}` }, `<div class="leg-main"><span class="walk-icon">${walkIcon()}</span>
               <span class="leg-text">${esc(pos.name)} → <b>${esc(from.name)}</b><small>${walkText(d)}</small></span></div>`),
           );
-        else list.append(h('li', { class: `leg-walk ${level}` }, `🚶 ${hideD ? '' : `${fmtDist(d)} `}zu Fuß nach ${esc(from.name)}`));
+        else list.append(h('li', { class: `leg-walk ${level}` }, `${walkIcon()} ${hideD ? '' : `${fmtDist(d)} `}${scooterMode ? 'mit dem Scooter' : 'zu Fuß'} nach ${esc(from.name)}`));
       }
       const stops = this.net.stopsBetween(l.line, l.from, l.to);
       const last = i === this.legs.length - 1;
       const fromName = this.opts.hideStart && from.id === this.start.id ? 'Start' : from.name;
       // Einbahn/Schleife: die Linie hält hier, aber nicht in diese Richtung → Einstieg woanders (Punkt 11)
-      const oneWay = from.id !== pos.id && this.net.patterns(l.line).some((p) => p.includes(pos.id));
+      const oneWay = !train && from.id !== pos.id && this.net.patterns(l.line).some((p) => p.includes(pos.id));
       const li = h(
         'li',
         { class: 'leg' },
@@ -151,7 +254,8 @@ export class RouteBuilder {
       );
       if (!typed) {
         // Ausstieg jeder Teilstrecke änderbar (z.B. 71 bis St. Marx statt Rennweg) – folgende Strecken passen sich an
-        const sel = this.alightSelect(l.line, l.from, l.to);
+        // Regeln nur mit den Teilstrecken davor prüfen (sonst sperrt z.B. der Fußbus die eigene Linie)
+        const sel = this.alightSelect(l.line, l.from, l.to, this.plain(this.legs.slice(0, i)), !!train);
         sel.classList.add('leg-alight');
         sel.title = 'Ausstieg ändern';
         sel.addEventListener('change', () => {
@@ -175,19 +279,37 @@ export class RouteBuilder {
     if (this.legs.length) this.el.append(list);
     if (this.notice) this.el.append(h('div', { class: 'warn' }, esc(this.notice)));
 
-    const arrived = pos.id === this.dest.id;
+    const arrived = this.isGoal(pos.id);
     const full = this.legs.length >= restrictionMaxLegs(this.restriction);
     if (!arrived && !full) this.el.append(this.renderForm());
     if (!arrived && full)
       this.el.append(h('div', { class: 'warn' }, `${esc(restrictionLabel(this.restriction!, this.banned))}: keine weitere Linie möglich.`));
 
-    if (this.legs.length) {
-      const endWalk = arrived || hideD ? '' : `<div class="walk">🚶 ${walkText(distM(pos, this.dest))} zum Ziel</div>`;
-      const far = !arrived && !hideD && distM(pos, this.dest) > WALK_WARN_M ? '<div class="warn">Ziemlich weiter Fußweg – sicher?</div>' : '';
-      const foot = h('div', { class: 'submit-row' }, `${endWalk}${far}<button class="btn btn-primary" data-act="submit">Route abgeben</button>`);
+    // E-Scooter: noch keine Linie – ganz mit dem Scooter abgeben geht auch
+    if (!this.legs.length && scooterMode && !this.opts.hideDistances) {
+      const goal = this.goalNear(pos);
+      const foot = h('div', { class: 'submit-row' }, `<div class="walk">🛴 Nur mit dem Scooter: ${walkText(goal.dist)}</div><button class="btn btn-ghost" data-act="submit">Nur Scooter – abgeben</button>`);
       foot.querySelector('button')!.disabled = this.locked;
       foot.querySelector('button')!.addEventListener('click', () => this.onSubmit());
       this.el.append(foot);
+    }
+    if (this.legs.length) {
+      const goal = this.goalNear(pos);
+      const goalWord = this.opts.water ? `zum Wasser (${esc(goal.name)})` : this.opts.targets ? `zum nächsten Ziel (${esc(goal.name)})` : 'zum Ziel';
+      const endWalk = arrived || hideD || (this.opts.waypoints && this.missingWaypoints().length) ? '' : `<div class="walk">${walkIcon()} ${walkText(goal.dist)} ${goalWord}</div>`;
+      const far = !arrived && !hideD && !this.opts.water && !scooterMode && goal.dist > WALK_WARN_M ? '<div class="warn">Ziemlich weiter Fußweg – sicher?</div>' : '';
+      // fehlende Punkte nennt die Regel-Zeile (submitProblem)
+      const todo = '';
+      // Regel für die ganze Route (mind. eine S-Bahn …) noch nicht erfüllt → vor dem Abgeben sagen
+      const problem = this.submitProblem() ?? (!this.opts.rules && !restrictionAllowsRoute(this.restriction, this.legs.map((l) => l.line)) ? `${RESTRICTIONS[this.restriction!].icon} ${RESTRICTIONS[this.restriction!].hint}` : null);
+      // Challenge-Regel nicht erfüllt: Abgeben geht erst, wenn sie erfüllt ist
+      const rule = problem ? `<div class="warn rule-warn">${esc(problem)}${this.submitProblem() ? '<br><small>Abgeben geht erst, wenn das erfüllt ist.</small>' : ''}</div>` : '';
+      const foot = h('div', { class: 'submit-row' }, `${endWalk}${far}${todo}${rule}<button class="btn btn-primary" data-act="submit">Route abgeben</button><small class="kbd-hint">Strg + Enter</small>`);
+      foot.querySelector('button')!.disabled = this.locked || !!this.submitProblem();
+      foot.querySelector('button')!.addEventListener('click', () => this.onSubmit());
+      this.el.append(foot);
+      // am Ziel: Fokus auf „Route abgeben“ (Enter gibt ab)
+      if (arrived && !this.locked) queueMicrotask(() => foot.querySelector('button')!.focus());
     }
     this.onChange();
   }
@@ -241,21 +363,48 @@ export class RouteBuilder {
 
     if (!this.pickedLine) {
       const input = h('input', { type: 'text', class: 'line-input', placeholder: 'Linie eingeben, z.B. U2, 5B, 43, S45 …', autocomplete: 'off', spellcheck: 'false' });
-      const results = h('div', { class: 'line-results' });
+      const results = h('div', { class: 'line-results', role: 'listbox', 'aria-label': 'Passende Linien' });
+      // Tastatur: ← → (bzw. ↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt die gewählte
+      let active = 0;
+      let found: Line[] = [];
       const update = () => {
-        const found = this.net.searchLines(input.value, this.restriction, this.banned);
-        results.innerHTML = found.map((l) => `<button class="line-opt" data-line="${esc(l.id)}">${lineChip(l.mode, l.id, l.color)}</button>`).join('');
+        // Umland: im Zug alle Linien zeigen – welcher Zug der richtige ist, gehört zur Aufgabe
+        found = this.net.searchLines(input.value, this.restriction, this.banned).filter((l) => !this.lineBlocked(l.id) || (this.inTrain && !this.opts.idle?.includes(l.id)));
+        active = Math.min(active, Math.max(0, found.length - 1));
+        results.innerHTML = found
+          .map((l, i) => `<button class="line-opt ${i === active && input.value.trim() ? 'active' : ''}" data-line="${esc(l.id)}" role="option" aria-selected="${i === active}" tabindex="-1">${lineChip(l.mode, l.id, l.color)}</button>`)
+          .join('');
         if (input.value.trim() && !found.length) {
           const q = input.value.trim().toLowerCase().replace(/\s+/g, '');
           const blocked = this.banned.find((id) => id.toLowerCase() === q);
-          results.innerHTML = `<span class="muted">${blocked ? `⛔ ${esc(blocked)} ist in dieser Runde gesperrt` : `Keine Linie gefunden${this.restriction ? ' (Einschränkung beachten)' : ''}`}</span>`;
+          // genau diese Linie gibt es, aber die Challenge verbietet sie gerade → sagen, warum
+          const exact = this.net.data.lines.find((l) => l.id.toLowerCase() === q);
+          const why = exact ? (this.lineBlocked(exact.id) ?? (!restrictionAllowsLine(this.restriction, this.banned, exact) ? `⛔ ${exact.id} ist in dieser Runde nicht erlaubt.` : null)) : null;
+          results.innerHTML = `<span class="${why ? 'warn' : 'muted'}">${why ? esc(why) : blocked ? `⛔ ${esc(blocked)} ist in dieser Runde gesperrt` : `Keine Linie gefunden${this.restriction ? ' (Einschränkung beachten)' : ''}`}</span>`;
         }
       };
-      input.addEventListener('input', update);
+      input.addEventListener('input', () => {
+        active = 0;
+        update();
+      });
       input.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter') return;
-        const first = this.net.searchLines(input.value, this.restriction, this.banned)[0];
-        if (first) this.pickLine(first);
+        const atEnd = input.selectionStart === input.value.length;
+        const move = (d: number) => {
+          e.preventDefault();
+          active = (active + d + found.length) % found.length;
+          update();
+        };
+        if (found.length > 1 && ((e.key === 'ArrowRight' && atEnd) || e.key === 'ArrowDown')) return move(1);
+        if (found.length > 1 && ((e.key === 'ArrowLeft' && active > 0) || e.key === 'ArrowUp')) return move(-1);
+        if (e.key !== 'Enter' || e.ctrlKey || e.metaKey) return;
+        // sonst landet das Enter (keypress) beim gleich fokussierten Ausstiegsfeld und öffnet die Browser-Liste
+        e.preventDefault();
+        const pick = found[active] ?? this.net.searchLines(input.value, this.restriction, this.banned).filter((l) => !this.lineBlocked(l.id))[0];
+        if (pick) {
+          // mit der Tastatur gewählt → Ausstiegsliste gleich offen (Pfeiltasten + Enter)
+          this.openPicker = true;
+          this.pickLine(pick);
+        }
       });
       results.addEventListener('click', (e) => {
         const id = (e.target as HTMLElement).closest<HTMLElement>('[data-line]')?.dataset.line;
@@ -273,14 +422,25 @@ export class RouteBuilder {
     if (this.opts.typed) return this.typedForm(form, line, pos);
 
     // Einstieg: hier, oder nächstgelegene Haltestellen der Linie (Fußweg)
-    const opts = this.net.boardOptions(line, pos);
+    // Umland: man sitzt im Zug – die erste Fahrt beginnt an der Stadtgrenze
+    const train = this.inTrain ? this.opts.umland!.options.find((o) => o.lines.includes(line.id)) : undefined;
+    const opts = train ? [{ station: this.net.station(train.entry), dist: 0 }] : this.net.boardOptions(line, pos);
     const boardSel = h('select', { class: 'board-select' });
+    const stProblem = (id: string) => (this.opts.rules ? stationProblem(this.opts.rules, line.id, id, this.rn) : null);
     boardSel.innerHTML = opts
-      .map((o) => `<option value="${o.station.id}">${o.dist === 0 ? `${esc(o.station.name)} (hier)` : `${esc(o.station.name)} · 🚶 ${fmtDist(o.dist)}`}</option>`)
+      .map((o) => {
+        const bad = stProblem(o.station.id);
+        if (train) return `<option value="${o.station.id}">${esc(this.opts.umland!.town)} – im Zug (in Wien ab ${esc(o.station.name)})</option>`;
+        return `<option value="${o.station.id}" ${bad ? 'disabled' : ''} title="${esc(bad ?? '')}">${o.dist === 0 ? `${esc(o.station.name)} (hier)` : `${esc(o.station.name)} · ${walkIcon()} ${fmtDist(o.dist)}`}${bad ? ` – ${problemBadge(this.opts.rules!)}` : ''}</option>`;
+      })
       .join('');
+    // gesperrter Einstieg vorgewählt → den ersten erlaubten nehmen
+    if (stProblem(this.board!)) this.board = opts.find((o) => !stProblem(o.station.id))?.station.id ?? this.board;
     boardSel.value = this.board!;
     boardSel.addEventListener('change', () => {
       this.board = boardSel.value;
+      // Fokus bleibt beim Einstieg (Pfeiltasten wechseln dort weiter durch die Haltestellen)
+      this.focusBoard = true;
       this.render();
     });
     const boardDist = opts.find((o) => o.station.id === this.board)?.dist ?? 0;
@@ -301,8 +461,8 @@ export class RouteBuilder {
             `⚠️ <b>Die ${esc(line.id)} hält erst bei ${esc(boardName)}</b> – ${walkText(boardDist)}. Die nächste Haltestelle wäre ${esc(nearest.station.name)} (${walkText(nearest.dist)}).`,
           ),
         );
-      else form.append(h('div', { class: 'walk-note' }, `🚶 ${walkText(boardDist)} zur Haltestelle ${esc(boardName)}`));
-    } else if (boardDist > WALK_LOUD_M && !this.opts.hideDistances)
+      else form.append(h('div', { class: 'walk-note' }, `${walkIcon()} ${walkText(boardDist)} zur Haltestelle ${esc(boardName)}`));
+    } else if (boardDist > loud() && !this.opts.hideDistances)
       form.append(
         h(
           'div',
@@ -310,30 +470,54 @@ export class RouteBuilder {
           `⚠️ <b>Die ${esc(line.id)} fährt nicht bei ${esc(pos.name)}.</b> Nächster Halt: ${esc(boardName)} – ${walkText(boardDist)}. Absicht? Sonst „andere Linie“.`,
         ),
       );
-    else if (boardDist > WALK_QUIET_M && !this.opts.hideDistances)
+    else if (boardDist > quiet() && !this.opts.hideDistances)
       form.append(
         h(
           'div',
           { class: 'walk-alert walk-mid' },
           servesHere
             ? `↩ In diese Richtung hält die ${esc(line.id)} nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`
-            : `🚶 Die ${esc(line.id)} hält nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`,
+            : `${walkIcon()} Die ${esc(line.id)} hält nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`,
         ),
       );
-    else if (boardDist > 0 && !this.opts.hideDistances) form.append(h('div', { class: 'walk-note' }, `🚶 ${fmtDist(boardDist)} zum Einstieg ${esc(boardName)}`));
+    else if (boardDist > 0 && !this.opts.hideDistances) form.append(h('div', { class: 'walk-note' }, `${walkIcon()} ${fmtDist(boardDist)} zum Einstieg ${esc(boardName)}`));
 
     // Ausstieg nach Richtung gruppiert
-    const alightSel = this.alightSelect(line, this.board!, null);
-    alightSel.addEventListener('change', () => {
+    const alightSel = this.alightSelect(line, this.board!, null, this.plain(), !!train);
+    const commit = () => {
       if (!alightSel.value) return;
       const [from, to] = parseAlight(alightSel.value, this.board!);
       this.legs.push({ line, from, to });
       this.resetForm();
-    });
+    };
+    alightSel.addEventListener('change', commit);
+    keyboardList(alightSel, commit, () => this.resetForm(), { up: () => boardSel.focus() });
+    // Einstieg per Tastatur: gleiche Liste; übernommen → weiter zum Ausstieg
+    keyboardList(
+      boardSel,
+      () => {
+        this.board = boardSel.value;
+        this.render();
+      },
+      () => this.resetForm(),
+      { down: () => alightSel.focus() },
+    );
     const alightRow = h('label', { class: 'field' }, '<span>Ausstieg</span>');
     alightRow.append(alightSel);
     form.append(alightRow);
-    queueMicrotask(() => alightSel.focus());
+    // Entf: angefangene Linie verwerfen (fertige Teilstrecken bleiben)
+    form.addEventListener('keydown', (e) => {
+      if (e.key !== 'Delete') return;
+      e.preventDefault();
+      this.resetForm();
+    });
+    // per Tastatur gewählt: Fokus beim Ausstieg (Enter öffnet die Liste) – hält die Linie nicht hier, erst beim
+    // Einstieg (Fußweg ansehen, ggf. andere Haltestelle wählen)
+    const keyboard = this.openPicker;
+    const stay = this.focusBoard;
+    this.openPicker = this.focusBoard = false;
+    const here = this.board === pos.id;
+    queueMicrotask(() => (stay || (keyboard && !here) ? boardSel : alightSel).focus());
     return form;
   }
 
@@ -352,21 +536,35 @@ export class RouteBuilder {
     return best;
   }
 
-  private alightSelect(line: Line, board: string, selected: string | null): HTMLSelectElement {
+  /** `prev`: Teilstrecken davor (für die Regeln); `stayHere`: Umland – gleich an der Stadtgrenze aussteigen geht */
+  private alightSelect(line: Line, board: string, selected: string | null, prev = this.plain(), stayHere = false): HTMLSelectElement {
     const sel = h('select', { class: 'alight-select' });
     const { up, down } = this.net.lineThrough(line, board);
     // Ziel ist eine Adresse: die Haltestelle der Linie, die ihr am nächsten liegt (bis 1,5 km), markieren
     const nearDest = isAddress(this.dest) ? (this.net.boardOptions(line, this.dest, 1).find((o) => o.dist <= 1500) ?? null) : null;
     // Gegenrichtung mit anderem Einstieg: Wert "einstieg>ausstieg"
-    const opt = (s: Station, alt?: Station) =>
-      `<option value="${alt ? `${alt.id}>` : ''}${s.id}">${esc(s.name)}${s.id === this.dest.id ? ' 🏁' : ''}${s.id === nearDest?.station.id ? ` 📍 ${fmtDist(nearDest.dist)} zum Ziel` : ''}${alt && alt.id !== board ? ` ↩ ab ${esc(alt.name)}` : ''}</option>`;
+    const rules = this.opts.rules;
+    const opt = (s: Station, alt?: Station) => {
+      const leg = { line: line.id, from: alt?.id ?? board, to: s.id };
+      let bad = rules ? legProblem(rules, prev, leg, this.rn) : null;
+      // am Ziel aussteigen geht nur, wenn die ganze Route die Regeln erfüllt (z.B. letzte Fahrt mit der Bim)
+      const goal = this.isGoal(s.id, [...prev, leg]);
+      if (!bad && rules && goal) bad = routeProblem(rules, [...prev, leg], this.rn);
+      // Brückenkenner: wie viele Brücken diese Fahrt überquert
+      const nb = rules?.restriction === 'minBridges' ? (this.rn.bridges?.(leg.line, leg.from, leg.to).length ?? 0) : 0;
+      const flag = (nb ? ` 🌉${nb > 1 ? `×${nb}` : ''}` : '') + (goal || s.id === this.dest.id ? ' 🏁' : this.opts.targets?.some((t) => t.id === s.id) ? ' 🎯' : this.opts.waypoints?.some((t) => t.id === s.id) ? ' 📍' : '');
+      const badge = bad ? ` – ${goal && rules && !legProblem(rules, prev, leg, this.rn) ? `noch nicht: ${bad.replace(/^\S+\s/, '').slice(0, 48)}` : problemBadge(rules!)}` : '';
+      return `<option value="${alt ? `${alt.id}>` : ''}${s.id}" ${bad ? 'disabled' : ''} title="${esc(bad ?? '')}">${esc(s.name)}${flag}${s.id === nearDest?.station.id ? ` 📍 ${fmtDist(nearDest.dist)} zum Ziel` : ''}${alt && alt.id !== board ? ` ↩ ab ${esc(alt.name)}` : ''}${badge}</option>`;
+    };
     const here = this.net.station(board);
     // Reihenfolge wie auf dem Linienplan: obere Stationen · "↑ Richtung …" · hier · "↓ Richtung …" · untere Stationen.
     // Die Überschriften sind leere <optgroup>s, damit sie fett direkt neben der aktuellen Station stehen.
     // Ohne Vorauswahl ist die aktuelle Station markiert → die Liste öffnet sich genau dort.
     sel.innerHTML =
       (up ? up.stations.map((s) => opt(s, up.board)).join('') + `<optgroup label="↑ ${esc(up.label)}"></optgroup>` : '') +
-      `<option value="" disabled class="here" ${selected ? '' : 'selected'}>● ${esc(here.name)} – Ausstieg wählen …</option>` +
+      (stayHere
+        ? `<option value="${board}">● ${esc(here.name)} – gleich hier aussteigen (Stadtgrenze)</option>`
+        : `<option value="" disabled class="here" ${selected ? '' : 'selected'}>● ${esc(here.name)} – Ausstieg wählen …</option>`) +
       (down ? `<optgroup label="↓ ${esc(down.label)}"></optgroup>` + down.stations.map((s) => opt(s, down.board)).join('') : '');
     if (selected) sel.value = selected;
     return sel;
@@ -401,7 +599,7 @@ export class RouteBuilder {
       this.resetForm();
     };
     fields.querySelector('[data-act=add]')!.addEventListener('click', add);
-    alight.addEventListener('keydown', (e) => e.key === 'Enter' && add());
+    alight.addEventListener('keydown', (e) => e.key === 'Enter' && !e.ctrlKey && !e.metaKey && add());
     form.append(fields);
     queueMicrotask(() => (showPos ? alight : board).focus());
     return form;
@@ -429,10 +627,113 @@ export class RouteBuilder {
   }
 
   private pickLine(line: Line) {
+    const why = this.lineBlocked(line.id);
+    if (why) return toast(why, 'info');
+    // Einstieg nur dort möglich, wo es die Regel verbietet (z.B. U1 hier nur unter der Erde) → gleich sagen
+    const rules = this.opts.rules;
+    if (rules) {
+      const opts = this.net.boardOptions(line, this.position);
+      const bad = opts.map((o) => stationProblem(rules, line.id, o.station.id, this.rn));
+      if (opts.length && bad.every(Boolean)) return toast(bad[0]!, 'info');
+    }
     this.pickedLine = line;
-    this.board = this.net.boardOptions(line, this.position, 1)[0].station.id;
+    // Umland: man sitzt im Zug – „Einstieg“ ist seine erste Station in Wien
+    const train = this.inTrain ? this.opts.umland!.options.find((o) => o.lines.includes(line.id)) : undefined;
+    this.board = train?.entry ?? this.net.boardOptions(line, this.position, 1)[0].station.id;
     this.render();
   }
+}
+
+/**
+ * Ein-/Ausstieg nur mit der Tastatur: eine eigene Liste unter dem Auswahlfeld (das Browser-Fenster lässt sich nicht
+ * überall per Tastatur steuern). Enter klappt auf, ↑ ↓ wandert durch die Halte (ohne schon zu übernehmen), Enter
+ * übernimmt, Escape klappt zu bzw. wählt eine andere Linie. Zugeklappt wechseln ↑ ↓ zwischen den Feldern.
+ * Mit der Maus bleibt alles wie gewohnt.
+ */
+let pointerDown = false;
+if (typeof document !== 'undefined') {
+  document.addEventListener('pointerdown', () => (pointerDown = true), true);
+  document.addEventListener('pointerup', () => (pointerDown = false), true);
+}
+
+function keyboardList(sel: HTMLSelectElement, commit: () => void, cancel: () => void, nav: { up?: () => void; down?: () => void } = {}): { open: () => void } {
+  let pop: HTMLElement | null = null;
+  const rows = () => [...(pop?.querySelectorAll<HTMLElement>('[data-i]') ?? [])];
+  const mark = () => {
+    for (const r of rows()) {
+      const on = Number(r.dataset.i) === sel.selectedIndex;
+      r.classList.toggle('active', on);
+      r.setAttribute('aria-selected', String(on));
+      if (on) r.scrollIntoView({ block: 'nearest' });
+    }
+  };
+  const close = () => {
+    pop?.remove();
+    pop = null;
+    sel.setAttribute('aria-expanded', 'false');
+  };
+  const open = () => {
+    if (pop) return;
+    pop = h('div', { class: 'kb-list', role: 'listbox', 'aria-label': 'Ausstieg' });
+    let i = 0;
+    for (const el of sel.children) {
+      if (el instanceof HTMLOptGroupElement) pop.append(h('div', { class: 'kb-group' }, esc(el.label)));
+      else {
+        const o = el as HTMLOptionElement;
+        pop.append(h('div', { class: `kb-opt${o.disabled ? ' here' : ''}`, 'data-i': String(i), role: 'option' }, esc(o.text)));
+        i++;
+      }
+    }
+    // Klick in der Liste: übernehmen, ohne dass das Auswahlfeld den Fokus verliert
+    pop.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      const r = (e.target as HTMLElement).closest<HTMLElement>('[data-i]');
+      if (!r || r.classList.contains('here')) return;
+      sel.selectedIndex = Number(r.dataset.i);
+      close();
+      commit();
+    });
+    sel.after(pop);
+    sel.setAttribute('aria-expanded', 'true');
+    mark();
+    rows().find((r) => r.classList.contains('active'))?.scrollIntoView({ block: 'center' });
+  };
+  const move = (d: 1 | -1) => {
+    for (let i = sel.selectedIndex + d; i >= 0 && i < sel.options.length; i += d)
+      if (!sel.options[i].disabled) {
+        sel.selectedIndex = i;
+        return mark();
+      }
+  };
+  sel.addEventListener('keydown', (e) => {
+    // Strg+Enter = Route abgeben (RouteBuilder)
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      // zu: ↑ ↓ wechselt zwischen Einstieg und Ausstieg; offen: durch die Halte
+      if (!pop) return void (e.key === 'ArrowUp' ? nav.up : nav.down)?.();
+      move(e.key === 'ArrowDown' ? 1 : -1);
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      if (pop && sel.value) {
+        close();
+        commit();
+      } else open();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      if (pop) close();
+      else cancel();
+    }
+  });
+  // Fokus weg: zu. Bei einem Mausklick erst danach – sonst rutscht der Inhalt (Liste weg) zwischen Drücken und
+  // Loslassen, und der Klick (z.B. auf „andere Linie“) landet ins Leere
+  sel.addEventListener('blur', () => {
+    if (!pointerDown) return close();
+    document.addEventListener('pointerup', () => setTimeout(close), { once: true });
+  });
+  // Maus: das gewohnte Auswahlfenster – die eigene Liste dann zu
+  sel.addEventListener('mousedown', close);
+  return { open };
 }
 
 /** Eine gemeinsame Vorschlagsliste mit allen Stationsnamen (einmal pro Seite) */

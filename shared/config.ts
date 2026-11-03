@@ -17,6 +17,7 @@ import {
   NET_MODES,
   SCORING_MODES,
   SLOT_DAYTYPE,
+  HIDDEN_SLOTS,
   SLOT_TIME,
   slotOr,
   STATION_KINDS,
@@ -448,6 +449,7 @@ export function applyGameConfig(c: GameConfig | PublicConfig, menu?: MenuPlan[])
     SLOT_DAYTYPE[id] = s.day;
     SLOT_TIME[id] = s.time.split(':').map(Number) as [number, number];
   }
+  for (const [id, h] of Object.entries(HIDDEN_SLOTS)) (SLOT_DAYTYPE[id] = h.day), (SLOT_TIME[id] = [...h.time]);
   NET_MODES.length = 0;
   NET_MODES.push({ id: 'regular', ...c.netModes.regular });
   if (c.netModes.current.enabled) NET_MODES.push({ id: 'current', label: c.netModes.current.label, hint: c.netModes.current.hint });

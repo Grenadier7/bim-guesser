@@ -3,7 +3,8 @@ import type { District, LatLon, Line, Mode, Station } from './types.ts';
 import { DEFAULT_QUIZ_SETTINGS } from './defaults.ts';
 import { distM } from './geo.ts';
 import { pick, shuffle } from './random.ts';
-import { isSpecialLine } from './rules.ts';
+// volle Punkte bis 250 m – wie „Wo liegt das?“ in der Routenjagd (Befund L-08)
+import { LOCATE_FULL_M, LOCATE_ZERO_M, isSpecialLine } from './rules.ts';
 
 export { distM };
 
@@ -601,9 +602,6 @@ export function generateQuiz(net: QuizNet, s: QuizSettings): QuizQuestion[] {
 
 // ---------------------------------------------------------------- Bewertung
 
-/** volle Punkte bis 250 m – wie „Wo liegt das?“ in der Routenjagd (Befund L-08) */
-const LOCATE_FULL_M = 250;
-const LOCATE_ZERO_M = 3000;
 
 function toXY(p: LatLon, lat0: number): [number, number] {
   return [p[1] * 111_320 * Math.cos((lat0 * Math.PI) / 180), p[0] * 111_320];

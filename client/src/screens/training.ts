@@ -15,6 +15,8 @@ import { icon } from '../icons.ts';
 import { areaPicker, infoTip } from '../widgets.ts';
 import { loadMerged, saveJson } from '../storage.ts';
 import { markPlayed } from '../progress.ts';
+import { XP } from '../../../shared/career.ts';
+import { record } from '../career.ts';
 
 // ---------------------------------------------------------------- Speicher
 
@@ -293,6 +295,11 @@ export function trainingScreen(panel: HTMLElement, onBack: () => void): Screen {
       return;
     }
     markPlayed('training');
+    if (res.durationMin != null) {
+      const best = round.routes[0]?.medianMin ?? null;
+      const good = best != null && res.durationMin <= best * 1.1;
+      record(`training:${round.id}`, { activity: true, xp: XP.training(good), count: { trainings: 1 }, legs: res.error ? undefined : legs });
+    }
     renderReview(res);
   }
 

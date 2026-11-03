@@ -6,7 +6,7 @@ import { naiveMinutes } from './efa.ts';
 /** Erlaubte Wochentage (0 = Mo … 6 = So) je Tagestyp; Wochentag = Di–Do */
 export const DAYTYPE_DAYS: Record<DayType, number[]> = { wd: [1, 2, 3], sa: [5], su: [6] };
 
-const WEEKDAY = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+const WEEKDAY = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 
 function easter(y: number): Date {
   const a = y % 19, b = Math.floor(y / 100), c = y % 100;
@@ -92,5 +92,6 @@ export function slotTime(id: SlotId, net: NetMode, regularDays: Record<DayType, 
 export function describeSlotDate(min: number): string {
   const d = new Date(min * 60000);
   const p = (n: number) => String(n).padStart(2, '0');
-  return `${WEEKDAY[(d.getUTCDay() + 6) % 7]} ${p(d.getUTCDate())}.${p(d.getUTCMonth() + 1)}.${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+  // für Spieler nur Wochentag und Uhrzeit – das Datum des Referenztags (oft in der Vergangenheit) verwirrt nur
+  return `${WEEKDAY[(d.getUTCDay() + 6) % 7]}, ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
 }

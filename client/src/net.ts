@@ -35,6 +35,21 @@ export class NetIndex {
     for (const l of data.lines) this.lines.set(l.id, l);
   }
 
+  /**
+   * Linien nur für eine Runde (Hubschrauber H1–H3): ersetzt die der vorigen Runde. Sie liegen in `lines` und in der
+   * Suche wie echte Linien – A ↔ B in beide Richtungen.
+   */
+  setRoundLines(lines: Line[]) {
+    for (const id of this.roundLines) this.lines.delete(id);
+    (this.data.lines as Line[]).splice(0, this.data.lines.length, ...this.data.lines.filter((l) => !this.roundLines.has(l.id)));
+    this.roundLines = new Set(lines.map((l) => l.id));
+    for (const l of lines) {
+      this.lines.set(l.id, l);
+      this.data.lines.push(l);
+    }
+  }
+  private roundLines = new Set<string>();
+
   /** Adressen als Start/Ziel (Punkt 13): ohne Linien, nicht in `stations` (Suche, Netzkarte bleiben unberührt) */
   private virtual = new Map<string, Station>();
 

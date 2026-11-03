@@ -4,7 +4,8 @@ import type { QuizQuestionPublic, QuizSettings } from './quiz.ts';
 // Alles, was über die Leitung geht (REST + Server-Sent Events), ist hier definiert.
 
 /** U = U-Bahn, S = S-Bahn, T = Straßenbahn/Lokalbahn, B = Bus, N = Nachtbus, W = Fußweg */
-export type Mode = 'U' | 'S' | 'T' | 'B' | 'N' | 'W';
+/** Verkehrsmittel – H = Hubschrauber (nur in der Tages-Challenge, Linien H1–H3 je Runde) */
+export type Mode = 'U' | 'S' | 'T' | 'B' | 'N' | 'W' | 'H';
 
 export type LatLon = [number, number];
 
@@ -101,7 +102,33 @@ export type Difficulty = 'easy' | 'medium' | 'hard' | 'expert' | 'custom';
  */
 export type StationKind = 'Ukey' | 'U' | 'Skey' | 'S' | 'Tkey' | 'T' | 'hub' | 'bus' | 'all';
 
-export type DistanceRange = 'short' | 'medium' | 'long';
+export type DistanceRange = 'local' | 'short' | 'medium' | 'long' | 'xlong';
+
+/** Aufgabe einer Runde: normal (A → B), eines von 3 Zielen, 3 Punkte abklappern, zum nächsten Wasser / Bad */
+export type RoundTask = 'normal' | 'choose3' | 'visit3' | 'water' | 'bath' | 'heli' | 'future';
+
+/** Hubschrauber-Linie einer Runde: A ↔ B in fester Zeit (inkl. Einsteigen) */
+export interface HeliLine {
+  id: string;
+  a: StationRef;
+  b: StationRef;
+  min: number;
+}
+
+/** Aus dem Umland: ein Zug vom Ort nach Wien (Linien, erste Station in Wien, Fahrzeit bis dorthin ca.) */
+export interface UmlandOption {
+  lines: string[];
+  entry: string;
+  min: number;
+}
+
+/** Aus dem Umland: Start im Ort (außerhalb von Wien) mit den Zügen, die von dort nach Wien fahren */
+export interface UmlandStart {
+  town: string;
+  lat: number;
+  lon: number;
+  options: UmlandOption[];
+}
 
 /**
  * X-treme: 'off' · 'noHints' (Haltestellen selbst eintippen, keine Route auf der Karte) ·
@@ -124,7 +151,60 @@ export interface FocusArea {
 }
 
 /** Einschränkungs-Runden */
-export type Restriction = 'noU' | 'noBus' | 'oneTransfer' | 'banLines';
+export type Restriction =
+  | 'noU'
+  | 'noBus'
+  | 'oneTransfer'
+  | 'banLines'
+  | 'onlyTram'
+  | 'needS'
+  | 'needTram'
+  | 'needBus'
+  | 'maxOneU'
+  | 'mixModes'
+  | 'noSameMode'
+  | 'twoTrams'
+  | 'insider'
+  | 'busOnly'
+  | 'oneLeg'
+  | 'tramEnds'
+  | 'umland'
+  | 'sunny'
+  | 'avoidInner'
+  | 'min2Transfers'
+  | 'mustLine'
+  | 'anyLine'
+  | 'noRail'
+  | 'avoidDistricts'
+  | 'minBridges';
+
+/** Spielvariante für alle Runden (Tages-Challenges): ohne U-Bahn, ohne Bus, nur Bim, max. 1 Umstieg */
+export type Variant =
+  | 'none'
+  | 'noU'
+  | 'noBus'
+  | 'tram'
+  | 'one'
+  | 'needS'
+  | 'needTram'
+  | 'needBus'
+  | 'maxOneU'
+  | 'mixModes'
+  | 'noSameMode'
+  | 'twoTrams'
+  | 'insider'
+  | 'busOnly'
+  | 'oneLeg'
+  | 'tramEnds'
+  | 'umland'
+  | 'sunny'
+  | 'avoidInner'
+  | 'min2Transfers'
+  | 'mustLine'
+  | 'anyLine'
+  | 'noRail'
+  | 'avoidDistricts'
+  | 'minBridges';
 
 /** Wie oft Einschränkungs-Runden vorkommen */
 export type RestrictionFrequency = 'never' | 'sometimes' | 'always';
@@ -159,6 +239,20 @@ export interface GameSettings {
   tips: TipLevel;
   /** Start und Ziel: Haltestellen oder zufällige Adressen (Punkt 13) */
   endpoints: 'stations' | 'addresses';
+  /** Variante für alle Runden (ohne U-Bahn / nur Bim) – kommt aus einer Tages-Challenge */
+  variant: Variant;
+  /** aktive Tages-Challenge (shared/challenges.ts): Einstellungen sind dann fest */
+  challenge: string | null;
+  /** Aufgabe der Runden (Tages-Challenges) */
+  task: RoundTask;
+  /** fester Start (Stationsname, z.B. „Schwedenplatz“) – Tages-Challenges */
+  start: string | null;
+  /** beim Eintippen nur Linien vorschlagen, die zu dieser Uhrzeit fahren */
+  onlyRunning: boolean;
+  /** Start und Ziel nur in diesen Bezirken (Bezirk des Tages) – null = ganz Wien */
+  districts: number[] | null;
+  /** E-Scooter statt zu Fuß (30 km/h, an U-/S-Bahn-Stationen 30 s Treppen) – Tages-Challenge */
+  scooter: boolean;
 }
 
 // ---------------------------------------------------------------- Routen
@@ -190,6 +284,8 @@ export interface RouteLeg {
 export interface RouteOption {
   /** Signatur: Linien + Umstiegsstationen */
   key: string;
+  /** „3 Ziele“: zu welchem Ziel (Name) / „Wasser“: zu welchem Gewässer */
+  target?: string;
   legs: RouteLeg[];
   /** Median der gewerteten Reisezeit (je nach Einstellung inkl. Wartezeit), Minuten */
   medianMin: number;
@@ -329,6 +425,26 @@ export interface RoundPublic {
   deadline: number | null;
   /** vom Host pausiert seit (Serverzeit, ms) */
   pausedAt: number | null;
+  /** Tages-Challenges: Pflicht-Linien („mustLine“: eine, „anyLine“: drei zur Wahl) */
+  required?: string[];
+  /** Umland: Start im Ort, die Züge nach Wien */
+  umland?: UmlandStart;
+  /** Fleckerlteppich: gesperrte Bezirke */
+  districts?: number[];
+  /** diese Linien fahren zu dieser Uhrzeit nicht (wenn „nur fahrende Linien“ an ist) */
+  idle?: string[];
+  /** „3 Ziele“: eines davon erreichen (to ist dann eines davon) */
+  targets?: StationRef[];
+  /** „3 Punkte“: alle befahren, Reihenfolge egal */
+  waypoints?: StationRef[];
+  /** „Ab ins Wasser“: Ziel ist das nächste Wasser (oder nur Bäder) */
+  water?: 'all' | 'bath';
+  /** Hubschrauber-Linien dieser Runde */
+  helis?: HeliLine[];
+  /** Brückenkenner: so viele Brücken mindestens */
+  bridges?: number;
+  /** Zielnetz 2040: die beste Verbindung heute (nach der Auflösung zum Vergleich) */
+  today?: { min: number; lines: string[] };
 }
 
 export type GamePhase = 'lobby' | 'playing' | 'finished';
@@ -448,6 +564,8 @@ export interface SubmitRequest {
   token: string;
   legs: UserLeg[];
   guesses: Guesses | null;
+  /** für diese Runde aufgegeben (keine Route, 0 Punkte – die anderen spielen weiter) */
+  gaveUp?: boolean;
 }
 
 export interface SubmitResponse {
@@ -475,6 +593,59 @@ export interface TrainingResult {
   error: string | null;
 }
 
+// ---------------------------------------------------------------- Strecke des Tages
+
+export interface DailyRound {
+  /** Tag in Wien (YYYY-MM-DD) */
+  day: string;
+  /** laufende Nummer (für den Teilen-Text) */
+  number: number;
+  from: StationRef;
+  to: StationRef;
+  when: string;
+  settings: GameSettings;
+  /** mit Account schon gespielt: das Ergebnis (sonst null – Gäste merken es sich im Browser) */
+  played: DailyResult | null;
+}
+
+export interface DailyResult {
+  day: string;
+  number: number;
+  /** Routenpunkte 0–1300 (wie in der Routenjagd, ohne Zeitbonus) */
+  points: number;
+  durationMin: number | null;
+  bestMin: number;
+  route: RouteOption | null;
+  routes: RouteOption[];
+  matchedRank: number | null;
+  error: string | null;
+  /** Platz am Tag (nur mit Account) */
+  rank: number | null;
+  players: number;
+  /** schnellste Verbindung nur mit U-Bahn und S-Bahn (zum Vergleich in der Auflösung) */
+  railMin: number | null;
+}
+
+export interface DailyBoardRow {
+  rank: number;
+  name: string;
+  points: number;
+  minutes: number;
+  /** Tage (Woche) */
+  days: number;
+  me: boolean;
+}
+
+export interface DailyBoard {
+  scope: 'day' | 'week';
+  friends: boolean;
+  /** Tag bzw. Montag der Woche */
+  from: string;
+  rows: DailyBoardRow[];
+  /** eigene Zeile, falls nicht unter den ersten */
+  mine: DailyBoardRow | null;
+}
+
 // ---------------------------------------------------------------- Accounts
 
 export interface LevelInfo {
@@ -489,8 +660,19 @@ export interface MedalPublic {
   id: string;
   icon: string;
   title: string;
+  /** Text der nächsten Stufe (bzw. der höchsten, wenn alle erreicht) */
   text: string;
-  /** Zeitpunkt (ms); null = noch nicht erreicht */
+  /** erreichte Stufe: 0 = noch keine, 1 = Bronze, 2 = Silber, 3 = Gold (Medaillen mit nur einer Stufe: 1) */
+  tier: number;
+  /** Anzahl Stufen (1 oder 3) */
+  tiers: number;
+  /** aktueller Stand, z.B. 12 Runden */
+  value: number;
+  /** Ziel der nächsten Stufe; null = alle erreicht */
+  next: number | null;
+  /** versteckt, bis erreicht */
+  hidden: boolean;
+  /** wann die aktuelle Stufe erreicht wurde (ms) – nur mit Account bekannt */
   at: number | null;
 }
 

@@ -16,4 +16,4 @@ export function mergeProgress(a: unknown, b: unknown): unknown {
 }
 
 /** am Server immer zusammengeführt statt überschrieben */
-export const MONOTONE_KEYS = ['oeffi-courses-v1', 'oeffi-progress-v1'];
+export const MONOTONE_KEYS = ['oeffi-courses-v1', 'oeffi-progress-v1', 'oeffi-career-v1'];

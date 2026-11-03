@@ -10,10 +10,10 @@ interface Progress {
 
 const read = () => loadJson<Progress>(KEY, { tutorialDone: false, played: 0 });
 
-/** Tutorial anbieten: nicht gemacht und noch keine 2 normalen Spiele */
+/** Tutorial anbieten: nicht gemacht und noch kein normales Spiel */
 export const offerTutorial = () => {
   const p = read();
-  return !p.tutorialDone && p.played < 2;
+  return !p.tutorialDone && p.played < 1;
 };
 
 export function setTutorialDone() {

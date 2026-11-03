@@ -6,6 +6,8 @@ import { esc, h, toast } from '../ui.ts';
 import { setPanel, type Screen } from './screen.ts';
 import { importProblems, takeSettingsLink } from '../settingsShare.ts';
 import { offerTutorial } from '../progress.ts';
+import { progressStrip } from './me.ts';
+import { dailyPlayedLocally } from './daily.ts';
 import { account } from '../account.ts';
 import { bindLegalLinks, legalFooter } from '../legal.ts';
 
@@ -68,6 +70,17 @@ async function showInvite(slot: HTMLElement, code: string, codeIn: HTMLInputElem
   inviteName.focus();
 }
 
+/** Strecke des Tages: Hinweis, ob heute schon gespielt (Gäste wissen es lokal, mit Account sagt es die Seite selbst) */
+function dailyCard(): string {
+  const done = dailyPlayedLocally();
+  // schon gespielt: nur noch eine kleine Zeile (Ergebnis, Bestenliste)
+  if (done)
+    return `<button class="daily-card done" data-mode="daily">📅 <span>Strecke des Tages: <b>${done.points.toLocaleString('de-AT')} Punkte</b></span><small>Bestenliste ›</small></button>`;
+  return `<button class="daily-card" data-mode="daily"><span class="mt-icon">📅</span><span><b>Strecke des Tages</b>
+    <small>Für alle dieselbe Strecke – ein Versuch am Tag. Teilen, vergleichen, Serie halten. <b>3× XP</b></small></span>
+    <span class="btn btn-primary">Spielen</span></button>`;
+}
+
 export function homeScreen(panel: HTMLElement): Screen {
   app.map.clear();
   const urlCode = new URLSearchParams(location.search).get('code')?.toUpperCase() ?? '';
@@ -79,6 +92,8 @@ export function homeScreen(panel: HTMLElement): Screen {
     `<header class="hero"><span class="logo big">U</span><div><h1>BimGuesser Wien</h1><p>Wie gut kennst du die Wiener Öffis?</p></div></header>
      ${tut ? `<button class="tut-hint" data-mode="tutorial">🎓 Neu hier? <b>Tutorial spielen</b> – 2 Runden, 3 Minuten</button>` : ''}
      ${urlCode ? '<div id="invite-slot"></div>' : ''}
+     ${progressStrip()}
+     ${dailyCard()}
      ${tile(MODES[0], 'mode-hero')}
      <h3 class="more-modes">Weitere Spielmodi</h3>
      <div class="mode-grid mode-grid-3">${MODES.slice(1)
@@ -97,6 +112,7 @@ export function homeScreen(panel: HTMLElement): Screen {
               <span class="btn btn-primary">Los</span></button>`
          : ''
      }
+     ${tut ? '' : '<nav class="home-links"><button class="link" data-mode="tutorial">🎓 Tutorial wiederholen</button></nav>'}
      ${legalFooter()}`,
   );
   const nameIn = el.querySelector<HTMLInputElement>('#name')!;
@@ -133,7 +149,7 @@ export function homeScreen(panel: HTMLElement): Screen {
       const m = b.dataset.mode!;
       if (m === 'route' || m === 'quiz') return void createLobby(m);
       name();
-      app.view = m as 'learn' | 'training' | 'tutorial';
+      app.view = m as 'learn' | 'training' | 'tutorial' | 'daily' | 'me';
       app.onChange();
     }),
   );

@@ -42,6 +42,16 @@ export const DEFAULT_SETTINGS: GameSettings = {
   xtreme: 'off',
   /** Einschränkungs-Runden: 'never' · 'sometimes' · 'always' */
   restrictions: 'never',
+  variant: 'none',
+  challenge: null,
+  task: 'normal',
+  start: null,
+  /** beim Eintippen nur Linien vorschlagen, die zu dieser Uhrzeit fahren */
+  onlyRunning: false,
+  /** Start und Ziel nur in diesen Bezirken (null = ganz Wien) – Bezirk des Tages */
+  districts: null,
+  /** E-Scooter statt zu Fuß (Tages-Challenge) */
+  scooter: false,
   /** Start/Ziel: 'stations' Haltestellen · 'addresses' zufällige Adressen */
   endpoints: 'stations',
   /** Tipps: 'off' (keine) · 'cheap' (günstig) · 'expensive' (teuer – bei X-treme automatisch) */
@@ -49,7 +59,7 @@ export const DEFAULT_SETTINGS: GameSettings = {
 };
 
 /** Diese Einstellungen werden NICHT für die nächste Lobby gemerkt – sie starten immer mit dem Standard */
-export const NOT_REMEMBERED: (keyof GameSettings)[] = ['network', 'focus'];
+export const NOT_REMEMBERED: (keyof GameSettings)[] = ['network', 'focus', 'variant', 'challenge', 'task', 'start', 'districts', 'scooter'];
 
 // ---------------------------------------------------------------- 🧠 Quiz (Lobby)
 

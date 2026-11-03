@@ -8,6 +8,7 @@ import type { AddressInfo } from 'node:net';
 import { after, before, describe, test } from 'node:test';
 import type { Evaluation, RoundReveal } from '../shared/types.ts';
 import { Accounts, COURSE_COUNT, hashPassword, levelOf, verifyPassword } from '../server/accounts.ts';
+import { MEDALS } from '../shared/career.ts';
 import { createApp } from '../server/app.ts';
 import type { Lobby } from '../server/lobby.ts';
 import { Network } from '../server/network.ts';
@@ -240,8 +241,8 @@ describe('Statistik', () => {
       assert.equal(s.wins, 1);
       assert.equal(s.beatApi, 1);
       assert.equal(s.minutes, 120);
-      const medals = new Set(acc.medals(user.id).filter((m) => m.at).map((m) => m.id));
-      for (const m of ['first-game', 'perfect', 'beat-api', 'max-route', 'winner']) assert.ok(medals.has(m), m);
+      const medals = new Set(acc.medals(user.id).filter((m) => m.tier && m.at).map((m) => m.id));
+      for (const m of ['games', 'perfect', 'beat', 'wins']) assert.ok(medals.has(m), m);
       assert.ok(acc.level(user.id).xp > 300);
       acc.close();
     });
@@ -434,7 +435,7 @@ describe('Leute, Freunde, Profile – Grenzfälle', () => {
     assert.equal((await browser().call('GET', '/api/users/gibtsnichtxyz')).status, 404);
     const p = (await browser().call('GET', `/api/users/${a.name}`)).body;
     assert.equal(p.stats, null);
-    assert.equal(p.medals.length, 14);
+    assert.equal(p.medals.length, MEDALS.length);
     assert.equal(JSON.stringify(p).includes('@'), false, 'keine E-Mail im Profil');
     assert.equal(JSON.stringify(anon).includes('@'), false, 'keine E-Mail in der Liste');
   });
@@ -518,7 +519,7 @@ describe('Statistik aus echten Spielabläufen', () => {
     assert.equal(s.rounds, 3);
     assert.equal(s.games, 1);
     assert.equal(s.wins, 0, 'allein ist kein Sieg');
-    assert.ok(accounts.medals(a.id).find((m) => m.id === 'first-game')!.at);
+    assert.ok(accounts.medals(a.id).find((m) => m.id === 'games')!.at);
     assert.equal(s.recent[0].kind, 'game');
   });
 
@@ -535,18 +536,19 @@ describe('Statistik aus echten Spielabläufen', () => {
     assert.equal((await browser().call('POST', `/api/training/${round.id}/evaluate`, { legs })).status, 200, 'ohne Anmeldung: kein Fehler');
   });
 
-  test('Level: Kurse aus dem Spielstand zählen, „alle Kurse“-Medaille erst bei allen 9', async () => {
+  test('Level: Kurse aus dem Spielstand zählen, Netzkenner-Medaille in Stufen (Gold erst, wenn alle gemeistert)', async () => {
     const a = await newUser('Lerner');
     const courses: Record<string, unknown> = Object.fromEntries(COURSES.slice(0, 8).map((c) => [c.id, { done: true, best: 1, total: 1, mastered: true }]));
     await a.b.call('PUT', '/api/me/data', { data: { 'oeffi-courses-v1': courses } });
     let me = (await a.b.call('GET', '/api/me')).body.user;
     assert.equal(me.level.xp, 8 * 100);
-    assert.equal(me.medals.find((m: { id: string }) => m.id === 'all-courses').at, null);
+    // 8 geschafft + 8 gemeistert = 16 → Silber (9), noch nicht Gold (18)
+    assert.equal(me.medals.find((m: { id: string }) => m.id === 'courses').tier, 2);
     courses[COURSES[8].id] = { done: true, best: 1, total: 1 };
     await a.b.call('PUT', '/api/me/data', { data: { 'oeffi-courses-v1': courses } });
     me = (await a.b.call('GET', '/api/me')).body.user;
-    assert.ok(me.medals.find((m: { id: string }) => m.id === 'all-courses').at);
-    assert.equal(me.medals.find((m: { id: string }) => m.id === 'master').at, null, 'einer noch nicht gemeistert');
+    assert.equal(me.medals.find((m: { id: string }) => m.id === 'courses').tier, 2, 'einer noch nicht gemeistert → noch kein Gold');
+    assert.ok(me.medals.find((m: { id: string }) => m.id === 'courses').at);
     assert.equal((await a.b.call('GET', `/api/users/${a.name}`)).body.stats.coursesDone, 9);
   });
 });
@@ -596,8 +598,8 @@ describe('Mehrere Accounts', () => {
     assert.equal(sb.rounds, 2);
     assert.equal(sa.wins, 1, 'A hat gewonnen');
     assert.equal(sb.wins, 0);
-    assert.ok(accounts.medals(a.id).find((m) => m.id === 'winner')!.at);
-    assert.equal(accounts.medals(b.id).find((m) => m.id === 'winner')!.at, null);
+    assert.ok(accounts.medals(a.id).find((m) => m.id === 'wins')!.at);
+    assert.equal(accounts.medals(b.id).find((m) => m.id === 'wins')!.tier, 0);
     assert.equal(sb.recent[0].rank, 2);
     assert.equal(sb.recent[0].players, 2);
   });

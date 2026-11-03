@@ -11,7 +11,7 @@ import { RouteBuilder } from '../builder.ts';
 import { smoothRoute } from '../netmap.ts';
 import { setTutorialDone } from '../progress.ts';
 import { app, setMapBig } from '../store.ts';
-import { chain, esc, h, toast } from '../ui.ts';
+import { ask, chain, esc, h, toast } from '../ui.ts';
 import { loadingHtml, type Screen } from './screen.ts';
 
 /** Station mit diesem Namen, an der die Linie hält */
@@ -69,8 +69,8 @@ export function tutorialScreen(panel: HTMLElement, onBack: () => void): Screen {
        <div class="od"><div class="od-row"><span class="pin-dot a">A</span><b>${esc(r.from.name)}</b></div>
        <div class="od-row"><span class="pin-dot b">B</span><b>${esc(r.to.name)}</b></div></div>`,
     );
-    head.querySelector('#tut-quit')!.addEventListener('click', () => {
-      if (confirm('Tutorial beenden? Du kannst es später nicht mehr von der Startseite starten.')) {
+    head.querySelector('#tut-quit')!.addEventListener('click', async () => {
+      if (await ask('Tutorial beenden? Du kannst es jederzeit über „Tutorial“ unten auf der Startseite wieder starten.', { ok: 'Beenden', cancel: 'Weitermachen' })) {
         setTutorialDone();
         onBack();
       }

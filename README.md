@@ -56,7 +56,7 @@ Die Startseite zeigt vier Modi als Kacheln. Unten gibt es **„Mit Code beitrete
 in die richtige Lobby (Routenjagd oder Quiz).
 
 **🎓 Tutorial** (für Neue, `client/src/screens/tutorial.ts`): oben ein Hinweis, unten eine Karte – bis man es gemacht
-oder 2 normale Spiele (Routenjagd-/Quiz-Endstand, Training) abgeschlossen hat (`client/src/progress.ts`). Zwei
+oder ein normales Spiel (Routenjagd-/Quiz-Endstand, Training) abgeschlossen hat (`client/src/progress.ts`). Zwei
 geführte Runden mit echter Auskunft und Wertung: Praterstern → Stephansplatz (U1 eintippen, Ausstieg wählen),
 Reumannplatz → Rathaus („Rathaus ist doch U2“ → U2 fährt dort nicht → U1 bis Karlsplatz, U2 bis Rathaus). Sprechblasen
 zeigen den nächsten Schritt und heben das passende Feld hervor; danach die Punktevergabe.
@@ -85,10 +85,126 @@ zeigen den nächsten Schritt und heben das passende Feld hervor; danach die Punk
 - „Linie zeichnen“ wird am Server bewertet: Anteil der Stationen nahe der Zeichnung (abzüglich dessen, was eine
   gerade Linie schon träfe) und Anteil der Punkte, die auf der Linie liegen.
 - Fragen werden am Server erzeugt und bewertet (`shared/quiz.ts`): richtig = 500–1000 Punkte je nach Tempo;
-  „Linie zeichnen“ zählt nur die Genauigkeit (bis 1000), nicht das Tempo. „Wo liegt …?“ gibt Teilpunkte nach Entfernung (voll bis 200 m, 0 ab 3 km), Mehrfachauswahl Teilpunkte
+  „Linie zeichnen“ zählt nur die Genauigkeit (bis 1000), nicht das Tempo. „Wo liegt …?“ gibt Teilpunkte nach Entfernung (voll bis 250 m, 0 ab 3 km – wie in der Routenjagd), Mehrfachauswahl Teilpunkte
   (falsche ziehen ab). Mehrdeutige Antworten (z.B. S1/S2) werden vermieden. Nur reguläres Netz: keine
   Sonderlinien (71E, 26E) und keine Halte aus Sonderführungen.
 - Host: Pause, Frage überspringen, Jetzt auflösen, Spiel beenden.
+
+## Strecke des Tages
+
+📅 auf der Startseite (Link: `/#daily`): für alle dieselbe Strecke, **ein Versuch am Tag** (Wiener Zeit), ohne
+Zeitlimit und Hilfen, gewertet wie die Route in der Routenjagd (bis 1300). Danach: Ergebnis zum **Teilen** (Emoji-Zeile
+mit Verkehrsmitteln und Punkte-Kästchen, verrät die Lösung nicht), die schnellsten Verbindungen und die **Bestenliste**
+für heute bzw. die Woche (Mo–So, Summe) – alle oder nur Freunde. Bestenliste und „einmal am Tag“ gelten mit Account;
+Gäste spielen auch, ihr Ergebnis bleibt im Browser.
+
+Die Strecke wird nicht einfach zufällig gezogen (`server/daily.ts`):
+
+1. Start und Ziel sind U- oder S-Bahn-Stationen, 3–12 km auseinander.
+2. Die schnellste Verbindung hat mindestens einen Umstieg.
+3. Perfekt ist nicht offensichtlich: nur mit **bekannten Linien** – U-Bahn, S-Bahn-Stammstrecke (S1–S4, S7), S45, S80;
+   wenig bekannte S-Bahnen wie S40/S50/S60 zählen wie eine Bim (`isWellKnownLine`) – gibt es höchstens 800 Punkte (die beste Verbindung
+   nimmt eine Bim/einen Bus oder eine geschickte Kombination).
+4. Trotzdem machbar: nur mit bekannten Linien gibt es mindestens 350 Punkte.
+5. Abwechslung: Stationen der letzten 7 Tage kommen nicht dran.
+
+Erfüllt nach 60 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strecke je Tag steht in
+`STATE_DIR/daily.json` (bleibt nach einem Neustart gleich); die Auflösung zeigt zum Vergleich die Zeit nur mit bekannten Linien.
+
+## Fortschritt & Motivation
+
+- **🗺️ Mein Wien** (Leiste oben auf der Startseite): Level, **Serie** (Tage in Folge; ein **Joker** je 7 Tage überbrückt
+  einen verpassten Tag), **Wochenziel** (5 Spiele/Strecken Mo–So), Medaillen und die **Sammelkarte**: alle Linien und
+  Stationen, die man auf eigenen gültigen Routen benutzt hat (Routenjagd, Training, Strecke des Tages) – je Verkehrsmittel
+  „x von y“. Geht ohne Account (Browser), mit Account auf allen Geräten (`oeffi-career-v1`, wird zusammengeführt).
+- **Fehler wiederholen**: Linien aus falschen Quiz-Antworten und aus Runden, in denen die schnelle Verbindung eine andere
+  Linie nahm, landen unter Lernen → Üben → „Fehler wiederholen“; geübt fallen sie heraus. Quiz-Endstand: Liste aller
+  Fragen (✓/½/✗ mit Erklärung) und „Diese jetzt üben“.
+- **Nach schwachen Runden**: konkreter Tipp („Der Trick: S1/S2 ab Handelskai – das wären 6 min weniger gewesen“, mit ☆
+  zum Merken); eigene Route genauso schnell wie eine der Liste → „genauso schnell wie Nr. 3“. Jede gültige Route bringt
+  mindestens 50 Routenpunkte (Ankommen zählt).
+- **Endstand** (Routenjagd und Quiz gleich): Punkte mit Balken und Urteil bzw. Siegertreppchen, 🔁 **Revanche** (gleiche
+  Einstellungen, sofort los), allein: Vorschlag der nächsten Stufe (≥ 70 %) bzw. einer leichteren (< 25 %).
+  „Spiel beenden“ mitten im Spiel zeigt den Endstand der gespielten Runden.
+- **Tages-Challenges** in der Routenjagd-Lobby – kurze Abwechslung für etwa 5 Minuten (`shared/challenges.ts`,
+  Regeln in `shared/challengeRules.ts`, Server `server/challengeRound.ts`): ein niedriges Banner unter
+  „Einstellungen“, mit ‹ › blätterbar (Titel eine Zeile, Beschreibung höchstens zwei) – jeden Tag **3 aus dem Plan
+  + 🏘️ Bezirk des Tages** (für alle gleich, zufällig gemischt, die erste ist der Vorschlag).
+  - **Tagesplan** (`buildSchedule` in `shared/challenges.ts`): einmal für 180 Tage berechnet, dann exakt wiederholt;
+    der Server legt ihn als `challenge-schedule.json` (STATE_DIR) ab und rechnet nur neu, wenn sich die Challenges
+    ändern (`/api/challenges/schedule`). Jede Challenge kommt in jedem 30-Tage-Fenster fast gleich oft (Guthaben je
+    Tag, danach ringförmig geglättet), zu ähnliche (`avoid` – z.B. Wasser/Bad, Drei Ziele/Drei Punkte,
+    Fleckerlteppich/Innenstadt umfahren) nie am selben Tag und möglichst nicht am Tag davor, jeden Tag normale und
+    besondere (`kind`), wechselnde Gruppen; funktioniert auch mit mehr Challenges.
+  - **Bezirk des Tages:** 18 Gruppen (große Bezirke allein, kleine paarweise: 2+20, 4+5, 6+7, 8+9, 15+16), Start und
+    Ziel in den Bezirken, alle Bim- und Bushaltestellen mit 2+ Linien, 1–6 km; am Tag des 1. Bezirks keine Ring-Runde.
+  - Jede Challenge legt **alle Einstellungen selbst** fest (`CHALLENGE_BASE` + eigene Haltestellen-Arten, Entfernung,
+    Umstiege) – was in der Lobby eingestellt war, spielt keine Rolle.
+  - „Spielen“ setzt die Einstellungen der Challenge („Wo liegt das?“ aus), klappt „Erweitert“ zu
+    und graut alles aus (am Server gesperrt) – **nur die Rundenzahl bleibt wählbar**, mit eigenen Optionen je
+    Challenge (Standard ≈ 5 Minuten: leicht 2, schwer 1, Sprints 3–4). Eigener Start-Knopf, beim Start sieht jeder ein
+    Fenster mit Icon, Name und Beschreibung. „✕ Beenden“ → wieder alles Standard.
+  - Katalog: ⚡ Blitzrunde · ⏱️ Sekundenkrimi · 🏆 Profi-Sprint · 🚫 Ohne U-Bahn · 🚋 Bim-Tour · 🕵️ Insider (keine U-Bahn,
+    keine bekannte S-Bahn) · 1️⃣ Direkt-Profi · 🔀 Umsteige-Profi (mind. 2× umsteigen) · ⛔ Hindernislauf · 🚐 Busreise (nur
+    Busse, kurz) · 🚶 Fußbus (genau eine Linie, Rest zu Fuß) · ☀️ Sonnenschein (nichts Unterirdisches) · 🍩 Innenstadt
+    umfahren (keine Station in 1, 4–9; Bezirke rot auf der Karte) · 🚆 S-Bahn-Fan · 🚌 Busfahrer (Strecken, auf denen der Bus
+    die besten Verbindungen stellt) · ☝️ Eine U reicht · 🎨 Bunt gemischt (≥ 3 Verkehrsmittel) · 🔁 Nie zweimal dasselbe ·
+    🦘 Bim-Hüpfer (erste und letzte Fahrt Bim) · 📌 Pflicht-Linie · 🎲 Eine von drei (drei lästige Linien; die beste
+    erlaubte Verbindung nimmt genau eine) · 🧩 Fleckerlteppich (zufällige Bezirke gesperrt, mind. einer liegt auf der
+    besten Verbindung) · 🎯 Drei Ziele (zu einem davon) · 📍 Drei Punkte (alle befahren) · 🏊 Ab ins Wasser · 🩱 Ab ins Bad
+    (nur Bäder) · 🚆 Aus dem Umland (Start im Ort in Niederösterreich, den richtigen Zug selbst finden – manche Orte haben
+    zwei, z.B. Absdorf-Hippersdorf: S4 oder S40; Fahrzeit bis zur Stadtgrenze ca., `UMLAND` in `server/challengeRound.ts`)
+    · 🎡 Ring-Runde (Innere Stadt nur mit Bim und Bus) · 🏠 Tür zu Tür · 🌄 Stadtrand-Tour (12–25 km) · 🚧 Aktuelles Netz ·
+    🍻 Dickmacks Donnerstag (01:30 unter der Woche, Schwedenplatz → Adresse, nur Nightline) · 🌙 Nachtschicht ·
+    🧺 Sonntagsausflug · 🛴 E-Scooter (Wege mit 20 km/h, 30 s Treppen an U-/S-Bahn; auch „nur Scooter“ als Antwort) ·
+    🚁 Hubschrauber (drei Linien H1–H3 mit fester Flugzeit, einer bringt Zeit) · 🌉 Brückenkenner (mehr Brücken als die
+    schnellste Verbindung) · 🔮 Zielnetz 2040.
+  - **Abgeben** geht erst, wenn die Regel der ganzen Route erfüllt ist (mind. 3 Verkehrsmittel, 2 Umstiege,
+    Pflicht-Linie, alle Punkte …) – nur bei Zeitablauf geht die Route trotzdem raus (zählt dann nicht).
+  - **Verteilung:** Start und Ziel nach Fläche (jedes ~1,2-km-Feld mit Haltestellen gleich oft, nicht jede Station),
+    selten gezogene zuerst, die letzten 300 gespielten Strecken werden gemieden. `npm run check:spread` spielt jede
+    Challenge 10× und zeigt Anteile je Gegend und Wiederholungen.
+  - Zeitlimit: Challenges mit fester Regel bekommen keine Extrazeit (meist 4 Minuten, lange Strecken 5) – nur der
+    Hindernislauf mit wechselnden Hürden. Rundenzahl immer bis 5 wählbar.
+  - **Suche je Regel:** Gesperrtes (Bezirke, unterirdische Abschnitte, Insider-Linien) meidet schon der eigene Fahrplan
+    (`avoidStops`/`avoidLines`/`avoidLineStops` in `server/timetable.ts`); dazu Suchen mit weniger Verkehrsmitteln
+    (`searchVariants`) – sonst fehlt z.B. Speising → Heiligenstadt mit S80 › S45 bei „mind. eine S-Bahn“.
+  - **Sofort korrigiert:** Der Baukasten bietet nur an, was die Regel erlaubt – gesperrte Linien mit Begründung beim
+    Eintippen („🦘 Die erste Fahrt muss mit der Bim sein – U3 ist U-Bahn“), gesperrte Ein-/Ausstiege grau mit Grund
+    („☁️ unter der Erde“, „🚫 innerer Bezirk“), das Ziel erst, wenn die Route die Regel erfüllt („noch nicht: Es fehlt
+    noch ein Bus“). Server und Baukasten nutzen dieselben Regeln und Meldungen.
+  - Auswahl der Strecken je Challenge (z.B. Busfahrer: Bus in allen besten Verbindungen; Bunt gemischt: gemischte
+    Verbindung fast so schnell wie die beste; Pflicht-Linie: liegt nicht auf der schnellsten Verbindung; Drei Ziele:
+    das nächstgelegene ist nicht das schnellste). Die Auflösung zeigt nur Verbindungen, die die Regeln einhalten.
+  - Unterirdische Abschnitte (grob): U3 fast ganz, U1/U2/U4 im Zentrum, U6 bei Längenfeldgasse/Niederhofstraße und
+    Jägerstraße/Dresdner Straße, S-Bahn-Stammstrecke (Mitte–Rennweg–Quartier Belvedere), 18er am Hauptbahnhof und im
+    Südgürtel-Tunnel (`UNDERGROUND` in `shared/challengeRules.ts`).
+  - **Brückenkenner:** echte Brücken aus OpenStreetMap über Donau/Neue Donau, Donaukanal, Wienfluss und Alte Donau
+    (`npm run build:bridges` → `data/bridges.json`, ODbL), je Verkehrsmittel zugeordnet: die U-Bahn zählt nur über eine
+    U-Bahn-Brücke (die U1 unter dem Donaukanal nicht), parallel zum Fluss zählt nicht, die Reichsbrücke über Donau und
+    Neue Donau ist eine. Auf der Karte: Abschnitte in der Farbe des Verkehrsmittels, Linien im Tooltip.
+  - **Zielnetz 2040:** eigener Netzplan (`server/ziel2040.ts`, beim Start angelegt, auf der Admin-Seite unter
+    „Netzpläne“ änderbar und in der Lobby unter „Netz“ wählbar) – U5 (Hernals – Karlsplatz), U2 über Neubaugasse und
+    Pilgramgasse zum Wienerberg, S45 bis Praterkai (Ring mit der S80), S45 alle 5 / S80 alle 10 /
+    Stammstrecke je Linie alle 15 Minuten, S70 Simmering – Stadlau (Gleise der S80) – Breitenleer Straße – Hermann-Gebauer-Straße – Süßenbrunn, Bim 15
+    (Wienerberg-Tangente) und 29 neu, 12/18/25/27 verlängert. Nicht genau, sondern spielbar. Die Challenge nimmt nur
+    Strecken, deren beste Verbindung wegen des neuen Netzes anders oder ≥ 2 min schneller ist (`npm run check:future`:
+    30 von 30); „Zielnetz einblenden“ zeigt die Linien, die Auflösung den Vergleich mit heute.
+  - **Ab ins Wasser:** Gewässer und Bäder aus OpenStreetMap (`npm run build:water` → `data/water.json`, ODbL); Start
+    ≥ 1,2 km vom Wasser und mit den Öffis klar schneller als zu Fuß; gewertet bis ans Wasser inkl. Fußweg.
+  - **Medaillen:** 🎪 Challenge-Sammler (verschiedene gespielt) und 🏅 Challenge-Meister (geschafft – meist eine Runde
+    mit vollen Routenpunkten, bei schweren ab 900), je Bronze/Silber/Gold.
+  - **Prüfen:** `npm run check:challenges` prüft mit dem echten Fahrplan, ob jede Challenge Strecken findet.
+- **Chat**: Schnell-Reaktionen 👏 😂 😮 🔥 🚋 GG und 🎲 (= `/ez`).
+- **Tastatur**: Linie tippen, ← → (↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt sie – der Fokus steht
+  beim Ausstieg (hält die Linie woanders: beim Einstieg, mit Fußweg-Hinweis). Enter öffnet die Liste, ↑ ↓ wählt den
+  Halt, Enter übernimmt; bei zugeklappter Liste wechseln ↑ ↓ zwischen Ein- und Ausstieg. Entf verwirft die angefangene
+  Linie, Escape = Liste zu bzw. andere Linie, **Strg + Enter** gibt die Route ab (überall auf der Seite; am Ziel steht
+  der Fokus auf „Route abgeben“) – Routen ganz ohne Maus.
+- **Dunkelmodus**: startet immer hell; Knopf oben (☀️ hell · 🌙 dunkel · 🌗 wie das System), Karte mit dunklen Kacheln. Die dunklen Farben
+  erzeugt `npm run build:dark` aus `style.css` (`client/src/dark.css`, nach CSS-Änderungen neu ausführen).
+- Bestätigungen (Spiel beenden, Spieler entfernen …) als eigener Dialog statt Browser-Popup; das Tutorial ist über
+  „Tutorial wiederholen“ unten auf der Startseite jederzeit erreichbar; Datum im Spiel nur „Dienstag, 12:00“.
 
 ## Accounts
 
@@ -100,10 +216,15 @@ Oben rechts **👤 Anmelden** – ohne Account geht alles wie bisher. Mit Accoun
 - **Spielstand auf allen Geräten**: Lernpfad, gemerkte Linien, Lernstand, Tutorial, Trainings-Wiederholungen und
   Einstellungen. Beim Anmelden auf einem Gerät wird der Browser-Stand mit dem Account zusammengeführt (Fortschritt
   geht nie verloren), danach gilt der Account (`client/src/account.ts`, `client/src/boot.ts`).
-- **Level & XP**: Runde 5 + Punkte/20, Routenjagd 20 (+30 Sieg), Quiz 10 + Punkte/50 (+20 Sieg), Trainingsstrecke
-  10–20, Kurs 40 (+60 gemeistert), Tutorial 50. Level 2 bei 100 XP, jedes weitere Level 50 XP mehr.
-- **Medaillen** (14): z.B. Volltreffer (1000 Routenpunkte), Schneller als die Bestzeit, Volle 1300, Sieger, Quiz-Ass,
-  Netzkenner/Netzmeister (Lernpfad), Gesellig (3 Freunde) – neue werden gemeldet.
+- **Level & XP** (auch ohne Account, siehe „Mein Wien“): Runde 5 + Punkte/20, Routenjagd 20 (+30 Sieg), Quiz 10 +
+  Punkte/50 (+20 Sieg), Trainingsstrecke 10–20, Strecke des Tages 3 × (15 + Punkte/20), Tages-Challenge: das erste Spiel einer Challenge am Tag ×2, Kurs 40 (+60 gemeistert), Tutorial 50.
+  Level 2 bei 100 XP, jedes weitere Level 50 XP mehr (`shared/career.ts`). Als Gast gesammelte XP zählen nach dem
+  Anmelden mit.
+- **Medaillen** (17, davon 2 geheim) in Stufen Bronze/Silber/Gold, z.B. Stammgast (1/10/50 Routenjagden), Volltreffer,
+  Schlauer als die Auskunft, Sieger, Quiz-Ass, Trainingsfleißig, Netzkenner (Kurse geschafft + gemeistert), Dranbleiber
+  (Serie 3/7/30 Tage), Strecke des Tages, Entdecker (Stationen), Bim-Fan (Gold = alle Bim-Linien), Nachteule,
+  Gesellig, Aufsteiger; geheim: Blindflug, Geisterstunde. Profil zeigt Fortschritt zur nächsten Stufe; neue Stufen
+  werden gemeldet – auch ohne Account.
 - **Statistik & Lieblinge**: Spiele, Siege, Ø Routenpunkte, Zeit in Öffis, Kurse; Lieblingslinie je U-Bahn/S-Bahn/
   Bim/Bus und Lieblingsstation. Gezählt wird die *bewusste Wahl*: Gab es an der Einstiegsstation keine andere Linie
   (92B ab Frachtenbahnhof Lobau), zählt die Fahrt nur 0,15 – mit Alternativen (95A statt 93A am Großen Biberhaufen)
@@ -182,6 +303,13 @@ CJX – sie zählen auf S-Bahn-Abschnitten wie eine S-Bahn, z.B. S80/R81/REX8 zw
 dort die Wartezeit), keine Abfragen (Spielstart in Sekundenbruchteilen) und kein Referenztag, der aus der Auskunft
 verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der Server weiter die Auskunft.
 
+**Jede Linie nur auf ihrer Route** (`mainPatterns` in `server/timetable.ts`, `keepMainRoutes` in `server/network.ts`):
+die Route ist die Haltefolge mit den meisten Werktagsfahrten – verlängert auf eine längere, die sie ganz enthält und
+regelmäßig fährt (≥ 20 % der Fahrten; S7 bis Leopoldau) – und ihr Gegenstück in der Gegenrichtung. Erlaubt sind nur
+Fahrten auf einem durchgehenden Stück davon (U1 nur bis Alaudagasse); Werks- und Sonderfahrten fallen aus Fahrplan und
+Netz (18er nicht mehr Stadion → Winckelmannstraße, 92B werktags nur ab Donaustadtbrücke). Was ein Netzplan ausdrücklich
+als Zusatzfahrt anlegt, bleibt.
+
 - Daten: data.mobilitaetsverbuende.at (Registrierung nötig) – „Timetable Data PTA Eastern Region (GTFS)“ nach
   `data/raw/timetables/`, „Railway Timetable Data (GTFS) – Reference Data for Timetable Changeover“ nach
   `data/raw/timetables-trains/` entpacken (beides nicht im Repo), dann `npm run build:timetable`. Das baut den Auszug
@@ -214,7 +342,9 @@ verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der S
    - **Uhrzeit** (unter „Erweitert“): Mo–Fr 12 Uhr, Mo–Fr 17 Uhr, Sa 2 Uhr (Nacht), So 12 Uhr
    - **Netz**: *Regulär* = Referenztag ohne Baustellen, aus dem **eigenen Referenzfahrplan** (siehe unten) – mit
      Regionalzügen (R, REX, CJX), ganz ohne Abfrage bei der Auskunft · *Aktuell* = nächster echter Tag inkl. Sperren
-     (Wiener-Linien-Auskunft).
+     (Wiener-Linien-Auskunft). Bei *Regulär*: **Nur fahrende Linien** – beim Eintippen nur Linien vorschlagen, die in
+     der Stunde ab der gewählten Uhrzeit unterwegs sind (`runningLines` in `server/timetable.ts`; Nachtschicht und
+     Dickmacks Donnerstag haben es immer an).
      Referenztage derzeit **Di 30.6., Sa 27.6., So 28.6.2026** (`PREFERRED_DAYS` in `scripts/build-network.ts`):
      nur Ende Juni fährt die S-Bahn-Stammstrecke (ab ca. 8.7. bis mindestens Dezember gesperrt) und Bim/Bus sind
      fast im Normalbetrieb. Ohne passende Wunschtage sucht das Build-Skript selbst (Tag ohne Ersatzverkehr, mit
@@ -252,7 +382,10 @@ verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der S
      an der Start-Station abfährt; muss man erst zu einer anderen Haltestelle gehen, zählt die volle Ø-Wartezeit. Die Routendetails zeigen die Wartezeit je Umstieg.
    - **🏆 Challenges** (früher Einschränkungs-Runden) – Nie / Manchmal (ca. 30 %, mindestens eine pro Spiel) / Immer: ohne U-Bahn,
      ohne Bus, max. 1 Umstieg oder **Linie gesperrt** (eine Linie der schnellsten Verbindung, z.B. „Ohne Linie U6“).
-     Diese Runden haben doppelte Zeit, höchstens +2:30 – „Ohne U-Bahn“ bekommt fix +4:00.
+     Diese Runden haben doppelte Zeit, höchstens +2:30 – „Ohne U-Bahn“ bekommt fix +4:00. Zu Beginn jeder solchen Runde
+     zeigt ein Fenster die Einschränkung.
+   - **🏳️ Aufgeben:** jede Person kann eine Runde aufgeben (0 Punkte) – im Mehrspieler spielen die anderen weiter.
+   - **Logo** oben links → Startseite (in einer Lobby oder im Spiel mit Rückfrage).
    - **💡 Tipps** – Keine / Günstig / Teuer (günstig 5 Prozentpunkte billiger, teuer 20 teurer; bei X-treme immer teuer):
      Linien am Start / am Ziel, Verkehrsmittel-Kette, Umstiegsorte. Bei X-treme „ohne Namen“ zeigen die Tipps keine
      Stationsnamen, beim Umstiegs-Tipp nur „U6 ⇄ S1“; „ohne Karte“ zeichnet nichts ein. Keine Fußweg-Entfernungen.
@@ -400,7 +533,7 @@ zurücksetzen“ alles auf diese Werte zurück, im Training „↺ Einstellungen
 
 | Teil | Punkte | Regel |
 |---|---|---|
-| Route | 0–1000 (+300) | Toleranz max(1 min, 4 %), danach fallend, 0 bei +70 % Reisezeit (z.B. 40 → 60 min ≈ 200). Besser als die beste gefundene Route: je 1 % besser +2 %, max. 1300 (z.B. 27 statt 30 min = 1200) |
+| Route | 50–1000 (+300) | 1000 nur für die beste Zeit; in der Toleranz max(1 min, 4 %) sanft bis 980 (44 statt 43 min = 988), danach fallend; ab +70 % Reisezeit 50 fürs Ankommen (z.B. 40 → 60 min ≈ 195). Besser als die beste gefundene Route: je 1 % besser +2 %, max. 1300 (z.B. 27 statt 30 min = 1200) |
 | Tipps | günstig −40 / −40 / −40 / −50 % · teuer −65 / −65 / −65 / −75 % | Anteil der Routenpunkte, mehrere Tipps multiplikativ, mind. 10 % bleiben. |
 | Zeitbonus | bis +10 % | der Routenpunkte (nach Tipps), linear mit Restzeit; ohne Limit gemessen an 1:30 |
 | Wo liegt das? | bis +150 | 75 je Station: voll bis 250 m, 0 ab 3 km |

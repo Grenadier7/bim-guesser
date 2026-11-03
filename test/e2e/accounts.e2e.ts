@@ -292,7 +292,7 @@ test('Routenjagd angemeldet: Runde und Spiel zählen, Medaille wird gemeldet, St
   await p.locator('.final').waitFor();
   // nachfragen (sonst alle 20 s) → neue Medaille wird gemeldet
   await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-  await p.locator('.toast', { hasText: 'Neue Medaille: Erstes Spiel' }).waitFor({ timeout: 15_000 });
+  await p.locator('.toast', { hasText: /Neue Medaille: .*Stammgast \(Bronze\)/ }).waitFor({ timeout: 15_000 });
   await p.locator('#acct-btn').click();
   await p.locator('.stat', { hasText: 'Routenjagden' }).filter({ hasText: '1' }).waitFor();
   await p.locator('.recent li', { hasText: 'Routenjagd' }).waitFor();
@@ -343,8 +343,8 @@ test('drei Accounts: Anfrage und Einladung kommen ohne Neuladen, Wechsel aus der
   // B: Banner ohne Neuladen, Beitreten verlässt die eigene Lobby (mit Nachfrage)
   await b.page.clock.runFor(21_000);
   await b.page.locator('.invite-banner', { hasText: na }).waitFor();
-  b.page.once('dialog', (d) => void d.accept());
   await b.page.locator('[data-join-invite]').click();
+  await b.page.locator('.ask-dlg [data-v="1"]').click();
   await b.page.waitForFunction((cd) => JSON.parse(sessionStorage.getItem('oeffi-guesser-session') ?? '{}').code === cd, code);
   await b.page.locator('.lobby .players li', { hasText: na }).waitFor();
   const old = await (await fetch(`${app.base}/api/games/${bOld}/join`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"playerName":"x"}' })).json();

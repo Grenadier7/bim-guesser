@@ -4,10 +4,16 @@ import { RESTRICTIONS, TIPS, XTREME_LEVELS, baseLimitSec, restrictionAllowsLine,
 import { api } from '../api.ts';
 import { RouteBuilder } from '../builder.ts';
 import { distM, fmtDist } from '../net.ts';
-import { netLayer } from '../netmap.ts';
+import { netLayer, netView, smoothPath } from '../netmap.ts';
 import { app, routeState, currentRound, isHost, serverNow, setMapBig } from '../store.ts';
-import { esc, h, lineChip, modeChip, toast } from '../ui.ts';
+import { ask, esc, h, lineChip, modeChip, toast } from '../ui.ts';
 import { hostBar } from './host.ts';
+import { UNDERGROUND, blockedDistricts, ruleSummary, type RuleRound } from '../../../shared/challengeRules.ts';
+import { MODE_ICON, isNightSlot } from '../../../shared/rules.ts';
+import type { Mode } from '../../../shared/types.ts';
+import { nearestWater } from '../../../shared/water.ts';
+import { bridgesNow, loadBridges, loadWater, waterNow } from '../challenges.ts';
+import { FUTURE_LINES } from '../../../shared/challenges.ts';
 import type { Screen } from './screen.ts';
 
 type View = 'locate' | 'route' | 'waiting';
@@ -38,11 +44,39 @@ export function roundScreen(panel: HTMLElement): Screen {
   let submittedAt: number | null = null;
   // Der Builder ruft onChange schon im Konstruktor auf – daher erst deklarieren, dann zuweisen
   let builder: RouteBuilder | undefined;
+  let alive = true;
+  /** Zielnetz 2040: neue/geänderte Linien auf der Karte */
+  let futureShown = false;
+  // Tages-Challenges: Regeln, Ziele/Punkte, Wasser
+  const rules: RuleRound | undefined = round.restriction
+    ? {
+        restriction: round.restriction,
+        banned: round.bannedLines,
+        required: round.required,
+        entryLines: round.umland ? [...new Set(round.umland.options.flatMap((o) => o.lines))] : undefined,
+        entryTown: round.umland?.town,
+        districts: round.districts,
+        bridges: round.bridges,
+      }
+    : undefined;
+  if (round.bridges && !bridgesNow()) void loadBridges().then(() => alive && render());
+  // Hubschrauber: H1–H3 als Linien dieser Runde (A ↔ B)
+  app.net.setRoundLines((round.helis ?? []).map((x) => ({ id: x.id, mode: 'H' as const, color: '#c2185b', patterns: [[x.a.id, x.b.id], [x.b.id, x.a.id]], nets: ['cr', 'cr'] })));
+  const targets = round.targets?.map((t) => app.net.ensure(t));
+  const waypoints = round.waypoints?.map((t) => app.net.ensure(t));
+  if (round.water && !waterNow()) void loadWater().then(() => alive && render());
   builder = new RouteBuilder(app.net, from, to, round.restriction, () => drawDraft(), () => submit(false), round.bannedLines, {
     typed: xtreme,
     hideStart: !showNames,
     // ohne Namen / ohne Karte: keine Entfernungen verraten
     hideDistances: !showNames || !showMap,
+    rules,
+    targets,
+    waypoints,
+    water: round.water ? (p) => (waterNow() ? nearestWater(waterNow()!, p, round.water) : { name: 'Wasser', dist: 0, lat: p.lat, lon: p.lon }) : undefined,
+    umland: round.umland,
+    idle: round.idle,
+    scooter: s.settings.scooter,
   });
   const b = builder;
 
@@ -69,15 +103,57 @@ export function roundScreen(panel: HTMLElement): Screen {
         : ''
     }
     <div class="when">🕒 ${esc(round.when ?? '')}${s.settings.network === 'current' ? ' · aktuelles Netz' : ''}${s.settings.countWait ? ` · ${esc(scoringUnit(s.settings))}` : ''}</div>
+    ${challengeHead()}
     ${
-      round.restriction
+      round.restriction && !s.settings.challenge
         ? `<div class="restriction">${RESTRICTIONS[round.restriction].icon} <b>${esc(restrictionLabel(round.restriction, round.bannedLines))}</b> – ${
             round.restriction === 'banLines' ? 'finde eine andere Verbindung.' : RESTRICTIONS[round.restriction].hint
           }${round.limitSec && baseLimitSec(s.settings) && round.limitSec > baseLimitSec(s.settings)! ? ` <small>⏱ +${fmtDuration(round.limitSec - baseLimitSec(s.settings)!)} Extrazeit</small>` : ''}</div>`
         : ''
     }
-    <div class="od"><div class="od-row"><span class="pin-dot a">A</span><b>${showNames ? esc(from.name) : 'Start <small>(nur auf der Karte)</small>'}</b></div>
-    <div class="od-row"><span class="pin-dot b">B</span><b>${showNames ? esc(to.name) : 'Ziel <small>(nur auf der Karte)</small>'}</b></div></div>`;
+    <div class="od"><div class="od-row"><span class="pin-dot a">A</span><b>${showNames ? esc(from.name) : 'Start <small>(nur auf der Karte)</small>'}</b>${round.umland ? ' <small>(Niederösterreich)</small>' : ''}</div>
+    ${goalRows()}</div>`;
+  // Zielnetz 2040: neue/geänderte Linien auf der Karte ein-/ausblenden
+  head.querySelector<HTMLButtonElement>('#future-map')?.addEventListener('click', (e) => {
+    futureShown = !futureShown;
+    (e.currentTarget as HTMLButtonElement).textContent = futureShown ? 'Zielnetz ausblenden' : '🗺️ Zielnetz einblenden';
+    render();
+  });
+
+  /** Ziel-Zeilen: B, „eines von 3 Zielen“, „alle 3 Punkte“ oder „nächstes Wasser“ */
+  function goalRows(): string {
+    if (targets) return `<div class="od-row"><span class="pin-dot b">🎯</span><span>Eines dieser Ziele: ${targets.map((t, i) => `<b>${i + 1}. ${esc(t.name)}</b>`).join(' · ')}</span></div>`;
+    if (waypoints) return `<div class="od-row"><span class="pin-dot b">📍</span><span>Alle befahren, Reihenfolge egal: ${waypoints.map((t, i) => `<b>${i + 1}. ${esc(t.name)}</b>`).join(' · ')}</span></div>`;
+    if (round.water === 'bath') return '<div class="od-row"><span class="pin-dot b">🩱</span><span><b>Zum nächsten Bad</b> – Strandbad, Freibad oder Hallenbad (blau auf der Karte). Gewertet wird bis dorthin, auch der Fußweg.</span></div>';
+    if (round.water) return '<div class="od-row"><span class="pin-dot b">🏊</span><span><b>Zum nächsten Wasser</b> – Donau, Donaukanal, Wienfluss, Alte Donau, Liesing oder ein Bad (blau auf der Karte). Gewertet wird bis dorthin, auch der Fußweg.</span></div>';
+    return `<div class="od-row"><span class="pin-dot b">B</span><b>${showNames ? esc(to.name) : 'Ziel <small>(nur auf der Karte)</small>'}</b></div>`;
+  }
+
+  /** Regel der Challenge (verständlich, mit Pflicht-Linien als Chips) */
+  function challengeHead(): string {
+    if (s.settings.task === 'future')
+      return `<div class="challenge-rule">🔮 Zielnetz 2040 – neue und geänderte Linien: ${FUTURE_LINES.filter((id) => app.net.lines.has(id))
+        .map((id) => {
+          const l = app.net.lines.get(id)!;
+          return lineChip(l.mode, l.id, l.color);
+        })
+        .join('')} <button class="link" id="future-map">${futureShown ? 'Zielnetz ausblenden' : '🗺️ Zielnetz einblenden'}</button></div>`;
+    if (round.helis?.length)
+      return `<div class="challenge-rule">🚁 Hubschrauber – wie eine Linie eintippen (Flug inkl. Einsteigen, danach weiter mit den Öffis): ${round.helis
+        .map((x) => `${lineChip('H', x.id, '#c2185b')} ${esc(x.a.name)} ↔ ${esc(x.b.name)} · ${x.min} min`)
+        .join(' · ')}</div>`;
+    if (!rules || !s.settings.challenge) return '';
+    const text = ruleSummary(rules);
+    if (!text) return '';
+    const chips = rules.required?.length
+      ? ` <span class="chips">${rules.required.map((id) => {
+          const l = app.net.lines.get(id);
+          return l ? lineChip(l.mode, l.id, l.color) : esc(id);
+        }).join('')}</span>`
+      : '';
+    const extra = round.limitSec && baseLimitSec(s.settings) && round.limitSec > baseLimitSec(s.settings)! ? ` <small>⏱ +${fmtDuration(round.limitSec - baseLimitSec(s.settings)!)} Extrazeit</small>` : '';
+    return `<div class="challenge-rule">${esc(text)}${chips}${extra}</div>`;
+  }
 
   // nach Neuladen: bereits genutzte Tipps holen
   if (s.settings.tips !== 'off')
@@ -97,7 +173,9 @@ export function roundScreen(panel: HTMLElement): Screen {
     // Handy: zum Orten die Karte groß machen, danach wieder normal
     setMapBig(view === 'locate');
     if (view === 'locate') return renderLocate();
-    if (showMap) app.map.showEndpoints(round.from!, round.to!, true, showNames);
+    if (s.settings.task === 'future' && showMap) showFuture();
+    if (showMap && (targets || waypoints || round.water || round.umland || round.helis || round.bridges || s.settings.task === 'future' || (rules && blockedDistricts(rules).length) || round.restriction === 'sunny')) showChallengeMap(true);
+    else if (showMap) app.map.showEndpoints(round.from!, round.to!, true, showNames);
     else app.map.clear();
     const transferTip = tips.find((t) => t.kind === 'transfers');
     // ohne Karte: auch keine Umstiegs-Punkte · ohne Namen: Punkte ohne Beschriftung
@@ -186,6 +264,10 @@ export function roundScreen(panel: HTMLElement): Screen {
     body.querySelector('[data-act=flash]')?.addEventListener('click', flashGuesses);
     if (s.settings.tips !== 'off') body.append(renderTips());
     body.append(b.el);
+    // aufgeben: für diese Runde keine Route (die anderen spielen weiter)
+    const give = h('button', { class: 'link give-up' }, '🏳️ Aufgeben');
+    give.addEventListener('click', () => void giveUp());
+    body.append(give);
     drawDraft();
   }
 
@@ -283,14 +365,117 @@ export function roundScreen(panel: HTMLElement): Screen {
   function drawDraft() {
     // X-treme: die eigene Route wird erst bei der Auflösung gezeigt
     if (builder && view !== 'locate' && !xtreme) app.map.showDraft(builder.segments(), builder.transferPoints());
+    // „3 Punkte“: befahrene Punkte abhaken
+    if (builder && waypoints && view !== 'locate') showChallengeMap(false);
+  }
+
+  function showChallengeMap(fit: boolean) {
+    const missing = new Set((builder?.missingWaypoints() ?? waypoints ?? []).map((w) => w.id));
+    app.map.showChallenge({
+      from: round.from!,
+      to: targets || waypoints || round.water ? null : round.to,
+      targets: round.targets,
+      waypoints: round.waypoints?.map((w) => ({ s: w, done: !missing.has(w.id) })),
+      // „Ab ins Bad“: nur die Bäder
+      water: round.water && waterNow() ? (round.water === 'bath' ? { waters: [], baths: waterNow()!.baths } : waterNow()) : null,
+      inner: rules && blockedDistricts(rules).length ? app.net.data.districts.filter((d) => blockedDistricts(rules).includes(d.id)) : undefined,
+      underground: round.restriction === 'sunny' ? undergroundPaths() : undefined,
+      // Umland: Wien umrahmt – man startet draußen
+      outline: round.umland ? app.net.data.districts : undefined,
+      helis: round.helis,
+      bridges: round.bridges ? bridgeViews() : undefined,
+      fit,
+    });
+  }
+
+  /** Zielnetz 2040: das Netz wie in den Lernkarten – neue/geänderte Linien hervorgehoben (mit Nummern), neue Stationen markiert */
+  function showFuture() {
+    if (!futureShown) return void netLayer().clear();
+    netLayer().render(netView({ focus: new Set(FUTURE_LINES.filter((id) => app.net.lines.has(id))), marks: app.net.data.stations.filter((x) => x.id.startsWith('z40-')), allLabels: true }));
+  }
+
+  /** Brückenkenner: je Brücke die Abschnitte (Farbe/Icon des Verkehrsmittels) und welche Linien darüber fahren */
+  function bridgeViews() {
+    return (bridgesNow()?.bridges ?? []).map((b) => {
+      const byMode = new Map<Mode, Set<string>>();
+      const segs = b.segs.flatMap(([x, y, modes]) => {
+        const a = app.net.station(x);
+        const c = app.net.station(y);
+        if (!a || !c) return [];
+        // tagsüber keine Nachtbusse
+        const here = new Map<Mode, { line: string; from: string; to: string }>();
+        for (const l of app.net.lines.values()) {
+          if (!modes.includes(l.mode) || (l.mode === 'N' && !isNightSlot(s.settings.slot))) continue;
+          for (const p of app.net.patterns(l))
+            p.forEach((id, i) => {
+              if ((id === x && p[i + 1] === y) || (id === y && p[i + 1] === x)) {
+                byMode.set(l.mode, (byMode.get(l.mode) ?? new Set()).add(l.id));
+                if (!here.has(l.mode)) here.set(l.mode, { line: l.id, from: id, to: p[i + 1] });
+              }
+            });
+        }
+        // Verlauf wie auf der Karte sonst (geglättet entlang der Linie)
+        return [...here].map(([m, h]) => ({ mode: m, path: smoothPath(h.line, h.from, h.to, [[a.lat, a.lon], [c.lat, c.lon]]) as [number, number][] }));
+      });
+      const lines = [...byMode].map(([m, ids]) => `${MODE_ICON[m]} ${[...ids].sort((p, q) => p.localeCompare(q, 'de', { numeric: true })).join(', ')}`);
+      return { name: b.name, river: b.river, lat: b.lat, lon: b.lon, modes: [...byMode.keys()], lines, segs };
+    }).filter((b) => b.modes.length);
+  }
+
+  /** Sonnenschein: wo die Linien (grob) unter der Erde fahren – Abschnitte, die eine unterirdische Station berühren */
+  function undergroundPaths(): { line: string; path: [number, number][] }[] {
+    const out: { line: string; path: [number, number][] }[] = [];
+    for (const [id, names] of Object.entries(UNDERGROUND)) {
+      const l = app.net.lines.get(id);
+      if (!l) continue;
+      const seen = new Set<string>();
+      for (const p of app.net.patterns(l))
+        for (let i = 0; i + 1 < p.length; i++) {
+          const a = app.net.station(p[i]);
+          const b = app.net.station(p[i + 1]);
+          if (id !== 'U3' && !names.includes(a.name) && !names.includes(b.name)) continue;
+          const k = [a.id, b.id].sort().join();
+          if (seen.has(k)) continue;
+          seen.add(k);
+          out.push({ line: id, path: [[a.lat, a.lon], [b.lat, b.lon]] });
+        }
+    }
+    return out;
   }
 
   // -------------------------------------------------------------- Abgabe
 
+  /** für diese Runde aufgeben: keine Route, 0 Punkte – im Mehrspieler spielen die anderen weiter */
+  async function giveUp() {
+    if (submitting || view === 'waiting') return;
+    if (!(await ask(multi ? 'Für diese Runde aufgeben? Du bekommst 0 Punkte, die anderen spielen weiter.' : 'Diese Runde aufgeben? Du bekommst 0 Punkte und siehst gleich die Lösung.', { title: 'Aufgeben', ok: 'Aufgeben', cancel: 'Weiter suchen', danger: true })))
+      return;
+    submitting = true;
+    app.map.stopLocate();
+    b.lock();
+    submittedAt = serverNow();
+    view = 'waiting';
+    render();
+    try {
+      await api.submit(auth, idx, [], null, true);
+    } catch (e) {
+      toast((e as Error).message);
+      if (currentRound()?.submitted.includes(playerId)) return;
+      submitting = false;
+      submittedAt = null;
+      b.unlock();
+      view = 'route';
+      render();
+    }
+  }
+
   async function submit(auto: boolean) {
     if (submitting || view === 'waiting') return;
     const legs = b.userLegs();
-    if (!legs.length && !auto) return toast('Gib mindestens eine Linie an.');
+    if (!legs.length && !auto && !s.settings.scooter) return toast('Gib mindestens eine Linie an.');
+    // Challenge-Regel nicht erfüllt → nicht abgeben (bei Zeitablauf geht es trotzdem raus, zählt dann nicht)
+    const why = b.submitProblem();
+    if (why && !auto) return toast(why, 'info');
     submitting = true;
     app.map.stopLocate();
     b.lock();
@@ -337,6 +522,7 @@ export function roundScreen(panel: HTMLElement): Screen {
       }
     },
     destroy() {
+      alive = false;
       clearTimeout(flashTimer);
       app.map.stopLocate();
       setMapBig(false);

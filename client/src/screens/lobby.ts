@@ -37,11 +37,12 @@ import {
 import { api } from '../api.ts';
 import { app, routeState, endSession, inviteLink, isHost, savePrefs, setMobileMap } from '../store.ts';
 import { distM } from '../net.ts';
-import { accountTag, esc, toast } from '../ui.ts';
+import { accountTag, ask, esc, toast } from '../ui.ts';
 import { inviteButton } from '../accountui.ts';
 import { deferWhileEditing, infoTip, patchQueue, seg, toggleInfo } from '../widgets.ts';
 import { bindKick, kickButton } from './host.ts';
 import type { Screen } from './screen.ts';
+import { challengeSettings, districtCenter, findChallenge, todaysChallenges } from '../challenges.ts';
 import { openSettingsDialog } from '../settingsShare.ts';
 
 /**
@@ -101,11 +102,6 @@ function inPool(st: Station, kinds: StationKind[]): boolean {
   return inStationKinds(st, kinds, (id) => app.net.lines.get(id));
 }
 
-/** Mittelpunkt eines Bezirks = Schwerpunkt seiner Haltestellen */
-function districtCenter(id: number): [number, number] {
-  const sts = app.net.data.stations.filter((x) => x.district === id);
-  return [sts.reduce((a, x) => a + x.lat, 0) / sts.length, sts.reduce((a, x) => a + x.lon, 0) / sts.length];
-}
 
 const fmtKm = (m: number) => `${(m / 1000).toLocaleString('de-AT')} km`;
 
@@ -121,10 +117,13 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     try {
       const st = (await api.settings(app.session!, patch)) as GameState;
       // Netz und Fokus-Kreis nicht für die nächste Lobby merken – die starten immer mit dem Standard
-      const keep: Partial<GameSettings> = { ...st.settings };
-      for (const k of NOT_REMEMBERED) delete keep[k];
-      app.prefs.settings = keep;
-      savePrefs();
+      // Einstellungen einer Tages-Challenge nicht als eigene merken
+      if (!st.settings.challenge) {
+        const keep: Partial<GameSettings> = { ...st.settings };
+        for (const k of NOT_REMEMBERED) delete keep[k];
+        app.prefs.settings = keep;
+        savePrefs();
+      }
     } catch (e) {
       toast((e as Error).message);
     }
@@ -136,11 +135,53 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     send({ focus: { ...cur, ...patch } });
   }
 
+  // -------------------------------------------------------------- Tages-Challenges
+
+  let challengeIdx = 0;
+
+  /** niedriges Banner: ‹ eine Challenge › mit „Spielen“ – aktiv: Name und „Beenden“ (dann wieder alles Standard) */
+  function challengeBanner(st: GameSettings, host: boolean): string {
+    const list = todaysChallenges();
+    const active = findChallenge(st.challenge);
+    if (st.challenge)
+      return `<div class="challenge-bar on" role="status"><span class="cb-icon">${active?.icon ?? '🎯'}</span>
+        <span class="cb-text"><b>${esc(active?.title ?? 'Tages-Challenge')}</b><small>Tages-Challenge aktiv · Einstellungen fest</small></span>
+        ${host ? '<button class="btn btn-ghost cb-end" id="cb-end">✕ Beenden</button>' : ''}</div>`;
+    if (!host) return '';
+    const c = list[challengeIdx % list.length];
+    return `<div class="challenge-bar" role="group" aria-label="Tages-Challenges">
+      <button class="cb-nav" data-cb="-1" aria-label="vorige Challenge">‹</button>
+      <span class="cb-icon">${c.icon}</span>
+      <span class="cb-text" title="${esc(`${c.title} – ${c.text}`)}"><b>${esc(c.title)}</b><small>${esc(c.text)}</small></span>
+      <span class="cb-dots" aria-hidden="true">${list.map((_, i) => `<i class="${i === challengeIdx % list.length ? 'on' : ''}"></i>`).join('')}</span>
+      <button class="btn btn-primary cb-go" id="cb-go">Spielen</button>
+      <button class="cb-nav" data-cb="1" aria-label="nächste Challenge">›</button></div>`;
+  }
+
+  function bindChallenge() {
+    panel.querySelectorAll<HTMLButtonElement>('[data-cb]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const n = todaysChallenges().length;
+        challengeIdx = (challengeIdx + Number(b.dataset.cb) + n) % n;
+        render();
+      }),
+    );
+    panel.querySelector('#cb-go')?.addEventListener('click', () => {
+      const c = todaysChallenges()[challengeIdx];
+      // erweiterte Einstellungen zu – die sind jetzt ohnehin fest
+      advancedOpen = false;
+      // von den Standard-Einstellungen aus – so passt nichts aus vorherigen Runden dazwischen
+      send(challengeSettings(c.settings, c.id));
+    });
+    panel.querySelector('#cb-end')?.addEventListener('click', () => send({ ...DEFAULT_SETTINGS, focus: null, challenge: null }));
+  }
+
   function render() {
     const s = routeState();
     const host = isHost();
-    const ro = !host;
     const st = s.settings;
+    // aktive Tages-Challenge: alle Einstellungen fest (ausgegraut)
+    const ro = !host || !!st.challenge;
     const code = s.id;
     const scroll = panel.scrollTop;
     const players = s.players
@@ -180,6 +221,17 @@ export function lobbyScreen(panel: HTMLElement): Screen {
             NET_MODES.map((n) => `<b>${esc(n.label)}:</b> ${n.id === 'regular' ? `${esc(n.hint)} ${regularHint({ ...st, network: 'regular' })}` : esc(n.hint)}`).join('<br>'),
           )}</span>${seg('network', NET_MODES.map((n) => ({ value: n.id, label: esc(n.label), title: n.hint })), st.network, ro)}</div>
           <div class="toggles">
+            ${
+              st.network === 'regular'
+                ? toggleInfo(
+                    'onlyRunning',
+                    'Nur fahrende Linien',
+                    'Beim Eintippen nur Linien vorschlagen, die zur gewählten Uhrzeit wirklich fahren – z.B. nachts keine Tagesbusse.',
+                    st.onlyRunning,
+                    ro,
+                  )
+                : ''
+            }
             ${toggleInfo(
               'focusOn',
               'Fokus-Gebiet',
@@ -267,19 +319,25 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     }
 
     panel.innerHTML = `
-      <div class="lobby">
+      <div class="lobby ${st.challenge ? 'challenge-on' : ''}">
         <div class="lobby-code">
-          <div><small>Lobby-Code</small><div class="code">${code}</div></div>
+          <div><small>🏁 Routenjagd · Lobby-Code</small><div class="code">${code}</div></div>
           <div class="code-actions"><button class="btn btn-ghost btn-icon" id="copy">${icon('link')}<span>Link kopieren</span></button>${inviteButton()}</div>
         </div>
         <h3>Spieler <small>(${s.players.length})</small></h3>
         <ul class="players">${players}</ul>
 
-        <h3>Einstellungen ${ro ? '<small>– nur der Host kann sie ändern</small>' : ''}</h3>
+        <h3 class="settings-head">Einstellungen ${!host ? '<small>– nur der Host kann sie ändern</small>' : ''}</h3>
+        ${challengeBanner(st, host)}
         <div class="setting"><span>Schwierigkeit</span>
           ${seg('difficulty', [...DIFFICULTY_PRESETS.map((d) => ({ value: d.id, label: d.label })), ...(st.difficulty === 'custom' ? [{ value: 'custom', label: 'Eigene' }] : [])], st.difficulty, ro)}
           <small class="hint">${st.endpoints === 'addresses' ? `${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} Adressen` : `${poolCount(st.stations)} Haltestellen`}${st.distance !== 'medium' ? ` · ${DISTANCES.find((d) => d.id === st.distance)!.label}` : ''}${st.minTransfers ? ` · mind. ${st.minTransfers} Umstieg${st.minTransfers > 1 ? 'e' : ''}` : ''} · <b>Punkte ×${mult.toLocaleString('de-AT')}</b> ${st.endpoints === 'addresses' ? '' : infoTip(esc(stationsText(st.stations)))}</small></div>
-        <div class="setting"><span>Runden</span>${seg('rounds', [3, 5, 7, 10].map((n) => ({ value: String(n), label: String(n) })), String(st.rounds), ro)}</div>
+        <div class="setting rounds-setting"><span>Runden</span>${seg(
+          'rounds',
+          (findChallenge(st.challenge)?.roundOptions ?? [3, 5, 7, 10]).map((n) => ({ value: String(n), label: String(n) })),
+          String(st.rounds),
+          !host,
+        )}</div>
 
         <div class="setting"><span>${icon('clock', 15)} Zeitlimit ${infoTip(
           `Pro Runde, inkl. „Wo liegt das?“. Nach Ablauf wird abgegeben, was eingegeben ist. Wer schnell ist, bekommt bis zu +10 % Zeitbonus.<br><b>Ohne:</b> kein Zeitdruck – der Zeitbonus wird an ${fmtDuration(TIME_BONUS_REF_SEC)} gemessen.`,
@@ -321,7 +379,9 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         <p class="maxpts">Max. <b>${maxRoundPoints(st).toLocaleString('de-AT')}</b> Punkte pro Runde <small>(bis ${maxRoundPointsWithBonus(st).toLocaleString('de-AT')} mit einer Route, die schneller ist als die beste Verbindung)</small></p>
         ${
           host
-            ? st.xtreme !== 'off'
+            ? st.challenge
+              ? `<button class="btn btn-big btn-challenge" id="start"><span class="bc-icon">${findChallenge(st.challenge)?.icon ?? '🎯'}</span><span>Challenge starten<small>${esc(findChallenge(st.challenge)?.title ?? 'Tages-Challenge')}${s.players.length > 1 ? ` · ${s.players.length} Spieler` : ''}</small></span></button>`
+              : st.xtreme !== 'off'
               ? `<button class="btn btn-big btn-xtreme" id="start">⚡ X-TREME starten <small>${esc(XTREME_LEVELS.find((x) => x.id === st.xtreme)!.label)}${s.players.length > 1 ? ` · ${s.players.length} Spieler` : ''}</small></button>`
               : `<button class="btn btn-primary btn-big" id="start">${s.players.length > 1 ? `Spiel starten (${s.players.length} Spieler)` : 'Spiel starten'}</button>`
             : `<div class="waiting-host">Warte, bis ${esc(s.players.find((p) => p.isHost)?.name ?? 'der Host')} startet …</div>`
@@ -398,6 +458,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
       const [lat, lon] = districtCenter(id);
       sendFocus({ lat, lon });
     });
+    bindChallenge();
     panel.querySelector('#shareSettings')?.addEventListener('click', () =>
       openSettingsDialog(
         'route',
@@ -414,11 +475,11 @@ export function lobbyScreen(panel: HTMLElement): Screen {
           : null,
       ),
     );
-    panel.querySelector('#resetAll')?.addEventListener('click', (e) => {
+    panel.querySelector('#resetAll')?.addEventListener('click', async (e) => {
       // sitzt in der Überschrift von "Erweitert" – nicht auf-/zuklappen
       e.preventDefault();
       e.stopPropagation();
-      if (!confirm('Alle Einstellungen dieser Lobby auf den Standard zurücksetzen?')) return;
+      if (!(await ask('Alle Einstellungen dieser Lobby auf den Standard zurücksetzen?', { ok: 'Zurücksetzen' }))) return;
       send({ ...DEFAULT_SETTINGS, focus: null });
     });
     panel.querySelector('#start')?.addEventListener('click', async (e) => {

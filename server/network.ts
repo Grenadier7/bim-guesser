@@ -5,7 +5,7 @@ import type { DayType, GameSettings, Headways, Line, LineEdit, NetMode, NetworkD
 import { distanceRange, isNightSlot, linePatterns } from '../shared/rules.ts';
 import { inStationKinds } from '../shared/pools.ts';
 import type { EfaPoint } from './efa.ts';
-import { coversTime, timetableWarnings } from './timetable.ts';
+import { commonRun, coversTime, isSubRoute, mainRoutes, timetableWarnings } from './timetable.ts';
 import { STATE_DIR } from './paths.ts';
 
 /** Ø-Takt je Linie (optional – fehlt die Datei, zeigt der Steckbrief einfach keinen Takt) */
@@ -51,6 +51,15 @@ export interface PastPair {
 }
 
 
+
+/** Feld (ca. 1,2 × 1,2 km) einer Station – für die Verteilung nach Fläche */
+export const cellOf = (s: { lat: number; lon: number }) => `${Math.floor(s.lat / 0.011)}:${Math.floor(s.lon / 0.016)}`;
+
+function cellCounts(list: { lat: number; lon: number }[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const x of list) m.set(cellOf(x), (m.get(cellOf(x)) ?? 0) + 1);
+  return m;
+}
 
 export class Network {
   readonly data: NetworkData;
@@ -193,7 +202,13 @@ export class Network {
       if (e.kind === 'departures') continue;
       if (e.kind === 'addVariant') {
         const ids = e.stops.map((s) => s.station).filter((id) => this.stations.has(id));
-        if (ids.length >= 2) (line.patterns.push(ids, [...ids].reverse()), line.nets.push('r', 'r'));
+        if (ids.length >= 2) {
+          const back = [...ids].reverse();
+          line.patterns.push(ids, back);
+          line.nets.push('r', 'r');
+          // ausdrücklich angelegt – bleibt, auch wenn es von der Route abweicht (keepMainRoutes)
+          this.planPatterns.add(ids).add(back);
+        }
         continue;
       }
       const edit = (p: string[]): string[] => {
@@ -264,7 +279,41 @@ export class Network {
   }
 
   /** Start/Ziel verwendet → seltener ziehen (gespeichert in data/usage.json) */
+  /**
+   * Eine Station aus der Liste – nach Fläche verteilt und selten gezogene bevorzugt (wie randomPair). `ok`: nur
+   * solche, die passen (z.B. weit genug vom Wasser), höchstens 300 Versuche.
+   */
+  pickSpread(list: Station[], ok: (s: Station) => boolean = () => true): Station | null {
+    if (!list.length) return null;
+    const cells = cellCounts(list);
+    const w = list.map((x) => 1 / (1 + (this.usage.get(x.id) ?? 0)) ** 2 / cells.get(cellOf(x))!);
+    const sum = w.reduce((a, b) => a + b, 0);
+    for (let n = 0; n < 300; n++) {
+      let r = Math.random() * sum;
+      let i = 0;
+      while (i < list.length - 1 && (r -= w[i]) > 0) i++;
+      if (ok(list[i])) return list[i];
+    }
+    return null;
+  }
+
+  /** zuletzt gespielte Paare (über alle Spiele) – genau dieselbe Strecke soll nicht gleich wiederkommen */
+  private recent: string[] = [];
+  private recentSet = new Set<string>();
+  private static pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+  playedRecently(a: string, b: string): boolean {
+    return this.recentSet.has(Network.pairKey(a, b));
+  }
+
   markUsed(...ids: string[]) {
+    if (ids.length === 2) {
+      const k = Network.pairKey(ids[0], ids[1]);
+      if (!this.recentSet.has(k)) {
+        this.recent.push(k);
+        this.recentSet.add(k);
+        if (this.recent.length > 300) this.recentSet.delete(this.recent.shift()!);
+      }
+    }
     for (const id of ids) this.usage.set(id, (this.usage.get(id) ?? 0) + 1);
     if (this.usageSave) return;
     this.usageSave = setTimeout(() => this.saveUsage(), 5000);
@@ -284,11 +333,53 @@ export class Network {
   }
 
   static load(): Network {
+    let n: Network;
     try {
-      return new Network(JSON.parse(readFileSync(FILE, 'utf8')));
+      n = new Network(JSON.parse(readFileSync(FILE, 'utf8')));
     } catch (e) {
       throw new Error(`data/network.json fehlt oder ist kaputt – zuerst "npm run build:data" ausführen. (${(e as Error).message})`);
     }
+    n.keepMainRoutes('regular');
+    return n;
+  }
+
+  /**
+   * Jede Linie nur auf ihrer Route (siehe mainRoutes in timetable.ts): Haltefolgen des regulären Netzes, die kein
+   * durchgehendes Stück der Route sind (Werks- und Sonderfahrten), fallen weg; im Netz „Aktuell“ bleiben sie.
+   */
+  /** Haltefolgen, die ein Netzplan ausdrücklich anlegt (Zusatzfahrten) */
+  private planPatterns = new WeakSet<string[]>();
+
+  keepMainRoutes(plan: string) {
+    const mains = mainRoutes(plan, (efa) => this.stationOfEfa(efa));
+    if (!mains) return;
+    for (const line of this.data.lines) {
+      const routes = mains.get(line.id);
+      if (!routes?.length) continue;
+      const all = [...routes, ...routes.map((r) => [...r].reverse())];
+      const patterns: string[][] = [];
+      const nets: string[] = [];
+      const add = (p: string[], n: string) => {
+        const same = patterns.findIndex((q) => q.join() === p.join());
+        if (same >= 0) nets[same] = [...new Set(nets[same] + n)].join('');
+        else (patterns.push(p), nets.push(n));
+      };
+      line.patterns.forEach((p, i) => {
+        const n = line.nets[i];
+        if (!n.includes('r') || this.planPatterns.has(p) || all.some((r) => isSubRoute(p, r))) return void add(p, n);
+        // weicht von der Route ab: im Netz „Aktuell“ so lassen, im regulären nur das Stück auf der Route
+        if (n.replace('r', '')) add(p, n.replace('r', ''));
+        const piece = all.map((r) => commonRun(p, r)).sort((x, y) => y.length - x.length)[0];
+        if (piece && piece.length >= 2) add(piece, 'r');
+      });
+      line.patterns = patterns;
+      line.nets = nets;
+    }
+    // Stationen: nur noch Linien, die dort halten
+    const serving = new Map<string, Set<string>>();
+    for (const l of this.data.lines) for (const p of l.patterns) for (const s of p) serving.set(s, (serving.get(s) ?? new Set()).add(l.id));
+    for (const s of this.data.stations) s.lines = s.lines.filter((l) => serving.get(s.id)?.has(l));
+    this.index();
   }
 
   /**
@@ -321,6 +412,11 @@ export class Network {
   ref(id: string): StationRef {
     const { name, lat, lon } = this.station(id);
     return { id, name, lat, lon };
+  }
+
+  /** alle EFA-Halte einer Station (Steige) – leer bei Adressen */
+  efaIdsOf(stationId: string): string[] {
+    return this.data.efaIds[stationId] ?? [];
   }
 
   mainEfaId(stationId: string): string {
@@ -358,6 +454,37 @@ export class Network {
       return [this.addVirtual(a), this.addVirtual(b)];
     }
     throw new NoPairError('Kein passendes Adress-Paar gefunden – bitte andere Entfernung wählen.');
+  }
+
+  /** Station mit diesem Namen (mit Linien) – fester Start der Tages-Challenges */
+  stationByName(name: string): Station | null {
+    return [...this.stations.values()].find((s) => s.name === name && s.lines.length) ?? null;
+  }
+
+  /** Ziel zu einem festen Start: Station aus dem Pool in passender Entfernung */
+  randomTarget(from: { lat: number; lon: number; id?: string }, s: GameSettings, exclude: Set<string> = new Set(), minApart: { lat: number; lon: number }[] = []): Station {
+    const [minD, maxD] = distanceRange(s.distance);
+    const pool = this.candidates(s.stations, s.slot, s.network, s.districts).filter(
+      (x) => x.id !== from.id && !exclude.has(x.id) && distM(x, from) >= minD && distM(x, from) <= maxD && minApart.every((p) => distM(p, x) >= 2000) && !(from.id && this.playedRecently(from.id, x.id)),
+    );
+    if (!pool.length) throw new NoPairError('Kein passendes Ziel gefunden – bitte andere Entfernung wählen.');
+    // nach Fläche verteilen (siehe randomPair)
+    const cells = cellCounts(pool);
+    let r = Math.random() * cells.size;
+    for (const x of pool) if ((r -= 1 / cells.get(cellOf(x))!) <= 0) return x;
+    return pool[pool.length - 1];
+  }
+
+  /** zufällige Adresse in passender Entfernung von einem festen Start */
+  randomAddressFrom(from: { lat: number; lon: number }, s: GameSettings): Station {
+    const all = this.addressList();
+    const [minD, maxD] = distanceRange(s.distance);
+    for (let n = 0; n < 3000; n++) {
+      const b = all[Math.floor(Math.random() * all.length)];
+      const d = distM(b, from);
+      if (d >= minD && d <= maxD) return this.addVirtual(b);
+    }
+    throw new NoPairError('Keine passende Adresse gefunden.');
   }
 
   private addVirtual(x: { i: number; lat: number; lon: number; name: string; district: number }): Station {
@@ -418,10 +545,10 @@ export class Network {
   private candidateCache = new Map<string, Station[]>();
 
   /** Stationen, die für die Einstellungen in Frage kommen (gecacht) */
-  candidates(pool: StationKind[], slot: SlotId, net: NetMode): Station[] {
-    const key = `${pool.join(',')}|${isNightSlot(slot) ? 'n' : 'd'}|${net}`;
+  candidates(pool: StationKind[], slot: SlotId, net: NetMode, districts: number[] | null = null): Station[] {
+    const key = `${pool.join(',')}|${isNightSlot(slot) ? 'n' : 'd'}|${net}|${districts?.join('-') ?? ''}`;
     let hit = this.candidateCache.get(key);
-    if (!hit) this.candidateCache.set(key, (hit = this.computeCandidates(pool, slot, net)));
+    if (!hit) this.candidateCache.set(key, (hit = this.computeCandidates(pool, slot, net).filter((s) => !districts || districts.includes(s.district))));
     return hit;
   }
 
@@ -440,18 +567,21 @@ export class Network {
    * `focus.share` aus dem Kreis gezogen, sonst aus ganz Wien.
    */
   randomPair(s: GameSettings, exclude: Set<string>, past: PastPair[] = []): [Station, Station] {
-    const all = this.candidates(s.stations, s.slot, s.network);
+    const all = this.candidates(s.stations, s.slot, s.network, s.districts);
     if (all.length < 2) throw new NoPairError('Mit diesen Einstellungen gibt es zu wenige Haltestellen – bitte mehr Haltestellen-Arten wählen.');
     // bereits gespielte Stationen meiden – außer der Pool wäre dann zu klein (z.B. viele Runden mit wenigen Stationen)
     const fresh = all.filter((x) => !exclude.has(x.id));
     const pool = fresh.length >= 2 ? fresh : all;
     const inFocus = s.focus ? pool.filter((x) => distM(x, s.focus!) <= s.focus!.radiusM) : [];
     const [minD, maxD] = distanceRange(s.distance);
-    // selten gezogene Stationen bevorzugen: Gewicht 1 / (1 + bisherige Ziehungen)²
+    // selten gezogene Stationen bevorzugen: Gewicht 1 / (1 + bisherige Ziehungen)² – und nach Fläche verteilen:
+    // jedes Feld (ca. 1,2 km) mit Stationen kommt gleich oft dran, egal wie dicht die Haltestellen dort liegen
+    // (sonst landet fast alles im Zentrum)
     const sampler = (list: Station[]) => {
+      const cells = cellCounts(list);
       const cum: number[] = [];
       let sum = 0;
-      for (const x of list) cum.push((sum += 1 / (1 + (this.usage.get(x.id) ?? 0)) ** 2));
+      for (const x of list) cum.push((sum += 1 / (1 + (this.usage.get(x.id) ?? 0)) ** 2 / cells.get(cellOf(x))!));
       return () => {
         const r = Math.random() * sum;
         let lo = 0;
@@ -483,7 +613,7 @@ export class Network {
           (distM(p.a, a) < SIMILAR_ROUTE_M && distM(p.b, b) < SIMILAR_ROUTE_M) ||
           (distM(p.a, b) < SIMILAR_ROUTE_M && distM(p.b, a) < SIMILAR_ROUTE_M),
       );
-      if (strict && similar) continue;
+      if (strict && (similar || this.playedRecently(a.id, b.id))) continue;
       return [a, b];
     }
     throw new NoPairError('Kein passendes Stationspaar gefunden – bitte andere Entfernung oder mehr Haltestellen wählen.');

@@ -261,7 +261,8 @@ describe('Netzpläne und Routenberechnung', () => {
     assert.deepEqual(r.body.report.zukunft.map((x: string) => x[0]), ['✔', '✔', '✔'], r.body.report.zukunft.join(' | '));
     // Lobby-Menü und Netzdaten
     const cfg = (await (await realFetch(`${base}/api/config`)).json()) as { plans: { id: string; label: string; hint: string }[] };
-    assert.deepEqual(cfg.plans, [{ id: 'plan:zukunft', label: 'Zukunft', hint: 'Mit der neuen U5' }]);
+    // (das mitgelieferte Zielnetz 2040 steht auch im Menü)
+    assert.deepEqual(cfg.plans.filter((p) => p.id !== 'plan:ziel2040'), [{ id: 'plan:zukunft', label: 'Zukunft', hint: 'Mit der neuen U5' }]);
     const pn = (await (await realFetch(`${base}/api/network?plan=zukunft`)).json()) as { lines: { id: string }[]; stations: { id: string; name: string; lines: string[] }[] };
     assert.ok(pn.lines.some((l) => l.id === 'U9'));
     assert.deepEqual(pn.stations.find((x) => x.id === 'n1001')!.lines, ['U9']);
@@ -282,8 +283,8 @@ describe('Netzpläne und Routenberechnung', () => {
     // löschen → nicht mehr wählbar
     assert.equal((await boss.b.call('DELETE', '/api/admin/routing/plans/zukunft')).status, 200);
     assert.equal((await boss.b.call('DELETE', '/api/admin/routing/plans/regular')).status, 400);
-    const cfg2 = (await (await realFetch(`${base}/api/config`)).json()) as { plans: unknown[] };
-    assert.deepEqual(cfg2.plans, []);
+    const cfg2 = (await (await realFetch(`${base}/api/config`)).json()) as { plans: { id: string }[] };
+    assert.deepEqual(cfg2.plans.filter((p) => p.id !== 'plan:ziel2040'), []);
     // Versionen: Zustand vor dem Löschen wiederherstellen
     const versions = (await boss.b.call('GET', '/api/admin/routing/versions')).body as { id: string; note: string }[];
     const before = versions.find((v) => v.note.startsWith('Netzplan angelegt: Zukunft'))!;

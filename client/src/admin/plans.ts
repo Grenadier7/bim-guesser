@@ -9,7 +9,7 @@ import { lineColor, MODE_LABEL, NET_MODES, TIME_SLOTS } from '../../../shared/ru
 import { NetGraph } from '../netgraph.ts';
 import { NetMapLayer, netView } from '../netmap.ts';
 import type { NetIndex } from '../net.ts';
-import { chain, esc, lineChip, makeExpandable, routeDetails, toast } from '../ui.ts';
+import { ask, chain, esc, lineChip, makeExpandable, routeDetails, toast } from '../ui.ts';
 import { infoTip } from '../widgets.ts';
 import { adm, forgetPlanNet, LockedError, planNet } from './api.ts';
 import { miniMap } from './minimap.ts';
@@ -492,7 +492,7 @@ export function plansTab(rerender: () => void): Tab {
       ['🚇 U-Bahn', (l) => l.mode === 'U'],
       ['🚆 S-Bahn', (l) => l.mode === 'S' && !l.regional],
       ['🚆 Regionalzüge (auf S-Bahn-Strecken)', (l) => l.regional],
-      ['🚋 Straßenbahn', (l) => l.mode === 'T'],
+      ['🚋 Bim', (l) => l.mode === 'T'],
       ['🚌 Bus', (l) => l.mode === 'B'],
       ['🌙 Nachtbus', (l) => l.mode === 'N'],
     ];
@@ -1015,8 +1015,8 @@ export function plansTab(rerender: () => void): Tab {
         ),
       ),
     );
-    root.querySelector('#pm-del')?.addEventListener('click', () => {
-      if (!confirm(`Netzplan „${plan().label}“ löschen? Lobbys, die ihn gewählt haben, spielen dann mit dem Standard-Netz.`)) return;
+    root.querySelector('#pm-del')?.addEventListener('click', async () => {
+      if (!(await ask(`Netzplan „${plan().label}“ löschen? Lobbys, die ihn gewählt haben, spielen dann mit dem Standard-Netz.`, { ok: 'Löschen', danger: true }))) return;
       void run(async () => {
         state = await adm<RoutingAdminState>('DELETE', `/api/admin/routing/plans/${encodeURIComponent(planId)}`);
         forgetPlanNet(planId);
@@ -1155,9 +1155,9 @@ export function plansTab(rerender: () => void): Tab {
       lineViewFor = '';
     };
     root.querySelectorAll<HTMLButtonElement>('[data-skip]').forEach((b) =>
-      b.addEventListener('click', () => {
+      b.addEventListener('click', async () => {
         const station = b.dataset.skip!;
-        if (!confirm(`${ttLine} soll in ${n.stations.get(station)?.name ?? station} nicht mehr halten?`)) return;
+        if (!(await ask(`${ttLine} soll in ${n.stations.get(station)?.name ?? station} nicht mehr halten?`, { ok: 'Halt entfernen', danger: true }))) return;
         void run(async () => {
           await addEdit({ kind: 'skipStop', line: ttLine, station });
           await reloadView();
@@ -1348,8 +1348,8 @@ export function plansTab(rerender: () => void): Tab {
         });
     });
     root.querySelectorAll<HTMLButtonElement>('[data-restore]').forEach((b) =>
-      b.addEventListener('click', () => {
-        if (!confirm('Alle Netzpläne auf diesen Stand zurücksetzen?')) return;
+      b.addEventListener('click', async () => {
+        if (!(await ask('Alle Netzpläne auf diesen Stand zurücksetzen?', { ok: 'Zurücksetzen', danger: true }))) return;
         void run(async () => {
           state = await adm<RoutingAdminState>('POST', `/api/admin/routing/versions/${b.dataset.restore}/restore`);
           forgetPlanNet();

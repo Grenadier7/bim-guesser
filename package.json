@@ -15,13 +15,19 @@
     "serve": "node server/index.ts",
     "build": "vite build",
     "build:data": "node scripts/build-network.ts",
+    "build:dark": "node scripts/build-dark-css.ts",
+    "build:water": "node scripts/build-water.ts",
+    "check:challenges": "node scripts/check-challenges.ts",
     "build:timetable": "node --max-old-space-size=6000 scripts/build-timetable.ts",
     "typecheck": "tsc --noEmit",
     "release": "node scripts/release.ts",
     "admin": "node server/admin-cli.ts",
     "test": "node --test test/*.test.ts",
     "smoke": "node scripts/smoke.ts",
-    "e2e": "node node_modules/vite/bin/vite.js build --logLevel warn && node --test --test-concurrency=1 test/e2e/*.e2e.ts"
+    "e2e": "node node_modules/vite/bin/vite.js build --logLevel warn && node --test --test-concurrency=1 test/e2e/*.e2e.ts",
+    "check:spread": "node scripts/check-spread.ts",
+    "build:bridges": "node scripts/build-bridges.ts",
+    "check:future": "node scripts/check-future.ts"
   },
   "dependencies": {
     "express": "^5.3.0",

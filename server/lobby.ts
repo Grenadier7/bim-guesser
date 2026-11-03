@@ -83,6 +83,8 @@ export abstract class Lobby extends EventEmitter {
   abstract start(token: string): Promise<void>;
   abstract next(token: string): Promise<void>;
   abstract backToLobby(token: string): void;
+  /** Host beendet vorzeitig: mit aufgelösten Runden/Fragen → Endstand (was gespielt wurde, zählt), sonst zurück in die Lobby */
+  abstract endGame(token: string): void;
   abstract pause(token: string): void;
   abstract resume(token: string): void;
   abstract cancelRound(token: string): void;

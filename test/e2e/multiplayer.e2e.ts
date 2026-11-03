@@ -89,7 +89,6 @@ test('falscher und zu kurzer Code: verständliche Meldung, kein Absturz', async 
 test('Host verlässt die Lobby → nächster Spieler wird Host und sieht „Starten“', async () => {
   const a = await host('Erster');
   const b = await joinByCode(a.s.code, 'Zweiter');
-  a.t.page.once('dialog', (d) => void d.accept());
   await a.t.page.locator('#leave').click();
   await a.t.page.locator('.mode-quiz').waitFor();
   await b.t.page.locator('#start').waitFor({ timeout: 10_000 });
@@ -176,8 +175,8 @@ test('Doppelklick „Starten“ und „Nächste Frage“: kein Fehler, keine üb
   // irgendeine Antwort; bei Karten-Fragen auflösen lassen
   if (await a.t.page.locator('.quiz-options button[data-o]').count()) await a.t.page.locator('.quiz-options button[data-o]').first().click();
   else {
-    a.t.page.once('dialog', (d) => void d.accept());
     await a.t.page.locator('.hb-cancel').click();
+    await a.t.page.locator('.ask-dlg [data-v="1"]').click();
   }
   // beantwortet → Ergebnis-Karte; übersprungen → „Frage übersprungen“ (ohne Karte)
   await a.t.page.locator('.result-card, .cancelled').first().waitFor({ timeout: 30_000 });
@@ -269,8 +268,8 @@ test('Gast verlässt das laufende Quiz → Quiz läuft für den Rest weiter', as
   await a.t.page.waitForTimeout(300);
   if (await a.t.page.locator('.quiz-options button[data-o]').count()) await a.t.page.locator('.quiz-options button[data-o]').first().click();
   else {
-    a.t.page.once('dialog', (d) => void d.accept());
     await a.t.page.locator('.hb-cancel').click();
+    await a.t.page.locator('.ask-dlg [data-v="1"]').click();
   }
   await a.t.page.locator('.result-card, .cancelled').first().waitFor({ timeout: 70_000 });
   noErrors(a.t);
@@ -330,8 +329,8 @@ test('Kicken und Chat: Host entfernt Gast (Gast landet auf der Startseite mit Me
   // Kicken: nur der Host sieht ✕, nicht bei sich selbst
   assert.equal(await b.t.page.locator('[data-kick]').count(), 0);
   assert.equal(await a.t.page.locator('[data-kick]').count(), 2);
-  a.t.page.once('dialog', (d) => void d.accept());
   await a.t.page.locator('[data-kick][data-name="Gast"]').click();
+  await a.t.page.locator('.ask-dlg [data-v="1"]').click();
   await b.t.page.locator('.toast', { hasText: 'entfernt' }).waitFor();
   await b.t.page.locator('.mode-quiz').waitFor();
   await a.t.page.locator('.chat-list li.system', { hasText: 'Gast wurde vom Host entfernt' }).waitFor();
@@ -351,8 +350,8 @@ test('Punkt 1/19: im laufenden Quiz Spieler verwalten – Gast zum Host machen, 
   await a.t.page.locator('.hb-players').click();
   await a.t.page.locator('.hb-list [data-host][data-name="Bert"]').click();
   await b.t.page.locator('details.host-bar summary', { hasText: 'Host' }).waitFor();
-  a.t.page.once('dialog', (d) => void d.accept());
   await a.t.page.locator('.hb-list [data-kick][data-name="Cleo"]').click();
+  await a.t.page.locator('.ask-dlg [data-v="1"]').click();
   await c.t.page.locator('.toast', { hasText: 'entfernt' }).waitFor();
   const st = await state(a.s);
   assert.deepEqual(st.players.map((p) => `${p.name}${p.isHost ? '👑' : ''}`).sort(), ['Bert👑', 'Chefin👑']);

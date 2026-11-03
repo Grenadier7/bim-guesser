@@ -17,6 +17,17 @@ export interface Session {
   token: string;
 }
 
+export interface QuizLogEntry {
+  icon: string;
+  prompt: string;
+  /** Anteil richtig 0–1 (null = übersprungen) */
+  base: number | null;
+  points: number;
+  explanation: string;
+  /** Linien der Frage (Lösung) – für „Diese üben“ */
+  lines: string[];
+}
+
 interface Prefs {
   name: string;
   /** zuletzt verwendete Einstellungen der Routenjagd */
@@ -43,8 +54,12 @@ export const app = {
   /** Serverzeit − lokale Zeit (ms) */
   clockOffset: 0,
   reveals: new Map<number, RoundReveal>(),
+  /** Quiz: eigenes Ergebnis je Frage (Liste im Endstand) – beginnt bei Frage 1 neu */
+  quizLog: new Map<number, QuizLogEntry>(),
+  /** Lernmodus gleich mit einer Übung öffnen (z.B. „Diese üben“ im Quiz-Endstand) */
+  learnStart: null as null | 'mistakes',
   /** Bildschirm außerhalb einer Lobby */
-  view: 'home' as 'home' | 'learn' | 'training' | 'tutorial' | 'admin',
+  view: 'home' as 'home' | 'learn' | 'training' | 'tutorial' | 'admin' | 'daily' | 'me',
   prefs: loadMerged<Prefs>(PREFS_KEY, { name: '', settings: {}, quiz: {} }),
   onChange: () => {},
   /** Chat-Nachrichten und Verlauf (vom Chat-Fenster gesetzt) */

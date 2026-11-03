@@ -48,8 +48,7 @@ test('Punkt 7: in der Auflösung eine Linie antippen → ganzer Verlauf, nochmal
   });
   await p.locator('#start').click();
   await p.locator('.hb-cancel').click({ timeout: 180_000 });
-  p.once('dialog', (d) => void d.accept());
-  await p.locator('.hb-cancel').click().catch(() => {});
+  await p.locator('.ask-dlg [data-v="1"]').click();
   const summary = p.locator('.route-list > li').first();
   await summary.waitFor({ timeout: 60_000 });
   // zugeklappt: Klick auf die Linie klappt nur auf (Punkt 2, Runde 2)

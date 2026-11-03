@@ -8,6 +8,7 @@ import type {
   Mode,
   NetMode,
   Restriction,
+  Variant,
   RestrictionFrequency,
   RouteGoal,
   XtremeLevel,
@@ -35,9 +36,15 @@ export const NET_MODES: { id: NetMode; label: string; hint: string }[] = [
   { id: 'current', label: 'Aktuell', hint: 'Nächster echter Tag – inkl. Sperren & Ersatzverkehr' },
 ];
 
-export const SLOT_DAYTYPE: Record<SlotId, DayType> = { wd12: 'wd', wd17: 'wd', sa02: 'sa', su12: 'su' };
+/**
+ * Uhrzeiten, die es nur für Tages-Challenges gibt (kein Knopf in der Lobby): wd-night = unter der Woche, 01:30 –
+ * keine U-Bahn mehr, nur Nachtbusse („Dickmacks Donnerstag“).
+ */
+export const HIDDEN_SLOTS: Record<string, { day: DayType; time: [number, number] }> = { 'wd-night': { day: 'wd', time: [1, 30] } };
+
+export const SLOT_DAYTYPE: Record<SlotId, DayType> = { wd12: 'wd', wd17: 'wd', sa02: 'sa', su12: 'su', 'wd-night': 'wd' };
 /** Uhrzeit je Zeitfenster [Stunde, Minute] – sa02: Nacht Fr → Sa (U-Bahn fährt durch) */
-export const SLOT_TIME: Record<SlotId, [number, number]> = { wd12: [12, 0], wd17: [17, 0], sa02: [2, 0], su12: [12, 0] };
+export const SLOT_TIME: Record<SlotId, [number, number]> = { wd12: [12, 0], wd17: [17, 0], sa02: [2, 0], su12: [12, 0], 'wd-night': [1, 30] };
 /** gültige Uhrzeit – eine inzwischen entfernte wird zur ersten */
 export const slotOr = (id: unknown): SlotId => (isSlotId(id) ? id : TIME_SLOTS[0].id);
 /** Nacht (0–5 Uhr): nur Stationen mit U-Bahn oder Nachtbus */
@@ -134,6 +141,9 @@ export const DISTANCES: { id: DistanceRange; label: string; range: [number, numb
   { id: 'short', label: '2–7 km', range: [2000, 7000], factor: 0.9 },
   { id: 'medium', label: '3–12 km', range: [3000, 12000], factor: 1 },
   { id: 'long', label: '6–16 km', range: [6000, 16000], factor: 1.1 },
+  { id: 'xlong', label: '12–25 km', range: [12000, 25000], factor: 1.2 },
+  /** Bezirk des Tages: kurze Wege innerhalb eines (kleinen) Bezirks */
+  { id: 'local', label: '1–6 km', range: [1200, 6000], factor: 0.9 },
 ];
 
 /** Punkte-Faktor je Mindest-Umstiegszahl (0 · 1 · 2) */
@@ -241,7 +251,7 @@ export function regionalTrains(names: string[]): string[] {
 export const isSpecialLine = (l: { id: string }) => /^\d+E$/.test(l.id) || isRegionalTrain(l);
 
 export function isSlotId(v: unknown): v is SlotId {
-  return typeof v === 'string' && TIME_SLOTS.some((s) => s.id === v);
+  return typeof v === 'string' && (TIME_SLOTS.some((s) => s.id === v) || v in HIDDEN_SLOTS);
 }
 
 // ---------------------------------------------------------------- Wertung: Modus („Was zählt?“)
@@ -377,6 +387,15 @@ export function baseLimitSec(s: Pick<GameSettings, 'roundTimeLimitSec' | 'xtreme
   return s.roundTimeLimitSec * (s.xtreme !== 'off' ? XTREME_TIME_FACTOR : 1);
 }
 
+/** E-Scooter: 20 km/h (333 m/min, mit Umweg-Faktor 1,3), an U-/S-Bahn-Stationen 30 s Treppen ohne Scooter */
+export const SCOOTER = { mPerMin: 333, stairsMin: 0.5 };
+
+/** Minuten für einen Weg (Luftlinie m) zu Fuß (80 m/min) oder mit dem Scooter (+ Treppen an U-/S-Bahn-Stationen) */
+export function moveMinutes(m: number, scooter: boolean, stairs = 0): number {
+  if (!scooter) return Math.max(1, Math.round((m * 1.3) / 80));
+  return Math.max(1, Math.round((m * 1.3) / SCOOTER.mPerMin + stairs * SCOOTER.stairsMin));
+}
+
 /** Bei "ohne Namen" und "ohne Karte" gibt es kein "Wo liegt das?" */
 export const xtremeBlocksLocate = (x: XtremeLevel) => x === 'noNames' || x === 'noMap';
 
@@ -387,7 +406,57 @@ export const RESTRICTIONS: Record<Restriction, { label: string; hint: string; ic
   noBus: { label: 'Ohne Bus', hint: 'Diese Runde darfst du keinen Bus verwenden.', icon: '🚫🚌' },
   oneTransfer: { label: 'Max. 1 Umstieg', hint: 'Höchstens zwei Linien – also maximal ein Umstieg.', icon: '1️⃣' },
   banLines: { label: 'Linie gesperrt', hint: 'Eine Linie der schnellsten Verbindung ist gesperrt – finde eine Alternative.', icon: '⛔' },
+  onlyTram: { label: 'Nur Bim', hint: 'Nur mit der Bim (und zu Fuß).', icon: '🚋' },
+  needS: { label: 'Mit S-Bahn', hint: 'Deine Route muss mindestens ein Stück S-Bahn enthalten.', icon: '🚆' },
+  needTram: { label: 'Mit Bim', hint: 'Deine Route muss mindestens ein Stück Bim enthalten.', icon: '🚋' },
+  maxOneU: { label: 'Höchstens 1× U-Bahn', hint: 'Höchstens eine U-Bahn-Fahrt – von U-Bahn zu U-Bahn umsteigen geht nicht.', icon: '☝️' },
+  needBus: { label: 'Mit Bus', hint: 'Deine Route muss mindestens ein Stück Bus enthalten.', icon: '🚌' },
+  mixModes: { label: 'Bunt gemischt', hint: 'Mindestens zwei verschiedene Verkehrsmittel (z.B. U-Bahn und Bim).', icon: '🎨' },
+  noSameMode: { label: 'Nie zweimal dasselbe', hint: 'Kein Umstieg zwischen gleichen Verkehrsmitteln – nach der U-Bahn keine U-Bahn, nach der Bim keine Bim.', icon: '🔁' },
+  twoTrams: { label: 'Bim-Hüpfer', hint: 'Mindestens zwei Fahrten mit der Bim.', icon: '🚋' },
+  insider: { label: 'Insider', hint: 'Keine U-Bahn und keine bekannte S-Bahn (S1–S4, S7, S45, S80) – nur Bim, Bus und die übrigen S-Bahnen.', icon: '🕵️' },
+  busOnly: { label: 'Busreise', hint: 'Nur mit dem Bus.', icon: '🚌' },
+  oneLeg: { label: 'Fußbus', hint: 'Genau eine Linie – zu ihr hin und von ihr weg gehst du zu Fuß. Der Fußbus fährt immer!', icon: '🚶' },
+  tramEnds: { label: 'Bim-Hüpfer', hint: 'Die erste und die letzte Fahrt mit der Bim.', icon: '🦘' },
+  umland: { label: 'Aus dem Umland', hint: 'Du kommst mit dem Zug aus Niederösterreich – steig in Wien geschickt um.', icon: '🚆' },
+  sunny: { label: 'Sonnenschein', hint: 'Nichts, was unter der Erde fährt (grau gestrichelt auf der Karte): U3, U-Bahn-Tunnel im Zentrum, S-Bahn-Stammstrecke Praterstern–Hauptbahnhof, 18er am Hauptbahnhof …', icon: '☀️' },
+  avoidInner: { label: 'Innenstadt umfahren', hint: 'Keine Station in den Bezirken 1, 4, 5, 6, 7, 8, 9 – auch nicht durchfahren.', icon: '🚫' },
+  min2Transfers: { label: 'Umsteige-Profi', hint: 'Mindestens 2-mal umsteigen (3 Fahrten).', icon: '🔀' },
+  mustLine: { label: 'Pflicht-Linie', hint: 'Eine bestimmte Linie muss dabei sein.', icon: '📌' },
+  anyLine: { label: 'Eine von drei', hint: 'Eine der drei Linien muss dabei sein.', icon: '🎲' },
+  noRail: { label: 'Ohne U- und S-Bahn', hint: 'Nur Bim und Bus – keine U-Bahn, keine S-Bahn.', icon: '🚋' },
+  avoidDistricts: { label: 'Fleckerlteppich', hint: 'Die roten Bezirke sind gesperrt – dort nicht ein-, aus- oder durchfahren.', icon: '🧩' },
+  minBridges: { label: 'Brückenkenner', hint: 'Überquere mindestens so viele Brücken wie angegeben.', icon: '🌉' },
 };
+
+/** Varianten: gelten für jede Runde (in der Lobby unter „Varianten“) */
+export const VARIANTS: { id: Variant; label: string; icon: string; restriction: Restriction | null }[] = [
+  { id: 'none', label: 'Normal', icon: '', restriction: null },
+  { id: 'noU', label: 'Ohne U-Bahn', icon: '🚫🚇', restriction: 'noU' },
+  { id: 'noBus', label: 'Ohne Bus', icon: '🚫🚌', restriction: 'noBus' },
+  { id: 'tram', label: 'Nur Bim', icon: '🚋', restriction: 'onlyTram' },
+  { id: 'one', label: 'Max. 1 Umstieg', icon: '1️⃣', restriction: 'oneTransfer' },
+  { id: 'needS', label: 'Mit S-Bahn', icon: '🚆', restriction: 'needS' },
+  { id: 'needTram', label: 'Mit Bim', icon: '🚋', restriction: 'needTram' },
+  { id: 'maxOneU', label: 'Höchstens 1× U-Bahn', icon: '☝️', restriction: 'maxOneU' },
+  { id: 'needBus', label: 'Mit Bus', icon: '🚌', restriction: 'needBus' },
+  { id: 'mixModes', label: 'Bunt gemischt', icon: '🎨', restriction: 'mixModes' },
+  { id: 'noSameMode', label: 'Nie zweimal dasselbe', icon: '🔁', restriction: 'noSameMode' },
+  { id: 'twoTrams', label: 'Bim-Hüpfer', icon: '🚋', restriction: 'twoTrams' },
+  { id: 'insider', label: 'Insider', icon: '🕵️', restriction: 'insider' },
+  { id: 'busOnly', label: 'Busreise', icon: '🚌', restriction: 'busOnly' },
+  { id: 'oneLeg', label: 'Fußbus', icon: '🚶', restriction: 'oneLeg' },
+  { id: 'tramEnds', label: 'Bim-Hüpfer', icon: '🦘', restriction: 'tramEnds' },
+  { id: 'umland', label: 'Aus dem Umland', icon: '🚆', restriction: 'umland' },
+  { id: 'sunny', label: 'Sonnenschein', icon: '☀️', restriction: 'sunny' },
+  { id: 'avoidInner', label: 'Innenstadt umfahren', icon: '🚫', restriction: 'avoidInner' },
+  { id: 'min2Transfers', label: 'Umsteige-Profi', icon: '🔀', restriction: 'min2Transfers' },
+  { id: 'mustLine', label: 'Pflicht-Linie', icon: '📌', restriction: 'mustLine' },
+  { id: 'anyLine', label: 'Eine von drei', icon: '🎲', restriction: 'anyLine' },
+  { id: 'noRail', label: 'Ohne U- und S-Bahn', icon: '🚋', restriction: 'noRail' },
+  { id: 'avoidDistricts', label: 'Fleckerlteppich', icon: '🧩', restriction: 'avoidDistricts' },
+  { id: 'minBridges', label: 'Brückenkenner', icon: '🌉', restriction: 'minBridges' },
+];
 
 export const RESTRICTION_FREQUENCIES: { id: RestrictionFrequency; label: string }[] = [
   { id: 'never', label: 'Nie' },
@@ -400,7 +469,7 @@ export const RESTRICTION_CHANCE = 0.3;
 /** Einschränkungs-Runden haben doppelte Zeit, aber höchstens 2:30 mehr … */
 export const RESTRICTION_EXTRA_MAX_SEC = 150;
 /** … schwere Einschränkungen (ohne U-Bahn) bekommen fix 4 Minuten mehr */
-export const HARD_RESTRICTIONS: Restriction[] = ['noU'];
+export const HARD_RESTRICTIONS: Restriction[] = ['noU', 'onlyTram', 'insider', 'busOnly', 'oneLeg', 'sunny', 'avoidInner', 'anyLine', 'mustLine', 'noRail', 'avoidDistricts'];
 export const HARD_RESTRICTION_EXTRA_SEC = 240;
 
 export function roundLimitSec(base: number | null, restriction: Restriction | null): number | null {
@@ -418,17 +487,46 @@ export function restrictionLabel(r: Restriction, banned: string[]): string {
 
 export function restrictionAllowsLine(r: Restriction | null, banned: string[], line: { id: string; mode: Mode }): boolean {
   if (r === 'banLines' && banned.includes(line.id)) return false;
+  if (r === 'insider' && isWellKnownLine(line)) return false;
   return restrictionAllowsMode(r, line.mode);
 }
 
 export function restrictionAllowsMode(r: Restriction | null, mode: Mode): boolean {
   if (r === 'noU') return mode !== 'U';
   if (r === 'noBus') return mode !== 'B' && mode !== 'N';
+  if (r === 'onlyTram') return mode === 'T' || mode === 'W';
+  if (r === 'insider') return mode !== 'U';
+  if (r === 'busOnly') return mode === 'B' || mode === 'N' || mode === 'W';
+  if (r === 'noRail') return mode !== 'U' && mode !== 'S';
   return true;
 }
 
+/** Regeln für die ganze Route (nicht je Linie): mind. eine S-Bahn/Bim/Bus, höchstens eine U-Bahn-Fahrt, gemischt … */
+export function restrictionAllowsRoute(r: Restriction | null, legs: { mode: Mode }[]): boolean {
+  const n = (m: Mode) => legs.filter((l) => l.mode === m).length;
+  if (r === 'needS') return n('S') > 0;
+  if (r === 'needTram') return n('T') > 0;
+  if (r === 'needBus') return n('B') + n('N') > 0;
+  if (r === 'maxOneU') return n('U') <= 1;
+  if (r === 'twoTrams') return n('T') >= 2;
+  if (r === 'mixModes') return new Set(legs.map((l) => (l.mode === 'N' ? 'B' : l.mode))).size >= 3;
+  if (r === 'tramEnds') return legs[0]?.mode === 'T' && legs.at(-1)?.mode === 'T';
+  if (r === 'min2Transfers') return legs.length >= 3;
+  if (r === 'oneLeg') return legs.length === 1;
+  if (r === 'noSameMode') return legs.every((l, i) => i === 0 || l.mode !== legs[i - 1].mode);
+  return true;
+}
+
+/**
+ * Bekanntheit: Diese Linien kennt „jeder“ – U-Bahn, S-Bahn-Stammstrecke (S1–S4, S7), S45 und S80. Wenig bekannte
+ * S-Bahnen (S40, S50, S60 …) zählen wie eine Bim. Strecke des Tages: Mit diesen Linien allein soll man Punkte holen,
+ * die volle Punktzahl gibt's nur mit Insiderwissen.
+ */
+export const WELL_KNOWN_S = ['S1', 'S2', 'S3', 'S4', 'S7', 'S45', 'S80'];
+export const isWellKnownLine = (l: { id: string; mode: Mode }) => l.mode === 'U' || (l.mode === 'S' && WELL_KNOWN_S.includes(l.id));
+
 export function restrictionMaxLegs(r: Restriction | null): number {
-  return r === 'oneTransfer' ? 2 : 8;
+  return r === 'oneLeg' ? 1 : r === 'oneTransfer' ? 2 : 8;
 }
 
 // ---------------------------------------------------------------- Tipps
@@ -459,20 +557,26 @@ export const TIME_BONUS_SHARE = 0.1;
 /** Referenzzeit für den Zeitbonus, wenn kein Zeitlimit gesetzt ist */
 export const TIME_BONUS_REF_SEC = 180;
 export const LOCATE_POINTS_PER_STATION = 75;
-const LOCATE_FULL_M = 250;
-const LOCATE_ZERO_M = 3000;
+/** „Wo liegt das?“ (Routenjagd und Quiz): volle Punkte bis 250 m, nichts mehr ab 3 km */
+export const LOCATE_FULL_M = 250;
+export const LOCATE_ZERO_M = 3000;
 
-/** Ab diesem relativen Umweg gibt es 0 Punkte */
+/** Ab diesem relativen Umweg gibt es nur noch die Punkte fürs Ankommen */
 export const ROUTE_ZERO_REL = 0.7;
+/** Ankommen zählt: jede gültige Route bekommt mindestens so viele Routenpunkte (statt einer harten Null) */
+export const MIN_ROUTE_POINTS = 50;
 /** Besser als die beste gefundene Route: je 1 % besser +2 % Punkte … */
 export const BEAT_BONUS_FACTOR = 2;
 /** … höchstens so viele Extrapunkte */
 export const BEAT_BONUS_MAX = 300;
 
+/** Innerhalb der Toleranz (max. 1 min / 4 %) gehen nur so viele Punkte verloren – volle 1000 nur für die beste Zeit */
+export const GRACE_LOSS = 20;
+
 /**
- * Routenpunkte. Toleranz: max(1 min, 4 %) – danach fällt es ab,
- * bei +70 % Reisezeit gibt's nichts mehr.
- *   30 vs 38 min -> ~560,  30 vs 45 min -> ~200,  40 vs 60 min -> ~200
+ * Routenpunkte. Volle 1000 nur für die beste Zeit; in der Toleranz max(1 min, 4 %) sanft bis 980
+ * (43 statt 42 min ≈ 988), danach fällt es ab, ab +70 % Reisezeit gibt's nur noch die 50 Punkte fürs Ankommen.
+ *   30 vs 38 min -> ~545,  30 vs 45 min -> ~195,  40 vs 60 min -> ~195
  * Besser als die beste Route der Auskunft → über 1000:
  *   30 vs 29 min -> ~1067,  30 vs 27 min -> 1200,  30 vs 24 min -> 1300 (Maximum)
  */
@@ -483,10 +587,11 @@ export function scoreRoute(userMin: number, bestMin: number): number {
     return Math.round(MAX_ROUTE_POINTS + Math.min(BEAT_BONUS_MAX, MAX_ROUTE_POINTS * better * BEAT_BONUS_FACTOR));
   }
   const grace = Math.max(1, bestMin * 0.04);
-  const delta = Math.max(0, userMin - bestMin - grace);
-  const rel = delta / Math.max(bestMin, 10);
+  const over = userMin - bestMin;
+  if (over <= grace) return Math.round(MAX_ROUTE_POINTS - (GRACE_LOSS * over) / grace);
+  const rel = (over - grace) / Math.max(bestMin, 10);
   const f = Math.max(0, 1 - rel / ROUTE_ZERO_REL);
-  return Math.round(MAX_ROUTE_POINTS * f ** 1.5);
+  return Math.max(MIN_ROUTE_POINTS, Math.round((MAX_ROUTE_POINTS - GRACE_LOSS) * f ** 1.5));
 }
 
 export function locatePoints(distM: number | null): number {
@@ -570,10 +675,11 @@ export function maxRoundPointsWithBonus(s: GameSettings): number {
 export const MODE_LABEL: Record<Mode, string> = {
   U: 'U-Bahn',
   S: 'S-Bahn',
-  T: 'Straßenbahn',
+  T: 'Bim',
   B: 'Bus',
   N: 'Nachtbus',
   W: 'Fußweg',
+  H: 'Hubschrauber',
 };
 
 export const MODE_ICON: Record<Mode, string> = {
@@ -583,6 +689,7 @@ export const MODE_ICON: Record<Mode, string> = {
   B: '🚌',
   N: '🌙',
   W: '🚶',
+  H: '🚁',
 };
 
 const U_COLORS: Record<string, string> = {
@@ -602,6 +709,7 @@ export const MODE_COLOR: Record<Mode, string> = {
   B: '#0a295d',
   N: '#3b2a7a',
   W: '#7a7a7a',
+  H: '#c2185b',
 };
 
 /** Badner Bahn: eigenes Blau – dunkler als die S-Bahn, damit man sie nicht verwechselt */

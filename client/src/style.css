@@ -65,6 +65,7 @@ select {
   gap: 8px;
   font-size: 18px;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .logo {
@@ -582,7 +583,8 @@ small {
 }
 
 .line-opt:hover .chip,
-.line-opt:focus .chip {
+.line-opt:focus .chip,
+.line-opt.active .chip {
   outline: 2px solid var(--ink);
   outline-offset: 1px;
 }
@@ -3812,6 +3814,10 @@ details.fine > summary {
   overflow: hidden;
 }
 
+.chat[hidden] {
+  display: none;
+}
+
 .chat.closed {
   width: auto;
   border: 0;
@@ -5341,6 +5347,11 @@ figure.chart.wide {
 .ch-hit {
   fill: transparent;
 }
+/* „hidden“ wirkt bei SVG-Elementen nicht überall – Fadenkreuz und Punkte erst beim Zeigen */
+.ch-cross[hidden],
+.ch-dot[hidden] {
+  display: none;
+}
 .ch-bar:hover rect:not(.ch-hit) {
   opacity: 0.85;
 }
@@ -6496,3 +6507,691 @@ details.adm-linechg li {
   color: var(--muted);
   font-size: 14px;
 }
+
+/* ---------------------------------------------------------------- Bestätigungsdialog (statt confirm()) */
+
+.ask-dlg {
+  width: min(400px, calc(100vw - 32px));
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.25);
+}
+.ask-dlg::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+.ask-dlg h3 {
+  margin: 0 0 8px;
+}
+.ask-dlg p {
+  margin: 0 0 18px;
+  line-height: 1.45;
+}
+.ask-btns {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------- Startseite: Fortschritt, Strecke des Tages */
+
+.progress-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  width: 100%;
+  margin: 4px 0 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.progress-strip:hover {
+  border-color: var(--muted);
+}
+.progress-strip small {
+  color: var(--muted);
+}
+.ps-lvl {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #0f6b3a;
+  color: #fff;
+  font-weight: 700;
+}
+.ps-more {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 600;
+}
+.daily-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 14px 18px;
+  border: 0;
+  border-left: 6px solid #f0a020;
+  border-radius: 18px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.daily-card > span:nth-child(2) {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+.daily-card small {
+  color: var(--muted);
+}
+/* Brückenkenner: Brücke auf der Karte */
+.bridge-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 11px;
+  background: var(--panel);
+  box-shadow: 0 0 0 2px #1e88e5;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.bridge-pin small {
+  font-size: 11px;
+}
+
+/* Runde aufgeben: unauffällig unter dem Baukasten */
+.give-up {
+  display: block;
+  margin: 12px auto 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Hubschrauber-Linie: Flugzeit am Strich */
+.heli-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: #c2185b;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* schon gespielt: klein, eine Zeile */
+.daily-card.done {
+  gap: 8px;
+  padding: 8px 14px;
+  border-left-width: 4px;
+  border-radius: 12px;
+  box-shadow: none;
+  font-size: 0.9rem;
+}
+.daily-card.done > span:nth-child(1) {
+  flex: 1;
+  display: block;
+}
+.home-links {
+  margin-top: 18px;
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------- Lobby: Tages-Challenges */
+
+.settings-head {
+  margin-top: 22px;
+}
+.challenge-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 14px;
+  padding: 6px 6px 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  min-height: 48px;
+}
+.challenge-bar.on {
+  border-color: var(--accent);
+  background: #fdf0f0;
+}
+.cb-icon {
+  font-size: 20px;
+  flex: none;
+}
+.cb-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  line-height: 1.25;
+}
+.cb-text b {
+  line-height: 1.25;
+}
+.cb-text small {
+  color: var(--muted);
+  font-size: 12px;
+}
+/* Banner: Titel eine Zeile, Beschreibung höchstens zwei – ganz steht sie im Fenster beim Spielstart */
+.challenge-bar .cb-text b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.challenge-bar .cb-text small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.cb-nav {
+  flex: none;
+  width: 28px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.cb-nav:hover {
+  background: var(--bg);
+  color: var(--ink);
+}
+.cb-dots {
+  display: flex;
+  gap: 3px;
+  flex: none;
+}
+.cb-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.cb-dots i.on {
+  background: var(--accent);
+}
+.cb-go,
+.cb-end {
+  flex: none;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+@media (max-width: 420px) {
+  .cb-dots {
+    display: none;
+  }
+}
+/* aktive Challenge: Einstellungen ausgegraut */
+.lobby.challenge-on .setting:not(.rounds-setting),
+.lobby.challenge-on .toggles,
+.lobby.challenge-on details.advanced {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- Endstand & Auflösung */
+
+.end-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 18px;
+}
+.early-end {
+  margin: 0 0 10px;
+}
+.q-log {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 14px;
+  padding: 0;
+  list-style: none;
+}
+.q-log li {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--panel);
+  border-left: 4px solid var(--line);
+}
+.q-log li.right {
+  border-left-color: var(--good);
+}
+.q-log li.part {
+  border-left-color: var(--warn);
+}
+.q-log li.wrong {
+  border-left-color: var(--err);
+}
+.q-log .ql-mark {
+  font-weight: 800;
+  text-align: center;
+}
+.q-log li.right .ql-mark {
+  color: var(--good);
+}
+.q-log li.wrong .ql-mark {
+  color: var(--err);
+}
+.q-log .ql-text small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+}
+.practice-box {
+  margin: 4px 0 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+.practice-box p {
+  margin: 0 0 8px;
+}
+.round-tip {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff8e6;
+  color: #6b4b00;
+  line-height: 1.6;
+}
+.mistakes {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #fde8e8;
+}
+
+/* ---------------------------------------------------------------- Strecke des Tages */
+
+.share-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 6px;
+}
+.share-preview {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  font: 13px/1.5 ui-monospace, Consolas, monospace;
+  white-space: pre-wrap;
+}
+.board-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.podium.board li.gap {
+  justify-content: center;
+  color: var(--muted);
+}
+.daily .od {
+  margin: 10px 0;
+}
+
+/* ---------------------------------------------------------------- Mein Wien */
+
+.me-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 12px 0;
+}
+.me-card {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.me-card .big {
+  font-size: 26px;
+}
+.guest-hint {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #e3f4e8;
+  color: #14572b;
+}
+.me-modes {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+.me-mode summary {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--panel);
+  cursor: pointer;
+}
+.me-mode .chips {
+  padding: 8px 4px;
+}
+@media (max-width: 520px) {
+  .me-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---------------------------------------------------------------- Medaillen in Stufen */
+
+.medal .tier-name {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+.medal.tier-1 {
+  border-top: 3px solid #b0773a;
+}
+.medal.tier-1 .tier-name {
+  background: #f3e1cc;
+  color: #6b3d00;
+}
+.medal.tier-2 {
+  border-top: 3px solid #9aa3ad;
+}
+.medal.tier-2 .tier-name {
+  background: #e6e9ed;
+  color: #3a3f47;
+}
+.medal.tier-3 {
+  border-top: 3px solid #e0a100;
+}
+.medal.tier-3 .tier-name {
+  background: #fff4cc;
+  color: #6b4b00;
+}
+.medal-prog {
+  display: block;
+  width: 80%;
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.medal-prog i {
+  display: block;
+  height: 100%;
+  background: var(--good);
+}
+
+/* ---------------------------------------------------------------- Chat: Schnell-Reaktionen */
+
+.chat-reactions {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px 0;
+  overflow-x: auto;
+}
+.chat-reactions button {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.chat-reactions button:hover {
+  border-color: var(--muted);
+}
+
+/* ---------------------------------------------------------------- Startseite am Handy: Beitreten weiter oben */
+
+@media (max-width: 760px) {
+  .home {
+    display: flex;
+    flex-direction: column;
+  }
+  .home > .home-bottom {
+    order: -1;
+    margin: 0 0 14px;
+  }
+  .home > .hero {
+    order: -2;
+  }
+}
+
+/* ---------------------------------------------------------------- Theme-Knopf */
+
+.theme-btn {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  border-radius: 999px;
+  width: 34px;
+  height: 34px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+/* Ausstieg per Tastatur: eigene Liste unter dem Auswahlfeld */
+.leg-form .field {
+  position: relative;
+}
+.kb-list {
+  position: absolute;
+  z-index: 60;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  max-height: min(320px, 50vh);
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.kb-opt {
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.kb-opt:hover {
+  background: var(--bg);
+}
+.kb-opt.active {
+  background: var(--accent);
+  color: #fff;
+}
+.kb-opt.here,
+.kb-opt.here.active {
+  background: transparent;
+  color: var(--muted);
+  font-style: italic;
+  cursor: default;
+}
+.kb-group {
+  padding: 8px 10px 3px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.me-legend {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.me-legend .ml-line {
+  display: inline-block;
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  vertical-align: middle;
+  background: linear-gradient(90deg, #e3000f, #1e6fbf);
+}
+.me-legend .ml-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 3px solid var(--accent);
+  border-radius: 50%;
+  background: #fff;
+  vertical-align: middle;
+}
+
+.kbd-hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+@media (hover: none) {
+  .kbd-hint {
+    display: none;
+  }
+}
+
+/* Start-Knopf einer Tages-Challenge */
+.btn-challenge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 0;
+  color: #fff;
+  background: linear-gradient(100deg, #b45309, #e3000f 60%, #9e1b32);
+  box-shadow: 0 3px 14px rgb(227 0 15 / 0.35);
+  font-weight: 800;
+  text-align: left;
+}
+.btn-challenge:hover {
+  filter: brightness(1.06);
+}
+.btn-challenge .bc-icon {
+  font-size: 26px;
+}
+.btn-challenge small {
+  display: block;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+/* Fenster beim Start einer Tages-Challenge */
+.challenge-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 0.45);
+  animation: ci-fade 0.2s ease-out;
+}
+.ci-card {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: min(380px, 100%);
+  padding: 26px 22px 20px;
+  border-radius: 20px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 16px 50px rgb(0 0 0 / 0.3);
+  text-align: center;
+  animation: ci-pop 0.35s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.ci-icon {
+  font-size: 54px;
+  line-height: 1;
+}
+.ci-card small {
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ci-card h2 {
+  margin: 0;
+}
+.ci-card p {
+  margin: 4px 0 10px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+@keyframes ci-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ci-pop {
+  from {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .challenge-intro,
+  .ci-card {
+    animation: none;
+  }
+}
+
+/* Tages-Challenges: Punkte („3 Punkte“) */
+.pin-way span {
+  background: #1e6fbf;
+}
+.pin-way.done span {
+  background: var(--good);
+}
+.challenge-rule {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff4cc;
+  color: #5b4100;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.challenge-rule .chips {
+  display: inline-flex;
+  gap: 4px;
+  vertical-align: middle;
+}
+

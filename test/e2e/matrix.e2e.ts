@@ -117,6 +117,9 @@ async function buildAndSubmit(p: Page, s: Sess) {
 /** eine Runde spielen: ggf. „Wo liegt das?“, dann Route oder abbrechen, bis zur Auflösung */
 async function playRound(p: Page, s: Sess, how: 'route' | 'cancel' | 'timeout', idx: number) {
   await p.locator('.locate, .line-input, .typed-legs, .hb-cancel').first().waitFor({ timeout: 180_000 });
+  // Runde mit Einschränkung: erst das Fenster mit der Einschränkung wegklicken
+  const intro = p.locator('.challenge-intro');
+  if (await intro.count()) await intro.click();
   if (how === 'timeout') {
     await p.locator('.btn-big', { hasText: /Nächste Runde|Zum Endergebnis/ }).waitFor({ timeout: 120_000 });
     return;
@@ -128,8 +131,8 @@ async function playRound(p: Page, s: Sess, how: 'route' | 'cancel' | 'timeout', 
     await p.locator('#confirm').click();
   }
   if (how === 'cancel') {
-    p.once('dialog', (d) => void d.accept());
     await p.locator('.hb-cancel').click();
+    await p.locator('.ask-dlg [data-v="1"]').click();
   } else await buildAndSubmit(p, s);
   await p.locator('.btn-big', { hasText: /Nächste Runde|Zum Endergebnis/ }).waitFor({ timeout: 180_000 });
   const st = await routeState(s);
