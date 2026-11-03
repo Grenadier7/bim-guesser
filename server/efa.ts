@@ -321,6 +321,8 @@ export interface TripQuery {
   avoidStops?: string[];
   avoidLines?: string[];
   avoidLineStops?: Record<string, string[]>;
+  /** E-Scooter: zu/von Haltestellen (U/S bis 4 km, sonst 1 km) mit 30 km/h (+ Treppen an U-/S-Bahn), ganz mit dem Scooter immer möglich */
+  scooter?: boolean;
 }
 
 /** „coord:lon:lat“ (Adresse) oder EFA-Haltestellen-ID */

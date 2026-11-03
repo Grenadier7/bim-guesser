@@ -67,6 +67,7 @@ export function roundScreen(panel: HTMLElement): Screen {
     water: round.water ? (p) => (waterNow() ? nearestWater(waterNow()!, p, round.water) : { name: 'Wasser', dist: 0, lat: p.lat, lon: p.lon }) : undefined,
     umland: round.umland,
     idle: round.idle,
+    scooter: s.settings.scooter,
   });
   const b = builder;
 
@@ -380,7 +381,10 @@ export function roundScreen(panel: HTMLElement): Screen {
   async function submit(auto: boolean) {
     if (submitting || view === 'waiting') return;
     const legs = b.userLegs();
-    if (!legs.length && !auto) return toast('Gib mindestens eine Linie an.');
+    if (!legs.length && !auto && !s.settings.scooter) return toast('Gib mindestens eine Linie an.');
+    // Challenge-Regel nicht erfüllt → nicht abgeben (bei Zeitablauf geht es trotzdem raus, zählt dann nicht)
+    const why = b.submitProblem();
+    if (why && !auto) return toast(why, 'info');
     submitting = true;
     app.map.stopLocate();
     b.lock();

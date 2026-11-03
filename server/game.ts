@@ -30,6 +30,7 @@ import {
   difficultyMultiplier,
   scoreRoute,
   linePatterns,
+  moveMinutes,
   VARIANTS,
   WELL_KNOWN_S,
 } from '../shared/rules.ts';
@@ -259,6 +260,7 @@ export class Game extends Lobby {
       entryLines: rr.entryLines,
       entryTown: rr.entryTown,
       ...(avoid ? avoidFor(rr, this.net) : {}),
+      ...(this.settings.scooter ? { scooter: true } : {}),
     };
   }
 
@@ -353,9 +355,6 @@ export class Game extends Lobby {
         throw e;
       }
       if (!routes?.length || routes[0].key === 'walk') continue;
-      this.usedStations.add(a.id).add(b.id);
-      this.pastPairs.push({ a, b });
-      if (!this.net.isAddress(a.id)) this.net.markUsed(a.id, b.id);
       if (this.settings.task === 'water' || this.settings.task === 'bath') a = round.from ?? a;
       // Umland: intern die Einstiegs-Station der besten Verbindung (gezeigt wird der Ort)
       if (round.umland) a = this.net.station(round.umland.options.find((o) => routes![0].key.startsWith(`umland:${o.entry}:`))?.entry ?? a.id);
@@ -367,6 +366,11 @@ export class Game extends Lobby {
         round.targets?.find((t) => t.name === routes![0].target) ??
         round.waypoints?.find((t) => t.name === routes![0].target) ??
         (round.water && lastStop ? this.net.station(lastStop) : b);
+      // gespielt: in diesem Spiel und (über alle Spiele) seltener ziehen – mit dem tatsächlichen Start und Ziel
+      b = round.to;
+      this.usedStations.add(a.id).add(b.id);
+      this.pastPairs.push({ a, b });
+      if (!this.net.isAddress(a.id) && !this.net.isAddress(b.id)) this.net.markUsed(a.id, b.id);
       round.routes = routes;
       return routes;
     }
@@ -412,6 +416,9 @@ export class Game extends Lobby {
     const merged = sortRoutes(mergeRoutes([all, await this.searchAll(round, a.id, b.id)]), this.settings);
     const ok = merged.filter((r) => routeAllowed(r, this.ruleRound(round), rn));
     if (!pairFits(this.ruleRound(round), all, ok, rn, a, b, strict)) return null;
+    // E-Scooter: mit Öffis muss es klar schneller gehen als nur mit dem Scooter (sonst gibt es nichts zu finden)
+    const solo = merged.find((r) => r.key === 'walk');
+    if (this.settings.scooter && strict && solo && ok[0].medianMin + 2 > solo.medianMin) return null;
     // beste Verbindung muss mindestens so viele Umstiege haben (nach vielen Versuchen gelockert)
     if (ok[0].legs.filter((l) => l.mode !== 'W').length - 1 < wanted) return null;
     return ok;
@@ -466,6 +473,15 @@ export class Game extends Lobby {
     return all;
   }
 
+  /** E-Scooter von Start zu Ziel, ganz ohne Öffis */
+  private scooterOnly(round: Round): RouteOption {
+    const a = round.from!;
+    const b = round.to!;
+    const m = moveMinutes(distM(a, b), true);
+    const leg: RouteLeg = { mode: 'W', line: null, color: '#7a7a7a', fromName: a.name, toName: b.name, fromStation: a.id, toStation: b.id, dep: '', arr: '', path: [[a.lat, a.lon], [b.lat, b.lon]] };
+    return { key: 'walk', legs: [leg], medianMin: m, minMin: m, maxMin: m, rideMin: m, samples: 1 };
+  }
+
   /** Linien des Netzes, die zu dieser Uhrzeit nicht fahren (eigener Fahrplan; ohne ihn: keine Angabe) */
   private idleLines(time: number): string[] | undefined {
     const r = runningLines(time, this.net.planId);
@@ -481,12 +497,10 @@ export class Game extends Lobby {
     const w = waterData();
     if (!w) return null;
     // Start: mindestens 1,2 km vom nächsten Wasser/Bad (zu Fuß wäre man zu lange unterwegs)
+    // nach Fläche verteilt, selten gezogene zuerst, nicht in der Nähe früherer Starts dieses Spiels
     const starts = this.net.candidates(this.settings.stations, this.settings.slot, this.settings.network).filter((s) => !this.usedStations.has(s.id));
-    let a: Station | null = null;
-    for (let i = 0; i < 60 && !a; i++) {
-      const s = starts[Math.floor(Math.random() * starts.length)];
-      if (s && nearestWater(w, s, kind).dist >= 1200) a = s;
-    }
+    const before = this.pastPairs.map((p) => p.a);
+    const a = this.net.pickSpread(starts, (s) => nearestWater(w, s, kind).dist >= 1200 && before.every((p) => distM(p, s) >= 2000));
     if (!a) return null;
     round.from = a;
     this.waterStops[kind] ??= [...this.net.stations.values()].filter((s) => s.lines.length).map((s) => ({ s, hit: nearestWater(w, s, kind) })).filter((x) => x.hit.dist <= 600);
@@ -500,6 +514,9 @@ export class Game extends Lobby {
     // mit den Öffis klar schneller als direkt hinzugehen
     const sorted = sortRoutes(out, this.settings);
     if (sorted[0].medianMin + 3 >= walkMinutes(nearestWater(w, a, kind).dist)) return null;
+    // genau diese Strecke (Start → Wasser-Haltestelle) gab es eben erst – andere suchen
+    const stop = sorted[0].legs.findLast((l) => l.toStation)?.toStation;
+    if (stop && this.net.playedRecently(a.id, stop)) return null;
     round.water = kind;
     return sorted.slice(0, 4);
   }
@@ -788,6 +805,11 @@ export class Game extends Lobby {
   /** Eine Spieler-Route nachrechnen; fällt die Auskunft aus, ist nur diese Route betroffen (nicht die ganze Runde) */
   private async evaluate(round: Round, legs: UserLeg[], q: RouteQuery, routes: RouteOption[]) {
     const fail = (error: string) => ({ route: null, durationMin: null, matchedRank: null, source: 'none' as const, error });
+    // E-Scooter ohne Öffis: nur der Scooter von A nach B
+    if (!legs.length && this.settings.scooter) {
+      const route = routes.find((r) => r.key === 'walk') ?? this.scooterOnly(round);
+      return { route, durationMin: route.medianMin, matchedRank: null, source: 'computed' as const, error: null };
+    }
     let dest = round.to!.id;
     const end = legs.at(-1)?.to;
     // Umland: erste Fahrt = einer der Züge des Orts (ab seiner ersten Station in Wien), dann wie sonst
@@ -870,7 +892,8 @@ export class Game extends Lobby {
                   to: sub.guesses.to ? Math.round(distM({ lat: sub.guesses.to[0], lon: sub.guesses.to[1] }, round.to!)) : null,
                 }
               : null;
-          const r = sub?.legs.length
+          // E-Scooter: auch ganz ohne Öffis eine gültige Antwort
+          const r = sub && (sub.legs.length || this.settings.scooter)
             ? await this.evaluate(round, sub.legs, q, routes)
             : { route: null, durationMin: null, matchedRank: null, source: 'none' as const, error: sub ? 'Keine Route angegeben.' : 'Nicht rechtzeitig abgegeben.' };
           const costMin = r.durationMin == null ? null : routeCost(r.durationMin, r.route ? transfersOf(r.route) : 0, this.settings);

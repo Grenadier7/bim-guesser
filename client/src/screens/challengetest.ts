@@ -8,16 +8,12 @@ import { app, startSession } from '../store.ts';
 import { esc, toast } from '../ui.ts';
 import type { Screen } from './screen.ts';
 
-/** Standard + Challenge (wie „Spielen“ im Lobby-Banner) */
+/**
+ * Einstellungen einer Challenge (wie „Spielen“ im Lobby-Banner): die Challenge legt alles selbst fest – was in der
+ * Lobby eingestellt war, zählt nicht. Der Standard füllt nur, was es neu gibt und die Challenge nicht kennt.
+ */
 export function challengeSettings(patch: Partial<GameSettings>, id: string): Partial<GameSettings> {
-  // „Wo liegt das?“ aus – Challenges sind kurz (Ortskenner & Co. schalten es selbst ein)
-  const base: Partial<GameSettings> = { ...DEFAULT_SETTINGS, focus: null, locate: false };
-  if (patch.difficulty) {
-    delete base.stations;
-    delete base.distance;
-    delete base.minTransfers;
-  }
-  return { ...base, ...patch, challenge: id };
+  return { ...DEFAULT_SETTINGS, ...patch, challenge: id };
 }
 
 export function challengeTestScreen(panel: HTMLElement, onBack: () => void): Screen {
@@ -49,12 +45,12 @@ export function challengeTestScreen(panel: HTMLElement, onBack: () => void): Scr
         <ul class="ch-list">${rest
           .map(
             (c) => `<li><span class="cb-icon">${c.icon}</span><span class="cb-text"><b>${esc(c.title)}${today.has(c.id) ? ' ⭐' : ''}</b><small>${esc(c.text)}</small>
-              <small class="muted">${c.settings.rounds} Runde${c.settings.rounds === 1 ? '' : 'n'}</small></span>
+              <small class="muted">${c.settings.rounds} Runde${c.settings.rounds === 1 ? '' : 'n'} · ${c.kind === 'special' ? 'besonders' : 'normal'}</small></span>
               <button class="btn btn-primary" data-play="${c.id}">Spielen</button></li>`,
           )
           .join('')}</ul>
         <h3>🏘️ Bezirk des Tages</h3>
-        <div class="ch-districts">${districts.map((c) => `<button class="btn btn-ghost" data-play="${c.id}" title="${esc(c.title)}">${esc(c.id.slice(9))}.${today.has(c.id) ? ' ⭐' : ''}</button>`).join('')}</div>
+        <div class="ch-districts">${districts.map((c) => `<button class="btn btn-ghost" data-play="${c.id}" title="${esc(c.title)}">${esc(c.id.slice(9).replace('-', '+'))}${today.has(c.id) ? ' ⭐' : ''}</button>`).join('')}</div>
       </div>`;
     panel.querySelector('#back')!.addEventListener('click', onBack);
     panel.querySelectorAll<HTMLButtonElement>('[data-play]').forEach((b) =>

@@ -52,6 +52,15 @@ export interface PastPair {
 
 
 
+/** Feld (ca. 1,2 × 1,2 km) einer Station – für die Verteilung nach Fläche */
+export const cellOf = (s: { lat: number; lon: number }) => `${Math.floor(s.lat / 0.011)}:${Math.floor(s.lon / 0.016)}`;
+
+function cellCounts(list: { lat: number; lon: number }[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const x of list) m.set(cellOf(x), (m.get(cellOf(x)) ?? 0) + 1);
+  return m;
+}
+
 export class Network {
   readonly data: NetworkData;
   readonly stations = new Map<string, Station>();
@@ -264,7 +273,41 @@ export class Network {
   }
 
   /** Start/Ziel verwendet → seltener ziehen (gespeichert in data/usage.json) */
+  /**
+   * Eine Station aus der Liste – nach Fläche verteilt und selten gezogene bevorzugt (wie randomPair). `ok`: nur
+   * solche, die passen (z.B. weit genug vom Wasser), höchstens 300 Versuche.
+   */
+  pickSpread(list: Station[], ok: (s: Station) => boolean = () => true): Station | null {
+    if (!list.length) return null;
+    const cells = cellCounts(list);
+    const w = list.map((x) => 1 / (1 + (this.usage.get(x.id) ?? 0)) ** 2 / cells.get(cellOf(x))!);
+    const sum = w.reduce((a, b) => a + b, 0);
+    for (let n = 0; n < 300; n++) {
+      let r = Math.random() * sum;
+      let i = 0;
+      while (i < list.length - 1 && (r -= w[i]) > 0) i++;
+      if (ok(list[i])) return list[i];
+    }
+    return null;
+  }
+
+  /** zuletzt gespielte Paare (über alle Spiele) – genau dieselbe Strecke soll nicht gleich wiederkommen */
+  private recent: string[] = [];
+  private recentSet = new Set<string>();
+  private static pairKey = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+  playedRecently(a: string, b: string): boolean {
+    return this.recentSet.has(Network.pairKey(a, b));
+  }
+
   markUsed(...ids: string[]) {
+    if (ids.length === 2) {
+      const k = Network.pairKey(ids[0], ids[1]);
+      if (!this.recentSet.has(k)) {
+        this.recent.push(k);
+        this.recentSet.add(k);
+        if (this.recent.length > 300) this.recentSet.delete(this.recent.shift()!);
+      }
+    }
     for (const id of ids) this.usage.set(id, (this.usage.get(id) ?? 0) + 1);
     if (this.usageSave) return;
     this.usageSave = setTimeout(() => this.saveUsage(), 5000);
@@ -373,11 +416,15 @@ export class Network {
   /** Ziel zu einem festen Start: Station aus dem Pool in passender Entfernung */
   randomTarget(from: { lat: number; lon: number; id?: string }, s: GameSettings, exclude: Set<string> = new Set(), minApart: { lat: number; lon: number }[] = []): Station {
     const [minD, maxD] = distanceRange(s.distance);
-    const pool = this.candidates(s.stations, s.slot, s.network).filter(
-      (x) => x.id !== from.id && !exclude.has(x.id) && distM(x, from) >= minD && distM(x, from) <= maxD && minApart.every((p) => distM(p, x) >= 2000),
+    const pool = this.candidates(s.stations, s.slot, s.network, s.districts).filter(
+      (x) => x.id !== from.id && !exclude.has(x.id) && distM(x, from) >= minD && distM(x, from) <= maxD && minApart.every((p) => distM(p, x) >= 2000) && !(from.id && this.playedRecently(from.id, x.id)),
     );
     if (!pool.length) throw new NoPairError('Kein passendes Ziel gefunden – bitte andere Entfernung wählen.');
-    return pool[Math.floor(Math.random() * pool.length)];
+    // nach Fläche verteilen (siehe randomPair)
+    const cells = cellCounts(pool);
+    let r = Math.random() * cells.size;
+    for (const x of pool) if ((r -= 1 / cells.get(cellOf(x))!) <= 0) return x;
+    return pool[pool.length - 1];
   }
 
   /** zufällige Adresse in passender Entfernung von einem festen Start */
@@ -450,10 +497,10 @@ export class Network {
   private candidateCache = new Map<string, Station[]>();
 
   /** Stationen, die für die Einstellungen in Frage kommen (gecacht) */
-  candidates(pool: StationKind[], slot: SlotId, net: NetMode): Station[] {
-    const key = `${pool.join(',')}|${isNightSlot(slot) ? 'n' : 'd'}|${net}`;
+  candidates(pool: StationKind[], slot: SlotId, net: NetMode, districts: number[] | null = null): Station[] {
+    const key = `${pool.join(',')}|${isNightSlot(slot) ? 'n' : 'd'}|${net}|${districts?.join('-') ?? ''}`;
     let hit = this.candidateCache.get(key);
-    if (!hit) this.candidateCache.set(key, (hit = this.computeCandidates(pool, slot, net)));
+    if (!hit) this.candidateCache.set(key, (hit = this.computeCandidates(pool, slot, net).filter((s) => !districts || districts.includes(s.district))));
     return hit;
   }
 
@@ -472,18 +519,21 @@ export class Network {
    * `focus.share` aus dem Kreis gezogen, sonst aus ganz Wien.
    */
   randomPair(s: GameSettings, exclude: Set<string>, past: PastPair[] = []): [Station, Station] {
-    const all = this.candidates(s.stations, s.slot, s.network);
+    const all = this.candidates(s.stations, s.slot, s.network, s.districts);
     if (all.length < 2) throw new NoPairError('Mit diesen Einstellungen gibt es zu wenige Haltestellen – bitte mehr Haltestellen-Arten wählen.');
     // bereits gespielte Stationen meiden – außer der Pool wäre dann zu klein (z.B. viele Runden mit wenigen Stationen)
     const fresh = all.filter((x) => !exclude.has(x.id));
     const pool = fresh.length >= 2 ? fresh : all;
     const inFocus = s.focus ? pool.filter((x) => distM(x, s.focus!) <= s.focus!.radiusM) : [];
     const [minD, maxD] = distanceRange(s.distance);
-    // selten gezogene Stationen bevorzugen: Gewicht 1 / (1 + bisherige Ziehungen)²
+    // selten gezogene Stationen bevorzugen: Gewicht 1 / (1 + bisherige Ziehungen)² – und nach Fläche verteilen:
+    // jedes Feld (ca. 1,2 km) mit Stationen kommt gleich oft dran, egal wie dicht die Haltestellen dort liegen
+    // (sonst landet fast alles im Zentrum)
     const sampler = (list: Station[]) => {
+      const cells = cellCounts(list);
       const cum: number[] = [];
       let sum = 0;
-      for (const x of list) cum.push((sum += 1 / (1 + (this.usage.get(x.id) ?? 0)) ** 2));
+      for (const x of list) cum.push((sum += 1 / (1 + (this.usage.get(x.id) ?? 0)) ** 2 / cells.get(cellOf(x))!));
       return () => {
         const r = Math.random() * sum;
         let lo = 0;
@@ -515,7 +565,7 @@ export class Network {
           (distM(p.a, a) < SIMILAR_ROUTE_M && distM(p.b, b) < SIMILAR_ROUTE_M) ||
           (distM(p.a, b) < SIMILAR_ROUTE_M && distM(p.b, a) < SIMILAR_ROUTE_M),
       );
-      if (strict && similar) continue;
+      if (strict && (similar || this.playedRecently(a.id, b.id))) continue;
       return [a, b];
     }
     throw new NoPairError('Kein passendes Stationspaar gefunden – bitte andere Entfernung oder mehr Haltestellen wählen.');

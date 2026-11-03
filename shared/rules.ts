@@ -142,6 +142,8 @@ export const DISTANCES: { id: DistanceRange; label: string; range: [number, numb
   { id: 'medium', label: '3–12 km', range: [3000, 12000], factor: 1 },
   { id: 'long', label: '6–16 km', range: [6000, 16000], factor: 1.1 },
   { id: 'xlong', label: '12–25 km', range: [12000, 25000], factor: 1.2 },
+  /** Bezirk des Tages: kurze Wege innerhalb eines (kleinen) Bezirks */
+  { id: 'local', label: '1–6 km', range: [1200, 6000], factor: 0.9 },
 ];
 
 /** Punkte-Faktor je Mindest-Umstiegszahl (0 · 1 · 2) */
@@ -383,6 +385,15 @@ export const XTREME_TIME_FACTOR = 2;
 export function baseLimitSec(s: Pick<GameSettings, 'roundTimeLimitSec' | 'xtreme'>): number | null {
   if (!s.roundTimeLimitSec) return null;
   return s.roundTimeLimitSec * (s.xtreme !== 'off' ? XTREME_TIME_FACTOR : 1);
+}
+
+/** E-Scooter: 30 km/h (500 m/min, mit Umweg-Faktor 1,3), an U-/S-Bahn-Stationen 30 s Treppen ohne Scooter */
+export const SCOOTER = { mPerMin: 500, stairsMin: 0.5 };
+
+/** Minuten für einen Weg (Luftlinie m) zu Fuß (80 m/min) oder mit dem Scooter (+ Treppen an U-/S-Bahn-Stationen) */
+export function moveMinutes(m: number, scooter: boolean, stairs = 0): number {
+  if (!scooter) return Math.max(1, Math.round((m * 1.3) / 80));
+  return Math.max(1, Math.round((m * 1.3) / SCOOTER.mPerMin + stairs * SCOOTER.stairsMin));
 }
 
 /** Bei "ohne Namen" und "ohne Karte" gibt es kein "Wo liegt das?" */

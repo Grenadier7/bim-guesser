@@ -18,7 +18,8 @@ import { dailyRoutes } from './routes/daily.ts';
 import { DailyService } from './daily.ts';
 import { rateLimit, securityHeaders } from './security.ts';
 import { TrainingService } from './training.ts';
-import { waterJson } from './water.ts';
+import { waterData, waterJson } from './water.ts';
+import { challengeSchedule } from './challengeSchedule.ts';
 
 const DIST = path.resolve(import.meta.dirname, '../dist');
 
@@ -133,6 +134,10 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
     const json = waterJson();
     if (!json) return void res.status(404).json({ error: 'Keine Gewässer-Daten.' });
     res.type('json').set('Cache-Control', 'public, max-age=86400').send(json);
+  });
+  // Plan der Tages-Challenges (einmal berechnet, als Datei abgelegt – server/challengeSchedule.ts)
+  app.get('/api/challenges/schedule', (_req, res) => {
+    res.set('Cache-Control', 'no-cache').json(challengeSchedule(net.hasAddresses, !!waterData()));
   });
   app.post('/api/ping', (req, res) => {
     const id = String(req.body?.v ?? '');

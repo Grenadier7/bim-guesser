@@ -1,52 +1,60 @@
 // Tages-Challenges im Browser: die heutigen (3 + Bezirk der Woche) mit den Uhrzeiten/Wertungen dieses Spiels,
 // und das Fenster beim Spielstart („Heute: ☕ Kaffeepause …“).
-import { allChallenges, dailyChallenges, districtChallenge, districtOfDay, type Challenge, type ChallengeContext } from '../../shared/challenges.ts';
+import {
+  DISTRICT_GROUPS,
+  allChallenges,
+  challengeContext,
+  dailyChallenges,
+  districtChallenge,
+  districtGroupId,
+  districtOfDay,
+  type Challenge,
+  type ChallengeContext,
+  type Schedule,
+} from '../../shared/challenges.ts';
 import { viennaDay } from '../../shared/career.ts';
-import { NET_MODES, SLOT_DAYTYPE, SLOT_TIME, TIME_SLOTS, isNightSlot } from '../../shared/rules.ts';
 import { app } from './store.ts';
 import type { NetIndex } from './net.ts';
 import type { RuleNet } from '../../shared/challengeRules.ts';
 import type { WaterData } from '../../shared/water.ts';
 import { esc, h } from './ui.ts';
 
-const hhmm = (id: string) => SLOT_TIME[id].map((n) => String(n).padStart(2, '0')).join(':');
+// Gewässer-Daten liegen dem Spiel bei (data/water.json)
+const context = (): ChallengeContext => challengeContext((app.net?.data.addressCount ?? 0) > 0, true);
 
-function context(): ChallengeContext {
-  const night = TIME_SLOTS.find((t) => isNightSlot(t.id));
-  const sunday = TIME_SLOTS.find((t) => SLOT_DAYTYPE[t.id] === 'su' && !isNightSlot(t.id));
-  const at = (t: { id: string } | undefined) => (t ? { id: t.id, time: hhmm(t.id) } : null);
-  return {
-    night: at(night),
-    sunday: at(sunday),
-    current: NET_MODES.some((m) => m.id === 'current'),
-    addresses: (app.net?.data.addressCount ?? 0) > 0,
-    // Gewässer-Daten liegen dem Spiel bei (data/water.json)
-    water: true,
-  };
+/** vom Server berechneter Plan (sonst rechnet der Browser denselben selbst) */
+let schedule: Schedule | null = null;
+export function loadSchedule(): Promise<void> {
+  return fetch('/api/challenges/schedule')
+    .then((r) => (r.ok ? (r.json() as Promise<Schedule>) : null))
+    .then((s) => void (schedule = s))
+    .catch(() => {});
 }
 
-/** Mittelpunkt eines Bezirks = Schwerpunkt seiner Haltestellen */
+/** Mittelpunkt eines Bezirks = Schwerpunkt seiner Haltestellen (Fokus-Kreis in der Lobby) */
 export function districtCenter(id: number): [number, number] {
   const sts = app.net.data.stations.filter((x) => x.district === id);
   return [sts.reduce((a, x) => a + x.lat, 0) / sts.length, sts.reduce((a, x) => a + x.lon, 0) / sts.length];
 }
 
-function districtOf(d: number): Challenge {
-  const name = app.net.data.districts.find((x) => x.id === d)?.name ?? `${d}. Bezirk`;
-  return districtChallenge(d, name, districtCenter(d));
+/** Bezirksgruppe als Challenge (Namen aus den Netzdaten) */
+function districtOf(group: number[]): Challenge {
+  return districtChallenge(group, group.map((d) => app.net.data.districts.find((x) => x.id === d)?.name ?? `${d}. Bezirk`));
 }
 
-/** heute: 3 Challenges aus der Rotation + Bezirk des Tages (für alle gleich) */
+/** heute: 3 Challenges aus dem Plan + Bezirk des Tages (für alle gleich) */
 export function todaysChallenges(): Challenge[] {
-  return dailyChallenges(viennaDay(), context(), districtOf(districtOfDay(viennaDay())));
+  const day = viennaDay();
+  return dailyChallenges(day, context(), districtOf(DISTRICT_GROUPS[districtOfDay(day, context(), schedule)]), schedule);
 }
 
 /** alle (Testseite; Challenge einer älteren Lobby wiederfinden) */
 export function everyChallenge(): Challenge[] {
-  return [...allChallenges(context()), ...Array.from({ length: 23 }, (_, i) => districtOf(i + 1))];
+  return [...allChallenges(context()), ...DISTRICT_GROUPS.map(districtOf)];
 }
 
 export const findChallenge = (id: string | null) => (id ? (everyChallenge().find((c) => c.id === id) ?? null) : null);
+export { districtGroupId };
 
 /** Fenster beim Spielstart: Icon, Name, Beschreibung – Klick oder nach ein paar Sekunden weg */
 export function showChallengeIntro(c: Challenge | null) {

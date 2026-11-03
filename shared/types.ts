@@ -101,7 +101,7 @@ export type Difficulty = 'easy' | 'medium' | 'hard' | 'expert' | 'custom';
  */
 export type StationKind = 'Ukey' | 'U' | 'Skey' | 'S' | 'Tkey' | 'T' | 'hub' | 'bus' | 'all';
 
-export type DistanceRange = 'short' | 'medium' | 'long' | 'xlong';
+export type DistanceRange = 'local' | 'short' | 'medium' | 'long' | 'xlong';
 
 /** Aufgabe einer Runde: normal (A → B), eines von 3 Zielen, 3 Punkte abklappern, zum nächsten Wasser / Bad */
 export type RoundTask = 'normal' | 'choose3' | 'visit3' | 'water' | 'bath';
@@ -238,6 +238,10 @@ export interface GameSettings {
   start: string | null;
   /** beim Eintippen nur Linien vorschlagen, die zu dieser Uhrzeit fahren */
   onlyRunning: boolean;
+  /** Start und Ziel nur in diesen Bezirken (Bezirk des Tages) – null = ganz Wien */
+  districts: number[] | null;
+  /** E-Scooter statt zu Fuß (30 km/h, an U-/S-Bahn-Stationen 30 s Treppen) – Tages-Challenge */
+  scooter: boolean;
 }
 
 // ---------------------------------------------------------------- Routen

@@ -51,7 +51,7 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   if (Number.isInteger(s.rounds)) out.rounds = Math.min(10, Math.max(1, s.rounds!));
   if (s.roundTimeLimitSec === null) out.roundTimeLimitSec = null;
   else if (typeof s.roundTimeLimitSec === 'number') out.roundTimeLimitSec = Math.min(600, Math.max(20, Math.round(s.roundTimeLimitSec)));
-  for (const k of ['locate', 'countWait', 'avgWait', 'onlyRunning'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
+  for (const k of ['locate', 'countWait', 'avgWait', 'onlyRunning', 'scooter'] as const) if (typeof s[k] === 'boolean') out[k] = s[k];
   // Tipps: keine / günstig / teuer (alte Einstellung true/false)
   const tl = s.tips as unknown;
   if (tl === 'off' || tl === 'cheap' || tl === 'expensive') out.tips = tl;
@@ -76,6 +76,11 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   else if (r === false) out.restrictions = 'never';
   if (VARIANTS.some((v) => v.id === s.variant)) out.variant = s.variant!;
   if (s.task === 'normal' || s.task === 'choose3' || s.task === 'visit3' || s.task === 'water' || s.task === 'bath') out.task = s.task;
+  if (s.districts === null) out.districts = null;
+  else if (Array.isArray(s.districts)) {
+    const ds = [...new Set(s.districts.filter((d) => Number.isInteger(d) && d >= 1 && d <= 23))].sort((a, b) => a - b);
+    out.districts = ds.length ? ds : null;
+  }
   if (s.start === null) out.start = null;
   else if (typeof s.start === 'string' && s.start.length <= 60) out.start = s.start;
   if (s.challenge === null) out.challenge = null;

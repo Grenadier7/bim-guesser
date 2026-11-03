@@ -13,6 +13,7 @@ import type { DayType, LatLon, LineEdit, Mode, RoutingParams, TimetableLineInfo,
 import type { EfaLeg, EfaPoint, EfaTrip, TripQuery } from './efa.ts';
 import { DEFAULT_PARAMS } from './plans.ts';
 import { currentPlan } from './plancontext.ts';
+import { moveMinutes } from '../shared/rules.ts';
 
 const FILE = process.env.TIMETABLE_FILE ?? path.resolve(import.meta.dirname, '../data/timetable.json');
 // Umsteigezeit, Fußwege und höchstens so viele Fahrten: params (server/overrides.ts, Admin-Seite) –
@@ -919,6 +920,19 @@ function access(d: Data, id: string): { list: Access[]; point: EfaPoint; address
   return { list: [{ node: i, min: 0 }, ...d.footpaths[i].map(([node, min]) => ({ node, min: min - d.params.changeMin }))], point: point(d, i), address: false };
 }
 
+/** Halt einer U-/S-Bahn bzw. eines Zugs (nicht direkt an der Straße – Treppen) */
+function railNode(d: Data, i: number): boolean {
+  return d.stopPatterns[i].some(([p]) => d.lines[d.patterns[p].line].mot <= 2);
+}
+
+/** E-Scooter: U-/S-Bahn-Halte bis 4 km, alle anderen bis 1 km um einen Punkt – Minuten mit 30 km/h + Treppen */
+function scooterAccess(d: Data, p: { lat: number; lon: number }): Access[] {
+  return d.nodes
+    .map((n, i) => ({ node: i, m: distM(n, p) }))
+    .filter((x) => x.m <= 1000 || (x.m <= 4000 && railNode(d, x.node)))
+    .map((x) => ({ node: x.node, min: moveMinutes(x.m, true, railNode(d, x.node) ? 1 : 0) }));
+}
+
 /** nur direkte Fahrten von A nach B (maxChanges 0): die nächsten Abfahrten, ohne Fußwege */
 function direct(d: Data, day: Day, a: number, b: number, t: number, count: number, mots: Set<number> | null): EfaTrip[] {
   const found: { dep: number; trip: EfaTrip }[] = [];
@@ -952,6 +966,11 @@ export function localTrip(q: TripQuery): EfaTrip[] | null {
   const from = access(d, q.from);
   const to = access(d, q.to);
   if (!from || !to) return null;
+  // E-Scooter: zu und von allen Halten in Reichweite
+  if (q.scooter) {
+    from.list = scooterAccess(d, from.point);
+    to.list = scooterAccess(d, to.point);
+  }
   const mots = q.mots ? new Set(q.mots) : null;
   const count = q.count ?? 5;
   const t = q.time - day.start;
@@ -996,7 +1015,9 @@ export function localTrip(q: TripQuery): EfaTrip[] | null {
   const fp = from.point;
   const tp = to.point;
   const dist = distM(fp, tp);
-  if (dist <= d.params.walkOnlyM && q.via == null)
-    out.push({ legs: [{ mode: 'W', line: null, from: fp, to: tp, dep: q.time, arr: q.time + walkMin(dist), path: [[fp.lat, fp.lon], [tp.lat, tp.lon]], stops: [] }], dep: q.time, arr: q.time + walkMin(dist) });
+  if ((dist <= d.params.walkOnlyM || q.scooter) && q.via == null) {
+    const m = q.scooter ? moveMinutes(dist, true) : walkMin(dist);
+    out.push({ legs: [{ mode: 'W', line: null, from: fp, to: tp, dep: q.time, arr: q.time + m, path: [[fp.lat, fp.lon], [tp.lat, tp.lon]], stops: [] }], dep: q.time, arr: q.time + m });
+  }
   return out.sort((a, b) => a.dep - b.dep || a.arr - b.arr).slice(0, Math.max(count, out.length));
 }

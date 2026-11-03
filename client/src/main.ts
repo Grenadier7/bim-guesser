@@ -1,7 +1,7 @@
 import './style.css';
 import './dark.css';
 import { themeButton } from './theme.ts';
-import { findChallenge, showChallengeIntro } from './challenges.ts';
+import { findChallenge, loadSchedule, showChallengeIntro } from './challenges.ts';
 import { fmtDuration } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import { account, startPolling } from './account.ts';
@@ -282,6 +282,8 @@ async function init() {
     applyGameConfig(config);
     renderNotice();
     app.net = new NetIndex(network);
+    // Plan der Tages-Challenges vom Server (fehlt er, rechnet der Browser denselben)
+    await loadSchedule();
   } catch (e) {
     panel.innerHTML = `<div class="loading"><p class="err">Server nicht erreichbar: ${esc((e as Error).message)}</p></div>`;
     return;

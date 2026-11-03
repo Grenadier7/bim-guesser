@@ -1,6 +1,6 @@
 // Routen-Eingabe: Linie wählen -> Einstieg (auto, ggf. Fußweg) -> Ausstieg -> nächste Linie …
 import type { Line, Restriction, Station, UmlandStart, UserLeg } from '../../shared/types.ts';
-import { RESTRICTIONS, restrictionAllowsLine, restrictionAllowsRoute, restrictionLabel, restrictionMaxLegs } from '../../shared/rules.ts';
+import { RESTRICTIONS, moveMinutes, restrictionAllowsLine, restrictionAllowsRoute, restrictionLabel, restrictionMaxLegs } from '../../shared/rules.ts';
 import { legProblem, lineProblem, problemBadge, routeProblem, stationProblem, type RuleRound } from '../../shared/challengeRules.ts';
 import { clientRuleNet } from './challenges.ts';
 import { distM, fmtDist, type NetIndex } from './net.ts';
@@ -24,7 +24,13 @@ const WALK_QUIET_M = 250;
 const WALK_LOUD_M = 700;
 /** Gehzeit wie in der Auswertung: Luftlinie × 1,3 bei 80 m/min */
 const walkMinutes = (m: number) => Math.max(1, Math.round((m * 1.3) / 80));
-const walkText = (m: number) => `${fmtDist(m)} zu Fuß (≈ ${walkMinutes(m)} min)`;
+/** E-Scooter-Challenge: Wege mit 30 km/h (immer nur ein Baukasten zugleich zu sehen) */
+let scooterMode = false;
+const walkText = (m: number) => (scooterMode ? `${fmtDist(m)} mit dem Scooter (≈ ${moveMinutes(m, true)} min)` : `${fmtDist(m)} zu Fuß (≈ ${walkMinutes(m)} min)`);
+const walkIcon = () => (scooterMode ? '🛴' : '🚶');
+/** ab hier ist ein Weg „weit“ – mit dem Scooter fünfmal so weit */
+const loud = () => WALK_LOUD_M * (scooterMode ? 5 : 1);
+const quiet = () => WALK_QUIET_M * (scooterMode ? 5 : 1);
 
 export interface BuilderOptions {
   /** X-treme: Ein-/Ausstieg selbst eintippen, keine Auswahllisten und keine Stationszahl */
@@ -45,6 +51,8 @@ export interface BuilderOptions {
   umland?: UmlandStart;
   /** Linien, die zu dieser Uhrzeit nicht fahren – nicht vorschlagen */
   idle?: string[];
+  /** E-Scooter statt zu Fuß; ganz ohne Öffis abgeben geht auch */
+  scooter?: boolean;
 }
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -88,6 +96,7 @@ export class RouteBuilder {
     this.dest = dest;
     this.onChange = onChange;
     this.onSubmit = onSubmit;
+    scooterMode = !!opts.scooter;
     // Strg+Enter (Mac: ⌘+Enter): Route abgeben – auf der ganzen Seite, solange dieser Baukasten zu sehen ist (auch wenn
     // der Fokus nach dem letzten Ausstieg nirgends mehr steht)
     const onKey = (e: KeyboardEvent) => {
@@ -96,7 +105,7 @@ export class RouteBuilder {
       if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || document.querySelector('dialog[open]')) return;
       e.preventDefault();
       e.stopPropagation();
-      if (this.legs.length && !this.locked) this.onSubmit();
+      if ((this.legs.length || scooterMode) && !this.locked) this.onSubmit();
     };
     queueMicrotask(() => document.addEventListener('keydown', onKey, true));
     this.render();
@@ -130,6 +139,17 @@ export class RouteBuilder {
     const pool = list.length ? list : (this.opts.waypoints ?? [this.dest]);
     const best = pool.reduce((m, s) => (distM(s, p) < distM(m, p) ? s : m));
     return { name: best.name, dist: distM(best, p), lat: best.lat, lon: best.lon };
+  }
+
+  /**
+   * Warum die Route (noch) nicht abgegeben werden kann – Tages-Challenges: Regel der ganzen Route (mind. 3
+   * Verkehrsmittel, 2 Umstiege, Pflicht-Linie …) oder fehlende Punkte. null = abgeben geht.
+   */
+  submitProblem(): string | null {
+    if (!this.legs.length) return null;
+    const missing = this.missingWaypoints();
+    if (missing.length) return `📍 Noch nicht befahren: ${missing.map((w) => w.name).join(', ')}.`;
+    return this.opts.rules ? routeProblem(this.opts.rules, this.plain(), this.rn) : null;
   }
 
   /** „3 Punkte“: noch nicht befahren */
@@ -211,13 +231,13 @@ export class RouteBuilder {
       // Fußweg vor dieser Teilstrecke: zwischendurch und über 250 m als eigener Block (wie eine Fahrt)
       else if (from.id !== pos.id) {
         const d = distM(pos, from);
-        const level = d > WALK_LOUD_M ? 'walk-loud' : d > WALK_QUIET_M ? 'walk-mid' : 'walk-quiet';
-        if (i > 0 && d > WALK_QUIET_M && !hideD)
+        const level = d > loud() ? 'walk-loud' : d > quiet() ? 'walk-mid' : 'walk-quiet';
+        if (i > 0 && d > quiet() && !hideD)
           list.append(
-            h('li', { class: `leg walk-leg ${level}` }, `<div class="leg-main"><span class="walk-icon">🚶</span>
+            h('li', { class: `leg walk-leg ${level}` }, `<div class="leg-main"><span class="walk-icon">${walkIcon()}</span>
               <span class="leg-text">${esc(pos.name)} → <b>${esc(from.name)}</b><small>${walkText(d)}</small></span></div>`),
           );
-        else list.append(h('li', { class: `leg-walk ${level}` }, `🚶 ${hideD ? '' : `${fmtDist(d)} `}zu Fuß nach ${esc(from.name)}`));
+        else list.append(h('li', { class: `leg-walk ${level}` }, `${walkIcon()} ${hideD ? '' : `${fmtDist(d)} `}${scooterMode ? 'mit dem Scooter' : 'zu Fuß'} nach ${esc(from.name)}`));
       }
       const stops = this.net.stopsBetween(l.line, l.from, l.to);
       const last = i === this.legs.length - 1;
@@ -265,18 +285,27 @@ export class RouteBuilder {
     if (!arrived && full)
       this.el.append(h('div', { class: 'warn' }, `${esc(restrictionLabel(this.restriction!, this.banned))}: keine weitere Linie möglich.`));
 
+    // E-Scooter: noch keine Linie – ganz mit dem Scooter abgeben geht auch
+    if (!this.legs.length && scooterMode && !this.opts.hideDistances) {
+      const goal = this.goalNear(pos);
+      const foot = h('div', { class: 'submit-row' }, `<div class="walk">🛴 Nur mit dem Scooter: ${walkText(goal.dist)}</div><button class="btn btn-ghost" data-act="submit">Nur Scooter – abgeben</button>`);
+      foot.querySelector('button')!.disabled = this.locked;
+      foot.querySelector('button')!.addEventListener('click', () => this.onSubmit());
+      this.el.append(foot);
+    }
     if (this.legs.length) {
       const goal = this.goalNear(pos);
       const goalWord = this.opts.water ? `zum Wasser (${esc(goal.name)})` : this.opts.targets ? `zum nächsten Ziel (${esc(goal.name)})` : 'zum Ziel';
-      const endWalk = arrived || hideD || (this.opts.waypoints && this.missingWaypoints().length) ? '' : `<div class="walk">🚶 ${walkText(goal.dist)} ${goalWord}</div>`;
-      const far = !arrived && !hideD && !this.opts.water && goal.dist > WALK_WARN_M ? '<div class="warn">Ziemlich weiter Fußweg – sicher?</div>' : '';
-      const missing = this.missingWaypoints();
-      const todo = missing.length ? `<div class="warn">📍 Noch nicht befahren: ${missing.map((w) => `<b>${esc(w.name)}</b>`).join(', ')}</div>` : '';
+      const endWalk = arrived || hideD || (this.opts.waypoints && this.missingWaypoints().length) ? '' : `<div class="walk">${walkIcon()} ${walkText(goal.dist)} ${goalWord}</div>`;
+      const far = !arrived && !hideD && !this.opts.water && !scooterMode && goal.dist > WALK_WARN_M ? '<div class="warn">Ziemlich weiter Fußweg – sicher?</div>' : '';
+      // fehlende Punkte nennt die Regel-Zeile (submitProblem)
+      const todo = '';
       // Regel für die ganze Route (mind. eine S-Bahn …) noch nicht erfüllt → vor dem Abgeben sagen
-      const problem = this.opts.rules ? routeProblem(this.opts.rules, this.plain(), this.rn) : !restrictionAllowsRoute(this.restriction, this.legs.map((l) => l.line)) ? `${RESTRICTIONS[this.restriction!].icon} ${RESTRICTIONS[this.restriction!].hint}` : null;
-      const rule = problem ? `<div class="warn rule-warn">${esc(problem)}</div>` : '';
+      const problem = this.submitProblem() ?? (!this.opts.rules && !restrictionAllowsRoute(this.restriction, this.legs.map((l) => l.line)) ? `${RESTRICTIONS[this.restriction!].icon} ${RESTRICTIONS[this.restriction!].hint}` : null);
+      // Challenge-Regel nicht erfüllt: Abgeben geht erst, wenn sie erfüllt ist
+      const rule = problem ? `<div class="warn rule-warn">${esc(problem)}${this.submitProblem() ? '<br><small>Abgeben geht erst, wenn das erfüllt ist.</small>' : ''}</div>` : '';
       const foot = h('div', { class: 'submit-row' }, `${endWalk}${far}${todo}${rule}<button class="btn btn-primary" data-act="submit">Route abgeben</button><small class="kbd-hint">Strg + Enter</small>`);
-      foot.querySelector('button')!.disabled = this.locked;
+      foot.querySelector('button')!.disabled = this.locked || !!this.submitProblem();
       foot.querySelector('button')!.addEventListener('click', () => this.onSubmit());
       this.el.append(foot);
       // am Ziel: Fokus auf „Route abgeben“ (Enter gibt ab)
@@ -402,7 +431,7 @@ export class RouteBuilder {
       .map((o) => {
         const bad = stProblem(o.station.id);
         if (train) return `<option value="${o.station.id}">${esc(this.opts.umland!.town)} – im Zug (in Wien ab ${esc(o.station.name)})</option>`;
-        return `<option value="${o.station.id}" ${bad ? 'disabled' : ''} title="${esc(bad ?? '')}">${o.dist === 0 ? `${esc(o.station.name)} (hier)` : `${esc(o.station.name)} · 🚶 ${fmtDist(o.dist)}`}${bad ? ` – ${problemBadge(this.opts.rules!)}` : ''}</option>`;
+        return `<option value="${o.station.id}" ${bad ? 'disabled' : ''} title="${esc(bad ?? '')}">${o.dist === 0 ? `${esc(o.station.name)} (hier)` : `${esc(o.station.name)} · ${walkIcon()} ${fmtDist(o.dist)}`}${bad ? ` – ${problemBadge(this.opts.rules!)}` : ''}</option>`;
       })
       .join('');
     // gesperrter Einstieg vorgewählt → den ersten erlaubten nehmen
@@ -432,8 +461,8 @@ export class RouteBuilder {
             `⚠️ <b>Die ${esc(line.id)} hält erst bei ${esc(boardName)}</b> – ${walkText(boardDist)}. Die nächste Haltestelle wäre ${esc(nearest.station.name)} (${walkText(nearest.dist)}).`,
           ),
         );
-      else form.append(h('div', { class: 'walk-note' }, `🚶 ${walkText(boardDist)} zur Haltestelle ${esc(boardName)}`));
-    } else if (boardDist > WALK_LOUD_M && !this.opts.hideDistances)
+      else form.append(h('div', { class: 'walk-note' }, `${walkIcon()} ${walkText(boardDist)} zur Haltestelle ${esc(boardName)}`));
+    } else if (boardDist > loud() && !this.opts.hideDistances)
       form.append(
         h(
           'div',
@@ -441,17 +470,17 @@ export class RouteBuilder {
           `⚠️ <b>Die ${esc(line.id)} fährt nicht bei ${esc(pos.name)}.</b> Nächster Halt: ${esc(boardName)} – ${walkText(boardDist)}. Absicht? Sonst „andere Linie“.`,
         ),
       );
-    else if (boardDist > WALK_QUIET_M && !this.opts.hideDistances)
+    else if (boardDist > quiet() && !this.opts.hideDistances)
       form.append(
         h(
           'div',
           { class: 'walk-alert walk-mid' },
           servesHere
             ? `↩ In diese Richtung hält die ${esc(line.id)} nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`
-            : `🚶 Die ${esc(line.id)} hält nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`,
+            : `${walkIcon()} Die ${esc(line.id)} hält nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`,
         ),
       );
-    else if (boardDist > 0 && !this.opts.hideDistances) form.append(h('div', { class: 'walk-note' }, `🚶 ${fmtDist(boardDist)} zum Einstieg ${esc(boardName)}`));
+    else if (boardDist > 0 && !this.opts.hideDistances) form.append(h('div', { class: 'walk-note' }, `${walkIcon()} ${fmtDist(boardDist)} zum Einstieg ${esc(boardName)}`));
 
     // Ausstieg nach Richtung gruppiert
     const alightSel = this.alightSelect(line, this.board!, null, this.plain(), !!train);

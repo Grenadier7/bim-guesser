@@ -12,7 +12,7 @@
 //     Ein zufällig perfekter Anschluss (an um 16:32, S-Bahn um 16:34) bringt so keinen Vorteil mehr –
 //     eine S-Bahn alle 15 min kostet im Schnitt 7,5 min Warten, eine U-Bahn alle 4 min nur 2.
 import type { LatLon, Mode, NetMode, Restriction, RouteLeg, RouteOption, RouteStep, UserLeg } from '../shared/types.ts';
-import { lineColor, lineGroupLabel, regionalTrains, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
+import { lineColor, lineGroupLabel, moveMinutes, regionalTrains, lineKey, restrictionAllowsLine, restrictionLabel, restrictionMaxLegs, transfersOf } from '../shared/rules.ts';
 import * as efa from './efa.ts';
 import { routeProblem } from '../shared/challengeRules.ts';
 import { ruleNetOf } from './challengeRound.ts';
@@ -35,9 +35,13 @@ const median = (xs: number[]) => {
   return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
 };
 
-function walkMin(net: Network, a: string, b: string): number {
+/** Wegzeit a → b: zu Fuß oder (q.scooter) mit dem E-Scooter – Treppen an U-/S-Bahn-Stationen, nicht an Start/Ziel */
+function walkMin(net: Network, a: string, b: string, q?: Pick<RouteQuery, 'scooter'>, stairsA = false, stairsB = false): number {
   if (a === b) return 0;
-  return Math.max(1, Math.round((distM(net.station(a), net.station(b)) * 1.3) / 80));
+  const m = distM(net.station(a), net.station(b));
+  if (!q?.scooter) return Math.max(1, Math.round((m * 1.3) / 80));
+  const rail = (id: string) => net.station(id).modes.some((x) => x === 'U' || x === 'S');
+  return moveMinutes(m, true, (stairsA && rail(a) ? 1 : 0) + (stairsB && rail(b) ? 1 : 0));
 }
 
 function walkLeg(net: Network, a: string, b: string, dep: number, arr: number): RouteLeg {
@@ -133,6 +137,8 @@ export interface RouteQuery {
   avoidStations?: string[];
   avoidLines?: string[];
   avoidLineStations?: Record<string, string[]>;
+  /** E-Scooter statt zu Fuß (30 km/h, Treppen an U-/S-Bahn-Stationen) */
+  scooter?: boolean;
 }
 
 /** Meiden-Angaben einer Abfrage als EFA-Halte */
@@ -364,14 +370,14 @@ async function chainRoute(
   let failedLeg = 0;
   for (const offset of SAMPLE_OFFSETS) {
     const t0 = slotTime + offset;
-    const w0 = walkMin(net, fromId, legs[0].from);
+    const w0 = walkMin(net, fromId, legs[0].from, q, false, true);
     const out: RouteLeg[] = [];
     let cur = t0 + w0;
     let begin = 0;
     let failed: string | null = null;
     for (let i = 0; i < legs.length; i++) {
       const prev = i === 0 ? fromId : legs[i - 1].to;
-      const w = i === 0 ? w0 : prev === legs[i].from ? 2 : Math.max(2, walkMin(net, prev, legs[i].from));
+      const w = i === 0 ? w0 : prev === legs[i].from ? 2 : Math.max(2, walkMin(net, prev, legs[i].from, q, true, true));
       if (i > 0) cur += w;
       const l = await tables[i].firstAfter(cur);
       if (l) rideTimes[i].push(l.dep);
@@ -390,7 +396,7 @@ async function chainRoute(
       return { route: null, error: failed + (await suggestion(net, legs.find((_, k) => k === failedLeg)!, slotTime)) };
     }
     const last = legs[legs.length - 1].to;
-    const wEnd = walkMin(net, last, toId);
+    const wEnd = walkMin(net, last, toId, q, true, false);
     if (wEnd) out.push(walkLeg(net, last, toId, cur, cur + wEnd));
     samples.push({ total: cur + wEnd - (q.countWait ? t0 : begin), ride: cur + wEnd - begin, route: out });
   }
@@ -423,7 +429,7 @@ async function chainRoute(
     samples: samples.length,
   };
   if (q.avgWait) {
-    const avg = await averagedRoute(net, legs, tables, fromId, toId, slotTime, q.countWait, lineInfo.map((x) => x.label), lineInfo.map((x) => x.with));
+    const avg = await averagedRoute(net, legs, tables, fromId, toId, slotTime, q.countWait, lineInfo.map((x) => x.label), lineInfo.map((x) => x.with), q);
     if (avg) Object.assign(route, avg);
   }
   return { route, error: null };
@@ -477,6 +483,7 @@ async function averagedRoute(
   labels?: (string | null)[],
   /** je Teilstrecke: Regionalzüge, die im Takt mitzählen */
   extra?: string[][],
+  q?: Pick<RouteQuery, 'scooter'>,
 ): Promise<Pick<RouteOption, 'medianMin' | 'rideMin' | 'steps'> | null> {
   let t = slotTime;
   let firstWait = 0;
@@ -488,13 +495,13 @@ async function averagedRoute(
     const m = Math.round(t) - a;
     if (m > 0 || kind === 'ride') steps.push({ kind, at: efa.fmtTime(a), min: m, ...extra });
   };
-  const w0 = walkMin(net, fromId, legs[0].from);
+  const w0 = walkMin(net, fromId, legs[0].from, q, false, true);
   if (w0) add('walk', w0, { to: net.station(legs[0].from).name });
   for (let i = 0; i < legs.length; i++) {
     const prev = i === 0 ? fromId : legs[i - 1].to;
     if (i > 0) {
       const same = prev === legs[i].from;
-      add(same ? 'transfer' : 'walk', same ? 2 : Math.max(2, walkMin(net, prev, legs[i].from)), { to: net.station(legs[i].from).name });
+      add(same ? 'transfer' : 'walk', same ? 2 : Math.max(2, walkMin(net, prev, legs[i].from, q, true, true)), { to: net.station(legs[i].from).name });
     }
     // Erwartete Wartezeit: für jede Ankunftsminute der nächsten Stunde die Zeit bis zur nächsten echten
     // Abfahrt, gemittelt. Stimmt auch bei unregelmäßigem Takt (50B: 12:35, 13:15, 13:55, 14:45 …) und springt
@@ -527,7 +534,7 @@ async function averagedRoute(
       color: lineColor(line.mode, line.id),
     });
   }
-  const wEnd = walkMin(net, legs[legs.length - 1].to, toId);
+  const wEnd = walkMin(net, legs[legs.length - 1].to, toId, q, true, false);
   if (wEnd) add('walk', wEnd, { to: net.station(toId).name });
   const total = Math.round(t) - slotTime;
   return { medianMin: total, rideMin: total - Math.round(firstWait), steps };
@@ -543,7 +550,7 @@ export function topRoutes(net: Network, fromId: string, toId: string, slotTime: 
 async function topRoutesIn(net: Network, fromId: string, toId: string, slotTime: number, q: RouteQuery): Promise<RouteOption[]> {
   const from = net.mainEfaId(fromId);
   const to = net.mainEfaId(toId);
-  const rq = { ...(q.onlyModes ? { mots: efa.motsForModes(q.onlyModes) } : restrictionQuery(q.restriction)), ...avoidParams(net, q) };
+  const rq = { ...(q.onlyModes ? { mots: efa.motsForModes(q.onlyModes) } : restrictionQuery(q.restriction)), ...avoidParams(net, q), ...(q.scooter ? { scooter: true } : {}) };
   let failures = 0;
   const batches = await Promise.all(
     SAMPLE_OFFSETS.map((o) =>
