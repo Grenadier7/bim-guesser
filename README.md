@@ -130,10 +130,19 @@ Verbindung, die nur mit bekannten Linien und alle Versuche mit Begründung. Die 
   „Spiel beenden“ mitten im Spiel zeigt den Endstand der gespielten Runden.
 - **Tages-Challenges** in der Routenjagd-Lobby – kurze Abwechslung für etwa 5 Minuten (`shared/challenges.ts`,
   Regeln in `shared/challengeRules.ts`, Server `server/challengeRound.ts`): ein niedriges Banner unter
-  „Einstellungen“, mit ‹ › blätterbar – jeden Tag **3 aus der Rotation + 🏘️ Bezirk des Tages** (für alle gleich,
-  zufällig gemischt, die erste ist der Vorschlag). Rotation: jede kommt gleich oft und in fast gleichem Abstand, nie an
-  zwei Tagen hintereinander, wechselnde Gruppen; der Bezirk wechselt täglich (alle 23 der Reihe nach).
-  - „Spielen“ setzt alle Einstellungen auf Standard + die der Challenge („Wo liegt das?“ aus), klappt „Erweitert“ zu
+  „Einstellungen“, mit ‹ › blätterbar (Titel eine Zeile, Beschreibung höchstens zwei) – jeden Tag **3 aus dem Plan
+  + 🏘️ Bezirk des Tages** (für alle gleich, zufällig gemischt, die erste ist der Vorschlag).
+  - **Tagesplan** (`buildSchedule` in `shared/challenges.ts`): einmal für 180 Tage berechnet, dann exakt wiederholt;
+    der Server legt ihn als `challenge-schedule.json` (STATE_DIR) ab und rechnet nur neu, wenn sich die Challenges
+    ändern (`/api/challenges/schedule`). Jede Challenge kommt in jedem 30-Tage-Fenster fast gleich oft (Guthaben je
+    Tag, danach ringförmig geglättet), zu ähnliche (`avoid` – z.B. Wasser/Bad, Drei Ziele/Drei Punkte,
+    Fleckerlteppich/Innenstadt umfahren) nie am selben Tag und möglichst nicht am Tag davor, jeden Tag normale und
+    besondere (`kind`), wechselnde Gruppen; funktioniert auch mit mehr Challenges.
+  - **Bezirk des Tages:** 18 Gruppen (große Bezirke allein, kleine paarweise: 2+20, 4+5, 6+7, 8+9, 15+16), Start und
+    Ziel in den Bezirken, alle Bim- und Bushaltestellen mit 2+ Linien, 1–6 km; am Tag des 1. Bezirks keine Ring-Runde.
+  - Jede Challenge legt **alle Einstellungen selbst** fest (`CHALLENGE_BASE` + eigene Haltestellen-Arten, Entfernung,
+    Umstiege) – was in der Lobby eingestellt war, spielt keine Rolle.
+  - „Spielen“ setzt die Einstellungen der Challenge („Wo liegt das?“ aus), klappt „Erweitert“ zu
     und graut alles aus (am Server gesperrt) – **nur die Rundenzahl bleibt wählbar**, mit eigenen Optionen je
     Challenge (Standard ≈ 5 Minuten: leicht 2, schwer 1, Sprints 3–4). Eigener Start-Knopf, beim Start sieht jeder ein
     Fenster mit Icon, Name und Beschreibung. „✕ Beenden“ → wieder alles Standard.
@@ -149,7 +158,14 @@ Verbindung, die nur mit bekannten Linien und alle Versuche mit Begründung. Die 
     zwei, z.B. Absdorf-Hippersdorf: S4 oder S40; Fahrzeit bis zur Stadtgrenze ca., `UMLAND` in `server/challengeRound.ts`)
     · 🎡 Ring-Runde (Innere Stadt nur mit Bim und Bus) · 🏠 Tür zu Tür · 🌄 Stadtrand-Tour (12–25 km) · 🚧 Aktuelles Netz ·
     🍻 Dickmacks Donnerstag (01:30 unter der Woche, Schwedenplatz → Adresse, nur Nightline) · 🌙 Nachtschicht ·
-    🧺 Sonntagsausflug.
+    🧺 Sonntagsausflug · 🛴 E-Scooter (Wege mit 30 km/h, 30 s Treppen an U-/S-Bahn; auch „nur Scooter“ als Antwort) ·
+    🚁 Hubschrauber (drei Linien H1–H3 mit fester Flugzeit, einer bringt Zeit) · 🌉 Brückenkenner (mehr Brücken als die
+    schnellste Verbindung) · 🔮 Zielnetz 2040.
+  - **Abgeben** geht erst, wenn die Regel der ganzen Route erfüllt ist (mind. 3 Verkehrsmittel, 2 Umstiege,
+    Pflicht-Linie, alle Punkte …) – nur bei Zeitablauf geht die Route trotzdem raus (zählt dann nicht).
+  - **Verteilung:** Start und Ziel nach Fläche (jedes ~1,2-km-Feld mit Haltestellen gleich oft, nicht jede Station),
+    selten gezogene zuerst, die letzten 300 gespielten Strecken werden gemieden. `npm run check:spread` spielt jede
+    Challenge 10× und zeigt Anteile je Gegend und Wiederholungen.
   - Zeitlimit: Challenges mit fester Regel bekommen keine Extrazeit (meist 4 Minuten, lange Strecken 5) – nur der
     Hindernislauf mit wechselnden Hürden. Rundenzahl immer bis 5 wählbar.
   - **Suche je Regel:** Gesperrtes (Bezirke, unterirdische Abschnitte, Insider-Linien) meidet schon der eigene Fahrplan
@@ -165,6 +181,17 @@ Verbindung, die nur mit bekannten Linien und alle Versuche mit Begründung. Die 
   - Unterirdische Abschnitte (grob): U3 fast ganz, U1/U2/U4 im Zentrum, U6 bei Längenfeldgasse/Niederhofstraße und
     Jägerstraße/Dresdner Straße, S-Bahn-Stammstrecke (Mitte–Rennweg–Quartier Belvedere), 18er am Hauptbahnhof und im
     Südgürtel-Tunnel (`UNDERGROUND` in `shared/challengeRules.ts`).
+  - **Brückenkenner:** echte Brücken aus OpenStreetMap über Donau/Neue Donau, Donaukanal, Wienfluss und Alte Donau
+    (`npm run build:bridges` → `data/bridges.json`, ODbL), je Verkehrsmittel zugeordnet: die U-Bahn zählt nur über eine
+    U-Bahn-Brücke (die U1 unter dem Donaukanal nicht), parallel zum Fluss zählt nicht, die Reichsbrücke über Donau und
+    Neue Donau ist eine. Auf der Karte: Abschnitte in der Farbe des Verkehrsmittels, Linien im Tooltip.
+  - **Zielnetz 2040:** eigener Netzplan (`server/ziel2040.ts`, beim Start angelegt, auf der Admin-Seite unter
+    „Netzpläne“ änderbar und in der Lobby unter „Netz“ wählbar) – U5 (Hernals – Karlsplatz), U2 über Neubaugasse und
+    Pilgramgasse zum Wienerberg, U1 nach Rothneusiedl, S45 bis Praterkai (Ring mit der S80), S45 alle 5 / S80 alle 10 /
+    Stammstrecke je Linie alle 15 Minuten, S70 Simmering – Lobau – Essling – Aspern Nord – Süßenbrunn, Bim 15
+    (Wienerberg-Tangente) und 29 neu, 12/18/25/27 verlängert. Nicht genau, sondern spielbar. Die Challenge nimmt nur
+    Strecken, deren beste Verbindung wegen des neuen Netzes anders oder ≥ 2 min schneller ist (`npm run check:future`:
+    30 von 30); „Zielnetz einblenden“ zeigt die Linien, die Auflösung den Vergleich mit heute.
   - **Ab ins Wasser:** Gewässer und Bäder aus OpenStreetMap (`npm run build:water` → `data/water.json`, ODbL); Start
     ≥ 1,2 km vom Wasser und mit den Öffis klar schneller als zu Fuß; gewertet bis ans Wasser inkl. Fußweg.
   - **Medaillen:** 🎪 Challenge-Sammler (verschiedene gespielt) und 🏅 Challenge-Meister (geschafft – meist eine Runde
