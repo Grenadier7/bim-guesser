@@ -468,11 +468,19 @@ function smooth(days: string[][], districts: number[], banOn: (g: number) => Set
   const cost = (list: number[]) => {
     const ideal = D / list.length;
     const sorted = [...list].sort((a, b) => a - b);
+    const n = sorted.length;
+    const gaps = sorted.map((x, k) => (k + 1 < n ? sorted[k + 1] : sorted[0] + D) - x);
     let c = 0;
-    for (let k = 0; k < sorted.length; k++) {
-      const gap = (k + 1 < sorted.length ? sorted[k + 1] : sorted[0] + D) - sorted[k];
+    for (let k = 0; k < n; k++) {
+      const gap = gaps[k];
       // große Lücken (ein Monat fast ohne) und sehr kurze kosten extra
       c += (gap - ideal) ** 2 + Math.max(0, Math.abs(gap - ideal) - 2) ** 4 + (gap < 3 ? 50 : 0);
+      // ein 30-Tage-Fenster mit nur einem Mal (zwei Lücken zusammen > 30) bzw. viermal (drei Lücken ≤ 29) – nur, wenn
+      // im Schnitt 2–3 Mal je Monat drin sind
+      if (ideal > 9 && ideal < 15) {
+        if (gap + gaps[(k + 1) % n] > 30) c += 60;
+        if (gap + gaps[(k + 1) % n] + gaps[(k + 2) % n] <= 29) c += 60;
+      }
     }
     return c;
   };

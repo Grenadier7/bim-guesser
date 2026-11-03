@@ -85,6 +85,14 @@ test('Plan: wächst mit – auch mit mehr Challenges gleich oft und ohne Ähnlic
     const v = [...count.values()];
     assert.ok(Math.max(...v) - Math.min(...v) <= 2, `${Math.min(...v)}–${Math.max(...v)}× in ${p.days.length} Tagen`);
     for (const d of p.days) for (const x of d) for (const y of d) if (x !== y) assert.ok(!similar(x, y));
+    // auch je 30 Tage fast gleich oft
+    const L = p.days.length;
+    for (let s = 0; s < L; s++) {
+      const n = new Map([...count.keys()].map((id) => [id, 0]));
+      for (let i = s; i < s + 30; i++) for (const id of p.days[i % L]) n.set(id, n.get(id)! + 1);
+      const w = [...n.values()];
+      assert.ok(Math.max(...w) - Math.min(...w) <= 2, `mit mehr Challenges ab Tag ${s}: ${Math.min(...w)}–${Math.max(...w)}×`);
+    }
   } finally {
     CHALLENGES.splice(CHALLENGES.length - extra.length, extra.length);
   }
