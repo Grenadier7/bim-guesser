@@ -677,6 +677,7 @@ export const MODE_LABEL: Record<Mode, string> = {
   B: 'Bus',
   N: 'Nachtbus',
   W: 'Fußweg',
+  H: 'Hubschrauber',
 };
 
 export const MODE_ICON: Record<Mode, string> = {
@@ -686,6 +687,7 @@ export const MODE_ICON: Record<Mode, string> = {
   B: '🚌',
   N: '🌙',
   W: '🚶',
+  H: '🚁',
 };
 
 const U_COLORS: Record<string, string> = {
@@ -705,6 +707,7 @@ export const MODE_COLOR: Record<Mode, string> = {
   B: '#0a295d',
   N: '#3b2a7a',
   W: '#7a7a7a',
+  H: '#c2185b',
 };
 
 /** Badner Bahn: eigenes Blau – dunkler als die S-Bahn, damit man sie nicht verwechselt */

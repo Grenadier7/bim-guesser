@@ -53,6 +53,8 @@ export function roundScreen(panel: HTMLElement): Screen {
         districts: round.districts,
       }
     : undefined;
+  // Hubschrauber: H1–H3 als Linien dieser Runde (A ↔ B)
+  app.net.setRoundLines((round.helis ?? []).map((x) => ({ id: x.id, mode: 'H' as const, color: '#c2185b', patterns: [[x.a.id, x.b.id], [x.b.id, x.a.id]], nets: ['cr', 'cr'] })));
   const targets = round.targets?.map((t) => app.net.ensure(t));
   const waypoints = round.waypoints?.map((t) => app.net.ensure(t));
   if (round.water && !waterNow()) void loadWater().then(() => alive && render());
@@ -116,6 +118,10 @@ export function roundScreen(panel: HTMLElement): Screen {
 
   /** Regel der Challenge (verständlich, mit Pflicht-Linien als Chips) */
   function challengeHead(): string {
+    if (round.helis?.length)
+      return `<div class="challenge-rule">🚁 Hubschrauber – wie eine Linie eintippen (Flug inkl. Einsteigen, danach weiter mit den Öffis): ${round.helis
+        .map((x) => `${lineChip('H', x.id, '#c2185b')} ${esc(x.a.name)} ↔ ${esc(x.b.name)} · ${x.min} min`)
+        .join(' · ')}</div>`;
     if (!rules || !s.settings.challenge) return '';
     const text = ruleSummary(rules);
     if (!text) return '';
@@ -147,7 +153,7 @@ export function roundScreen(panel: HTMLElement): Screen {
     // Handy: zum Orten die Karte groß machen, danach wieder normal
     setMapBig(view === 'locate');
     if (view === 'locate') return renderLocate();
-    if (showMap && (targets || waypoints || round.water || round.umland || (rules && blockedDistricts(rules).length) || round.restriction === 'sunny')) showChallengeMap(true);
+    if (showMap && (targets || waypoints || round.water || round.umland || round.helis || (rules && blockedDistricts(rules).length) || round.restriction === 'sunny')) showChallengeMap(true);
     else if (showMap) app.map.showEndpoints(round.from!, round.to!, true, showNames);
     else app.map.clear();
     const transferTip = tips.find((t) => t.kind === 'transfers');
@@ -351,6 +357,7 @@ export function roundScreen(panel: HTMLElement): Screen {
       underground: round.restriction === 'sunny' ? undergroundPaths() : undefined,
       // Umland: Wien umrahmt – man startet draußen
       outline: round.umland ? app.net.data.districts : undefined,
+      helis: round.helis,
       fit,
     });
   }

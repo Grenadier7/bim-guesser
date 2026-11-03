@@ -40,6 +40,7 @@ import { DEADLINE_GRACE_MS, GameError, Lobby } from './lobby.ts';
 import { CancelledError } from './efa.ts';
 import { waterData } from './water.ts';
 import { nearestWater, walkMinutes, type WaterHit } from '../shared/water.ts';
+import { heliMinutes, heliPart, joinRoutes, type Heli } from './challengeRound.ts';
 import { UMLAND, avoidFor, crossesCenter, mergeRoutes, pairFits, pickDistricts, pickRequired, routeAllowed, ruleNetOf, searchVariants, umlandStart, withTrain } from './challengeRound.ts';
 import { runningLines } from './timetable.ts';
 import type { RuleNet, RuleRound } from '../shared/challengeRules.ts';
@@ -84,6 +85,8 @@ interface Round {
   water?: 'all' | 'bath';
   /** Linien, die zu dieser Uhrzeit nicht fahren („nur fahrende Linien vorschlagen“) */
   idle?: string[];
+  /** Hubschrauber-Linien (H1–H3) */
+  helis?: Heli[];
 }
 
 export class Game extends Lobby {
@@ -345,6 +348,7 @@ export class Game extends Lobby {
       try {
         if (this.settings.task === 'water' || this.settings.task === 'bath') routes = await this.prepWater(round, rn, this.settings.task === 'bath' ? 'bath' : 'all');
         else if (round.umland) routes = await this.prepUmland(round, round.umland, b, strict);
+        else if (this.settings.task === 'heli') routes = await this.prepHeli(round, a, b, strict);
         else if (this.settings.task === 'choose3') routes = await this.prepChoose3(round, a, b, rn, strict);
         else if (this.settings.task === 'visit3') routes = await this.prepVisit3(round, a, rn);
         else routes = await this.prepNormal(round, a, b, rn, strict, strict ? wanted : 0);
@@ -471,6 +475,111 @@ export class Game extends Lobby {
     // nicht einfach sitzen bleiben: in Wien wird mindestens einmal umgestiegen (nach vielen Versuchen egal)
     if (strict && all[0].legs.filter((l) => l.mode !== 'W').length < 2) return null;
     return all;
+  }
+
+  /** Öffis a → b (bzw. kein Weg, wenn a = b; zu Fuß, wenn nah): die beste Verbindung */
+  private async segment(round: Round, a: Station, b: Station): Promise<RouteOption | null> {
+    if (a.id === b.id) return null;
+    return (await this.searchAll(round, a.id, b.id))[0] ?? null;
+  }
+
+  /**
+   * Hubschrauber: drei Linien auf der Karte. Eine bringt klar Zeit (beste Verbindung mit ihr ≥ 3 min schneller als
+   * ohne), zwei sehen ähnlich verlockend aus, bringen aber weniger. Kandidaten: Stationspaare 3–8 km, deren Flug in
+   * Richtung Ziel liegt; die vielversprechendsten werden mit den echten Verbindungen bis zum Abflug und ab der
+   * Landung durchgerechnet.
+   */
+  private async prepHeli(round: Round, a: Station, b: Station, strict: boolean): Promise<RouteOption[] | null> {
+    round.helis = undefined;
+    const base = await this.searchAll(round, a.id, b.id);
+    const best = base.find((r) => r.key !== 'walk');
+    if (!best) return null;
+    const pool = this.net.candidates(['U', 'S', 'Tkey'], this.settings.slot, this.settings.network);
+    const d = distM(a, b);
+    // Schätzung: Öffis ~ 300 m/min Luftlinie
+    const guess = (x: Station, y: Station) => distM(a, x) / 300 + heliMinutes(distM(x, y)) + distM(y, b) / 300;
+    const cands: { x: Station; y: Station; g: number }[] = [];
+    for (let n = 0; n < 400 && cands.length < 60; n++) {
+      const x = pool[Math.floor(Math.random() * pool.length)];
+      const y = pool[Math.floor(Math.random() * pool.length)];
+      const m = distM(x, y);
+      if (m < 3000 || m > 8000) continue;
+      // in Flugrichtung: näher am Start abheben, näher am Ziel landen
+      if (distM(a, x) + distM(y, b) > d * 0.9 || distM(a, x) > distM(a, y)) continue;
+      cands.push({ x, y, g: guess(x, y) });
+    }
+    if (cands.length < 3) return null;
+    cands.sort((p, q) => p.g - q.g);
+    // die 5 besten Schätzungen echt rechnen (verschiedene Abflugorte)
+    const tried: { h: Heli; route: RouteOption }[] = [];
+    for (const c of cands) {
+      if (tried.length >= 5) break;
+      if (tried.some((t) => distM(t.h.a, c.x) < 1500 && distM(t.h.b, c.y) < 1500)) continue;
+      const h: Heli = { id: '', a: c.x, b: c.y, min: heliMinutes(distM(c.x, c.y)) };
+      const [s1, s2] = await Promise.all([this.segment(round, a, c.x), this.segment(round, c.y, b)]);
+      if ((c.x.id !== a.id && !s1) || (c.y.id !== b.id && !s2)) continue;
+      tried.push({ h, route: joinRoutes(`heli:${c.x.id}>${c.y.id}`, [s1, heliPart(h, c.x, c.y), s2]) });
+    }
+    tried.sort((p, q) => p.route.medianMin - q.route.medianMin);
+    const win = tried[0];
+    if (!win) return null;
+    if (strict && win.route.medianMin + 3 > best.medianMin) return null;
+    // Lockvögel: langsamer als der beste Flug, aber nicht offensichtlich nutzlos
+    const decoys = tried.slice(1).filter((t) => t.route.medianMin >= win.route.medianMin + 2).slice(0, 2);
+    while (decoys.length < 2) {
+      const c = cands[Math.floor(Math.random() * cands.length)];
+      if ([win, ...decoys].some((t) => distM(t.h.a, c.x) < 1500)) continue;
+      decoys.push({ h: { id: '', a: c.x, b: c.y, min: heliMinutes(distM(c.x, c.y)) }, route: null as unknown as RouteOption });
+    }
+    // Reihenfolge mischen – H1 ist nicht immer der richtige
+    const all = [win, ...decoys].sort(() => Math.random() - 0.5);
+    all.forEach((t, i) => (t.h.id = `H${i + 1}`));
+    for (const t of all) if (t.route) t.route = { ...t.route, legs: t.route.legs.map((l) => (l.mode === 'H' ? { ...l, line: t.h.id } : l)) };
+    round.helis = all.map((t) => t.h);
+    return sortRoutes([...all.filter((t) => t.route).map((t) => t.route), ...base], this.settings);
+  }
+
+  private async evaluateHeli(round: Round, legs: UserLeg[], dest: string, q: RouteQuery) {
+    const fail = (error: string) => ({ route: null, durationMin: null, matchedRank: null, source: 'none' as const, error });
+    const parts: (RouteOption | { leg: RouteLeg; min: number } | null)[] = [];
+    let at = round.from!;
+    let seg: UserLeg[] = [];
+    let elapsed = 0;
+    const flush = async (to: Station) => {
+      if (!seg.length) {
+        // nur zu Fuß zum Hubschrauber bzw. vom Landeplatz
+        if (at.id === to.id) return null;
+        const m = moveMinutes(distM(at, to), false);
+        const leg: RouteLeg = { mode: 'W', line: null, color: '#7a7a7a', fromName: at.name, toName: to.name, fromStation: at.id, toStation: to.id, dep: '', arr: '', path: [[at.lat, at.lon], [to.lat, to.lon]] };
+        return { key: 'walk', legs: [leg], medianMin: m, minMin: m, maxMin: m, rideMin: m, samples: 1 } as RouteOption;
+      }
+      const r = await evaluateUserRoute(this.net, seg, at.id, to.id, round.time + Math.round(elapsed), this.settings.network, q, []);
+      if (!r.route || r.durationMin == null) throw new Error(r.error ?? 'Teilstrecke nicht auswertbar.');
+      return { ...r.route, medianMin: r.durationMin };
+    };
+    try {
+      for (const l of legs) {
+        const h = round.helis!.find((x) => x.id === l.line);
+        if (!h) {
+          seg.push(l);
+          continue;
+        }
+        const [from, to] = l.from === h.a.id && l.to === h.b.id ? [h.a, h.b] : l.from === h.b.id && l.to === h.a.id ? [h.b, h.a] : [null, null];
+        if (!from || !to) return fail(`🚁 ${h.id} fliegt nur zwischen ${h.a.name} und ${h.b.name}.`);
+        const before = await flush(from);
+        if (before) (parts.push(before), (elapsed += before.medianMin));
+        parts.push(heliPart(h, from, to));
+        elapsed += h.min;
+        seg = [];
+        at = to;
+      }
+      const after = await flush(this.net.station(dest));
+      if (after) parts.push(after);
+    } catch (e) {
+      return fail((e as Error).message);
+    }
+    const route = joinRoutes('heli:user', parts);
+    return { route, durationMin: route.medianMin, matchedRank: null, source: 'computed' as const, error: null };
   }
 
   /** E-Scooter von Start zu Ziel, ganz ohne Öffis */
@@ -805,6 +914,8 @@ export class Game extends Lobby {
   /** Eine Spieler-Route nachrechnen; fällt die Auskunft aus, ist nur diese Route betroffen (nicht die ganze Runde) */
   private async evaluate(round: Round, legs: UserLeg[], q: RouteQuery, routes: RouteOption[]) {
     const fail = (error: string) => ({ route: null, durationMin: null, matchedRank: null, source: 'none' as const, error });
+    // Hubschrauber: an den Flügen zerlegen – Öffi-Abschnitte einzeln nachrechnen (Wartezeit nach der Landung zählt)
+    if (round.helis && legs.some((l) => round.helis!.some((h) => h.id === l.line))) return this.evaluateHeli(round, legs, round.to!.id, q);
     // E-Scooter ohne Öffis: nur der Scooter von A nach B
     if (!legs.length && this.settings.scooter) {
       const route = routes.find((r) => r.key === 'walk') ?? this.scooterOnly(round);
@@ -975,6 +1086,7 @@ export class Game extends Lobby {
         umland: visible ? r.umland : undefined,
         districts: visible ? r.districts : undefined,
         idle: visible ? r.idle : undefined,
+        helis: visible && r.helis ? r.helis.map((h) => ({ id: h.id, a: this.net.ref(h.a.id), b: this.net.ref(h.b.id), min: h.min })) : undefined,
         targets: visible && r.targets ? r.targets.map((t) => this.net.ref(t.id)) : undefined,
         waypoints: visible && r.waypoints ? r.waypoints.map((t) => this.net.ref(t.id)) : undefined,
         water: visible ? r.water : undefined,

@@ -188,6 +188,7 @@ export class GameMap {
 
   zoomTo(lat: number, lon: number, zoom: number) {
     this.lastView = null;
+    if (!this.map.getSize().x) return void this.map.setView([lat, lon], zoom);
     this.map.flyTo([lat, lon], zoom, { duration: 0.5 });
   }
 
@@ -228,8 +229,8 @@ export class GameMap {
   }
 
   overview() {
-    this.lastView = null;
-    this.map.flyToBounds(VIENNA, { duration: 0.5 });
+    // über fit: ohne Kartengröße (ausgeblendet) wird nachgeholt statt mit NaN zu rechnen
+    this.fit(L.latLngBounds(VIENNA as L.LatLngExpression[]));
   }
 
   /** Innenstadt bis etwas über den Gürtel hinaus – Startansicht zum Lernen */
@@ -275,6 +276,8 @@ export class GameMap {
     underground?: { line: string; path: [number, number][] }[];
     /** Umland: Wien umrahmen (Start liegt außerhalb) */
     outline?: District[];
+    /** Hubschrauber-Linien: rosa Strich mit Flugzeit */
+    helis?: { id: string; a: StationRef; b: StationRef; min: number }[];
     fit?: boolean;
   }) {
     this.endpoints.clearLayers();
@@ -297,6 +300,20 @@ export class GameMap {
     for (const d of o.inner ?? [])
       this.challenge.addLayer(L.polygon(d.rings, { color: '#c81e1e', weight: 1.5, fillColor: '#c81e1e', fillOpacity: 0.16, interactive: false }).bindTooltip(`🚫 ${esc(d.name)}`, { sticky: true }));
     for (const d of o.outline ?? []) this.challenge.addLayer(L.polygon(d.rings, { color: '#5a6b7d', weight: 1, fillColor: '#5a6b7d', fillOpacity: 0.05, interactive: false }));
+    for (const x of o.helis ?? []) {
+      const line = L.polyline(
+        [
+          [x.a.lat, x.a.lon],
+          [x.b.lat, x.b.lon],
+        ],
+        { color: '#c2185b', weight: 4, opacity: 0.85, dashArray: '10 8' },
+      );
+      this.challenge.addLayer(line.bindTooltip(`🚁 ${esc(x.id)} · ${x.min} min`, { permanent: true, direction: 'center', className: 'heli-label' }));
+      for (const s of [x.a, x.b]) {
+        this.challenge.addLayer(L.circleMarker([s.lat, s.lon], { radius: 7, color: '#c2185b', weight: 3, fillColor: '#fff', fillOpacity: 1 }).bindTooltip(`🚁 ${esc(x.id)}: ${esc(s.name)}`, { direction: 'top' }));
+        pts.push([s.lat, s.lon]);
+      }
+    }
     for (const u of o.underground ?? [])
       this.challenge.addLayer(
         L.polyline(u.path, { color: '#4a4a4a', weight: 7, opacity: 0.45, dashArray: '2 8', lineCap: 'round' }).bindTooltip(`☁️ ${esc(u.line)} unter der Erde`, { sticky: true }),

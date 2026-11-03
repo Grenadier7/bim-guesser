@@ -205,6 +205,66 @@ export function withTrain(r: RouteOption, um: UmlandStart, opt: UmlandStart['opt
   return { ...r, key: `umland:${opt.entry}:${r.key}`, legs, medianMin: r.medianMin + m, minMin: r.minMin + m, maxMin: r.maxMin + m, rideMin: r.rideMin + m, steps: undefined };
 }
 
+// ---------------------------------------------------------------- Hubschrauber
+
+export interface Heli {
+  id: string;
+  a: Station;
+  b: Station;
+  min: number;
+}
+
+/** Flugzeit: 3 min Einsteigen + rund 100 km/h */
+export const heliMinutes = (m: number) => Math.round(3 + m / 1700);
+
+/** Flug als Teilstrecke einer Verbindung */
+export function heliPart(h: Heli, from: Station, to: Station): { leg: RouteLeg; min: number } {
+  return {
+    min: h.min,
+    leg: {
+      mode: 'H',
+      line: h.id,
+      color: '#c2185b',
+      fromName: from.name,
+      toName: to.name,
+      fromStation: from.id,
+      toStation: to.id,
+      dep: '',
+      arr: '',
+      path: [
+        [from.lat, from.lon],
+        [to.lat, to.lon],
+      ],
+    },
+  };
+}
+
+/** Verbindung aus Teilen: Öffis bis zum Hubschrauber, Flug, Öffis ab der Landung (Zeiten addiert) */
+export function joinRoutes(key: string, parts: (RouteOption | { leg: RouteLeg; min: number } | null)[]): RouteOption {
+  const legs: RouteLeg[] = [];
+  let med = 0;
+  let min = 0;
+  let max = 0;
+  let ride = 0;
+  for (const p of parts) {
+    if (!p) continue;
+    if ('leg' in p) {
+      legs.push(p.leg);
+      med += p.min;
+      min += p.min;
+      max += p.min;
+      ride += p.min;
+    } else {
+      legs.push(...p.legs);
+      med += p.medianMin;
+      min += p.minMin;
+      max += p.maxMin;
+      ride += p.rideMin;
+    }
+  }
+  return { key, legs, medianMin: med, minMin: min, maxMin: max, rideMin: ride, samples: 1 };
+}
+
 // ---------------------------------------------------------------- Fleckerlteppich
 
 /**

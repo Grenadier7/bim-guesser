@@ -72,7 +72,7 @@ export interface LegLike {
   to: string;
 }
 
-const MODE_WORD: Record<Mode, string> = { U: 'U-Bahn', S: 'S-Bahn', T: 'Bim', B: 'Bus', N: 'Nachtbus', W: 'Fußweg' };
+const MODE_WORD: Record<Mode, string> = { U: 'U-Bahn', S: 'S-Bahn', T: 'Bim', B: 'Bus', N: 'Nachtbus', W: 'Fußweg', H: 'Hubschrauber' };
 const sameMode = (a: Mode | null, b: Mode | null) => !!a && !!b && (a === b || (a !== 'W' && b !== 'W' && [a, b].every((m) => m === 'B' || m === 'N')));
 
 /** liegt eine Fahrt (teilweise) unter der Erde? → die betroffene Station */

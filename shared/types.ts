@@ -4,7 +4,8 @@ import type { QuizQuestionPublic, QuizSettings } from './quiz.ts';
 // Alles, was über die Leitung geht (REST + Server-Sent Events), ist hier definiert.
 
 /** U = U-Bahn, S = S-Bahn, T = Straßenbahn/Lokalbahn, B = Bus, N = Nachtbus, W = Fußweg */
-export type Mode = 'U' | 'S' | 'T' | 'B' | 'N' | 'W';
+/** Verkehrsmittel – H = Hubschrauber (nur in der Tages-Challenge, Linien H1–H3 je Runde) */
+export type Mode = 'U' | 'S' | 'T' | 'B' | 'N' | 'W' | 'H';
 
 export type LatLon = [number, number];
 
@@ -104,7 +105,15 @@ export type StationKind = 'Ukey' | 'U' | 'Skey' | 'S' | 'Tkey' | 'T' | 'hub' | '
 export type DistanceRange = 'local' | 'short' | 'medium' | 'long' | 'xlong';
 
 /** Aufgabe einer Runde: normal (A → B), eines von 3 Zielen, 3 Punkte abklappern, zum nächsten Wasser / Bad */
-export type RoundTask = 'normal' | 'choose3' | 'visit3' | 'water' | 'bath';
+export type RoundTask = 'normal' | 'choose3' | 'visit3' | 'water' | 'bath' | 'heli';
+
+/** Hubschrauber-Linie einer Runde: A ↔ B in fester Zeit (inkl. Einsteigen) */
+export interface HeliLine {
+  id: string;
+  a: StationRef;
+  b: StationRef;
+  min: number;
+}
 
 /** Aus dem Umland: ein Zug vom Ort nach Wien (Linien, erste Station in Wien, Fahrzeit bis dorthin ca.) */
 export interface UmlandOption {
@@ -428,6 +437,8 @@ export interface RoundPublic {
   waypoints?: StationRef[];
   /** „Ab ins Wasser“: Ziel ist das nächste Wasser (oder nur Bäder) */
   water?: 'all' | 'bath';
+  /** Hubschrauber-Linien dieser Runde */
+  helis?: HeliLine[];
 }
 
 export type GamePhase = 'lobby' | 'playing' | 'finished';

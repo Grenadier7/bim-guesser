@@ -173,6 +173,16 @@ export const CHALLENGES: ChallengeDef[] = [
     roundOptions: EASY,
     avoid: ['foot-bus'],
   },
+  {
+    id: 'heli',
+    icon: '🚁',
+    title: 'Hubschrauber',
+    kind: 'special',
+    ...fixed('Drei Hubschrauber-Linien stehen bereit (rosa auf der Karte) – „H1“ eintippen wie eine Linie, die Flugzeit steht am Strich. Einer davon bringt dich schneller ans Ziel. Welcher?', { distance: 'long', minTransfers: 0, task: 'heli', tips: 'off', roundTimeLimitSec: 300 }),
+    rounds: 2,
+    roundOptions: EASY,
+    avoid: ['scooter'],
+  },
   // ---- Routen-Regeln (ganze Route)
   { id: 's-fan', icon: '🚆', title: 'S-Bahn-Fan', kind: 'normal', ...fixed('Start und Ziel an der S-Bahn – und mindestens eine S-Bahn-Fahrt', { stations: ['S'], variant: 'needS' }), rounds: 2, roundOptions: EASY, avoid: ['umland'] },
   { id: 'bus-driver', icon: '🚌', title: 'Busfahrer', kind: 'normal', ...fixed('Strecken, auf denen der Bus König ist – mindestens eine Bus-Fahrt', { stations: ['hub'], variant: 'needBus' }), rounds: 2, roundOptions: EASY },
