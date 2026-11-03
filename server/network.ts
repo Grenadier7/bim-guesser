@@ -5,7 +5,7 @@ import type { DayType, GameSettings, Headways, Line, LineEdit, NetMode, NetworkD
 import { distanceRange, isNightSlot, linePatterns } from '../shared/rules.ts';
 import { inStationKinds } from '../shared/pools.ts';
 import type { EfaPoint } from './efa.ts';
-import { coversTime, timetableWarnings } from './timetable.ts';
+import { commonRun, coversTime, isSubRoute, mainRoutes, timetableWarnings } from './timetable.ts';
 import { STATE_DIR } from './paths.ts';
 
 /** Ø-Takt je Linie (optional – fehlt die Datei, zeigt der Steckbrief einfach keinen Takt) */
@@ -202,7 +202,13 @@ export class Network {
       if (e.kind === 'departures') continue;
       if (e.kind === 'addVariant') {
         const ids = e.stops.map((s) => s.station).filter((id) => this.stations.has(id));
-        if (ids.length >= 2) (line.patterns.push(ids, [...ids].reverse()), line.nets.push('r', 'r'));
+        if (ids.length >= 2) {
+          const back = [...ids].reverse();
+          line.patterns.push(ids, back);
+          line.nets.push('r', 'r');
+          // ausdrücklich angelegt – bleibt, auch wenn es von der Route abweicht (keepMainRoutes)
+          this.planPatterns.add(ids).add(back);
+        }
         continue;
       }
       const edit = (p: string[]): string[] => {
@@ -327,11 +333,53 @@ export class Network {
   }
 
   static load(): Network {
+    let n: Network;
     try {
-      return new Network(JSON.parse(readFileSync(FILE, 'utf8')));
+      n = new Network(JSON.parse(readFileSync(FILE, 'utf8')));
     } catch (e) {
       throw new Error(`data/network.json fehlt oder ist kaputt – zuerst "npm run build:data" ausführen. (${(e as Error).message})`);
     }
+    n.keepMainRoutes('regular');
+    return n;
+  }
+
+  /**
+   * Jede Linie nur auf ihrer Route (siehe mainRoutes in timetable.ts): Haltefolgen des regulären Netzes, die kein
+   * durchgehendes Stück der Route sind (Werks- und Sonderfahrten), fallen weg; im Netz „Aktuell“ bleiben sie.
+   */
+  /** Haltefolgen, die ein Netzplan ausdrücklich anlegt (Zusatzfahrten) */
+  private planPatterns = new WeakSet<string[]>();
+
+  keepMainRoutes(plan: string) {
+    const mains = mainRoutes(plan, (efa) => this.stationOfEfa(efa));
+    if (!mains) return;
+    for (const line of this.data.lines) {
+      const routes = mains.get(line.id);
+      if (!routes?.length) continue;
+      const all = [...routes, ...routes.map((r) => [...r].reverse())];
+      const patterns: string[][] = [];
+      const nets: string[] = [];
+      const add = (p: string[], n: string) => {
+        const same = patterns.findIndex((q) => q.join() === p.join());
+        if (same >= 0) nets[same] = [...new Set(nets[same] + n)].join('');
+        else (patterns.push(p), nets.push(n));
+      };
+      line.patterns.forEach((p, i) => {
+        const n = line.nets[i];
+        if (!n.includes('r') || this.planPatterns.has(p) || all.some((r) => isSubRoute(p, r))) return void add(p, n);
+        // weicht von der Route ab: im Netz „Aktuell“ so lassen, im regulären nur das Stück auf der Route
+        if (n.replace('r', '')) add(p, n.replace('r', ''));
+        const piece = all.map((r) => commonRun(p, r)).sort((x, y) => y.length - x.length)[0];
+        if (piece && piece.length >= 2) add(piece, 'r');
+      });
+      line.patterns = patterns;
+      line.nets = nets;
+    }
+    // Stationen: nur noch Linien, die dort halten
+    const serving = new Map<string, Set<string>>();
+    for (const l of this.data.lines) for (const p of l.patterns) for (const s of p) serving.set(s, (serving.get(s) ?? new Set()).add(l.id));
+    for (const s of this.data.stations) s.lines = s.lines.filter((l) => serving.get(s.id)?.has(l));
+    this.index();
   }
 
   /**

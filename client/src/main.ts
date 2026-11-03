@@ -1,9 +1,11 @@
 import './style.css';
 import './dark.css';
 import { themeButton } from './theme.ts';
-import { findChallenge, loadSchedule, showChallengeIntro } from './challenges.ts';
-import { fmtDuration } from '../../shared/rules.ts';
+import { findChallenge, loadSchedule, showChallengeIntro, showIntro } from './challenges.ts';
+import { RESTRICTIONS, fmtDuration, restrictionLabel } from '../../shared/rules.ts';
 import { api } from './api.ts';
+import { ask } from './ui.ts';
+import { endSession } from './store.ts';
 import { account, startPolling } from './account.ts';
 import { accountButton, announceMedals, openAccount, renderInvites, takeResetLink } from './accountui.ts';
 import { isMine, setMine } from './learn/model.ts';
@@ -151,6 +153,39 @@ function keyFor(): string {
   return `reveal:${r.index}`;
 }
 
+/** Logo oben links: zur Startseite – mitten im Spiel bzw. in einer Lobby erst nach Rückfrage */
+function brandHome() {
+  const el = document.querySelector<HTMLElement>('.brand');
+  if (!el) return;
+  el.setAttribute('role', 'button');
+  el.tabIndex = 0;
+  el.title = 'Zur Startseite';
+  const go = async () => {
+    if (app.session) {
+      const playing = app.state?.phase === 'playing';
+      const ok = await ask(playing ? 'Das Spiel läuft noch. Zur Startseite? Du verlässt dabei das Spiel.' : 'Lobby verlassen und zur Startseite?', {
+        title: 'Zur Startseite',
+        ok: 'Zur Startseite',
+        cancel: playing ? 'Weiterspielen' : 'Bleiben',
+        danger: playing,
+      });
+      if (!ok) return;
+      await api.leave(app.session).catch(() => {});
+      endSession();
+    }
+    app.view = 'home';
+    if (location.hash) history.replaceState(null, '', location.pathname);
+    render();
+  };
+  el.addEventListener('click', go);
+  el.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') (e.preventDefault(), void go());
+  });
+}
+
+/** Runden, deren Einschränkung schon angezeigt wurde */
+const introSeen = new Set<string>();
+
 function mount(key: string): Screen {
   // Startseite: großer Auswahlbildschirm ohne Karte
   document.body.classList.toggle('panel-full', key === 'home' || key === 'admin');
@@ -199,6 +234,21 @@ function render() {
     const fromOutside = !/^(prep|open|reveal):/.test(screenKey);
     if (fromOutside && screenKey !== '' && st?.mode === 'route' && st.phase === 'playing' && st.settings.challenge && st.currentRound <= 0)
       showChallengeIntro(findChallenge(st.settings.challenge));
+    // normales Spiel: Runde mit Einschränkung (ohne U-Bahn, Linie gesperrt …) – einmal je Runde ein Fenster
+    else if (st?.mode === 'route' && !st.settings.challenge && key.startsWith('open:')) {
+      const r = st.rounds[Number(key.slice(5))];
+      const seen = `${st.id}:${r?.index}`;
+      if (r?.restriction && !introSeen.has(seen)) {
+        introSeen.add(seen);
+        const info = RESTRICTIONS[r.restriction];
+        showIntro({
+          icon: info.icon,
+          kicker: `Runde ${r.index + 1} – Einschränkung`,
+          title: restrictionLabel(r.restriction, r.bannedLines),
+          text: r.restriction === 'banLines' ? 'Diese Linie ist in dieser Runde gesperrt – finde eine andere Verbindung.' : info.hint,
+        });
+      }
+    }
     screen?.destroy?.();
     screenKey = key;
     screen = mount(key);
@@ -282,6 +332,7 @@ async function init() {
     applyGameConfig(config);
     renderNotice();
     app.net = new NetIndex(network);
+    brandHome();
     // Plan der Tages-Challenges vom Server (fehlt er, rechnet der Browser denselben)
     await loadSchedule();
   } catch (e) {

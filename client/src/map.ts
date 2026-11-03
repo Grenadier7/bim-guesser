@@ -331,7 +331,9 @@ export class GameMap {
         }).bindTooltip(tip, { direction: 'top' }),
       );
     }
-    for (const x of o.helis ?? []) {
+    // Beschriftung je Hubschrauber an einer anderen Stelle der Linie (35 / 50 / 65 %), damit sie sich nicht überdecken
+    const at = [0.5, 0.3, 0.7];
+    for (const [k, x] of (o.helis ?? []).entries()) {
       const line = L.polyline(
         [
           [x.a.lat, x.a.lon],
@@ -339,7 +341,15 @@ export class GameMap {
         ],
         { color: '#c2185b', weight: 4, opacity: 0.85, dashArray: '10 8' },
       );
-      this.challenge.addLayer(line.bindTooltip(`🚁 ${esc(x.id)} · ${x.min} min`, { permanent: true, direction: 'center', className: 'heli-label' }));
+      this.challenge.addLayer(line.bindTooltip(`🚁 ${esc(x.id)}: ${esc(x.a.name)} ↔ ${esc(x.b.name)} · ${x.min} min`, { sticky: true }));
+      const f = at[k % at.length];
+      this.challenge.addLayer(
+        L.marker([x.a.lat + (x.b.lat - x.a.lat) * f, x.a.lon + (x.b.lon - x.a.lon) * f], {
+          icon: L.divIcon({ className: 'heli-label', html: `🚁 ${esc(x.id)} · ${x.min} min`, iconSize: [88, 20], iconAnchor: [44, 10] }),
+          interactive: false,
+          zIndexOffset: 600,
+        }),
+      );
       for (const s of [x.a, x.b]) {
         this.challenge.addLayer(L.circleMarker([s.lat, s.lon], { radius: 7, color: '#c2185b', weight: 3, fillColor: '#fff', fillOpacity: 1 }).bindTooltip(`🚁 ${esc(x.id)}: ${esc(s.name)}`, { direction: 'top' }));
         pts.push([s.lat, s.lon]);

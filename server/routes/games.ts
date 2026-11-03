@@ -126,7 +126,7 @@ export function gameRoutes(app: Express, games: GameManager, account?: { account
     h(async (req): Promise<SubmitResponse> => {
       const g = routeGame(req);
       const body = req.body as SubmitRequest;
-      const reveal = await g.submit(token(req), roundIdx(req), body?.legs, body?.guesses ?? null);
+      const reveal = await g.submit(token(req), roundIdx(req), body?.gaveUp ? [] : body?.legs, body?.guesses ?? null, body?.gaveUp === true);
       return { state: g.state(), reveal };
     }),
   );

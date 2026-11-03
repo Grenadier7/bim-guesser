@@ -69,7 +69,7 @@ const STEPHANSPLATZ = { lat: 48.2085, lon: 16.3731 };
 /** Netzplan der Challenge „Zielnetz 2040“ (server/ziel2040.ts) */
 export const FUTURE_NET = 'plan:ziel2040' as const;
 /** neue oder geänderte Linien im Zielnetz 2040 (Karte „Zielnetz einblenden“) */
-export const FUTURE_LINES = ['U5', 'U2', 'U1', 'S45', 'S80', 'S70', 'S1', 'S2', 'S3', 'S4', '15', '25', '27', '18', '12', '29'];
+export const FUTURE_LINES = ['U5', 'U2', 'S45', 'S80', 'S70', 'S1', 'S2', 'S3', 'S4', '15', '25', '27', '18', '12', '29'];
 const fixed = (text: string, settings: Partial<GameSettings>) => ({ text: () => text, settings: () => settings });
 const SPRINT = [2, 3, 5];
 const EASY = [1, 2, 3, 5];
@@ -174,7 +174,7 @@ export const CHALLENGES: ChallengeDef[] = [
     icon: '🛴',
     title: 'E-Scooter',
     kind: 'special',
-    ...fixed('Du hast einen schnellen E-Scooter: jeder Weg zu und zwischen den Haltestellen mit 30 km/h – nur bei U- und S-Bahn kosten die Treppen 30 Sekunden. Wann lohnen sich die Öffis überhaupt?', { stations: ['U', 'S'], distance: 'xlong', minTransfers: 0, scooter: true, roundTimeLimitSec: 300 }),
+    ...fixed('Du hast einen schnellen E-Scooter: jeder Weg zu und zwischen den Haltestellen mit 20 km/h – nur bei U- und S-Bahn kosten die Treppen 30 Sekunden. Wann lohnen sich die Öffis überhaupt?', { stations: ['U', 'S'], distance: 'xlong', minTransfers: 0, scooter: true, roundTimeLimitSec: 300 }),
     rounds: 2,
     roundOptions: EASY,
     avoid: ['foot-bus'],

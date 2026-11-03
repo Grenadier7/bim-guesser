@@ -1,7 +1,7 @@
 // Tages-Challenges am Server: Regeln ans Netz anbinden, Verbindungen gegen die Regeln prüfen, Umland-Orte,
 // Auswahl-Kriterien je Challenge (z.B. Busfahrer: die besten Verbindungen sind Bus-Verbindungen) und zusätzliche
 // Suchen, damit die beste erlaubte Verbindung auch wirklich gefunden wird.
-import type { NetMode, Restriction, RouteLeg, RouteOption, Station, UmlandStart } from '../shared/types.ts';
+import type { NetMode, Restriction, RouteLeg, RouteOption, RouteStep, Station, UmlandStart } from '../shared/types.ts';
 import { INNER_DISTRICTS, UNDERGROUND, legProblem, routeProblem, undergroundStop, type LegLike, type RuleNet, type RuleRound } from '../shared/challengeRules.ts';
 import { WELL_KNOWN_S, linePatterns } from '../shared/rules.ts';
 import { distM } from '../shared/geo.ts';
@@ -211,7 +211,12 @@ export function withTrain(r: RouteOption, um: UmlandStart, opt: UmlandStart['opt
   };
   const legs = sameTrain ? [{ ...first, fromName: um.town, path: [[um.lat, um.lon] as [number, number], ...first.path] }, ...r.legs.slice(1)] : [train, ...r.legs];
   const m = opt.min;
-  return { ...r, key: `umland:${opt.entry}:${r.key}`, legs, medianMin: r.medianMin + m, minMin: r.minMin + m, maxMin: r.maxMin + m, rideMin: r.rideMin + m, steps: undefined };
+  // Zeitplan: Zugfahrt bis zur Stadtgrenze, dann der Rest
+  const start = r.steps?.[0]?.at ?? first?.dep ?? '';
+  const before = start ? addClock(start, -m) : '';
+  if (!sameTrain && before) (train.dep = before), (train.arr = start);
+  const steps = start ? [{ kind: 'ride' as const, at: before, min: m, from: um.town, to: entry.name, line: train.line ?? '', mode: 'S' as const, color: train.color }, ...stepsOf(r, start)] : undefined;
+  return { ...r, key: `umland:${opt.entry}:${r.key}`, legs, medianMin: r.medianMin + m, minMin: r.minMin + m, maxMin: r.maxMin + m, rideMin: r.rideMin + m, steps };
 }
 
 // ---------------------------------------------------------------- Hubschrauber
@@ -248,30 +253,85 @@ export function heliPart(h: Heli, from: Station, to: Station): { leg: RouteLeg; 
   };
 }
 
-/** Verbindung aus Teilen: Öffis bis zum Hubschrauber, Flug, Öffis ab der Landung (Zeiten addiert) */
-export function joinRoutes(key: string, parts: (RouteOption | { leg: RouteLeg; min: number } | null)[]): RouteOption {
+/** „HH:MM“ + Minuten */
+const addClock = (hhmm: string, m: number) => {
+  const [h, mm] = hhmm.split(':').map(Number);
+  const t = (((h * 60 + mm + Math.round(m)) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+};
+const clockDiff = (a: string, b: string) => {
+  const [ha, ma] = a.split(':').map(Number);
+  const [hb, mb] = b.split(':').map(Number);
+  return (((hb * 60 + mb - (ha * 60 + ma)) % 1440) + 1440) % 1440;
+};
+
+/** Zeitplan einer Teil-Verbindung ab `at`: ihre eigenen Schritte (verschoben) oder aus den Teilstrecken gebaut */
+function stepsOf(r: RouteOption, at: string): RouteStep[] {
+  if (r.steps?.length) {
+    const shift = clockDiff(r.steps[0].at, at);
+    return r.steps.map((s) => ({ ...s, at: addClock(s.at, shift) }));
+  }
+  const out: RouteStep[] = [];
+  let t = at;
+  let used = 0;
+  for (const l of r.legs) {
+    const m = l.dep && l.arr ? clockDiff(l.dep, l.arr) : 0;
+    used += m;
+    out.push(l.mode === 'W' ? { kind: 'walk', at: t, min: m, to: l.toName } : { kind: 'ride', at: t, min: m, from: l.fromName, to: l.toName, line: l.line ?? '', mode: l.mode, color: l.color });
+    t = addClock(t, m);
+  }
+  // was übrig bleibt, ist Warten (bzw. der ganze Fußweg ohne Uhrzeiten)
+  const rest = Math.round(r.medianMin - used);
+  if (rest > 0) {
+    if (out.length === 1 && out[0].kind === 'walk' && !out[0].min) out[0].min = rest;
+    else out.unshift({ kind: 'wait', at, min: rest, to: r.legs[0]?.fromName ?? '' });
+    let c = at;
+    for (const s of out) (s.at = c), (c = addClock(c, s.min));
+  }
+  return out;
+}
+
+/**
+ * Verbindung aus Teilen: Öffis bis zum Hubschrauber, Flug, Öffis ab der Landung (Zeiten addiert) – mit Zeitplan
+ * ab `start` („HH:MM“), damit die Detailansicht stimmt.
+ */
+export function joinRoutes(key: string, parts: (RouteOption | { leg: RouteLeg; min: number } | null)[], start: string): RouteOption {
   const legs: RouteLeg[] = [];
+  const steps: RouteStep[] = [];
   let med = 0;
   let min = 0;
   let max = 0;
   let ride = 0;
+  let t = start;
   for (const p of parts) {
     if (!p) continue;
     if ('leg' in p) {
-      legs.push(p.leg);
+      legs.push({ ...p.leg, dep: t, arr: addClock(t, p.min) });
+      steps.push({ kind: 'ride', at: t, min: p.min, from: p.leg.fromName, to: p.leg.toName, line: p.leg.line ?? '', mode: p.leg.mode, color: p.leg.color });
       med += p.min;
       min += p.min;
       max += p.min;
       ride += p.min;
+      t = addClock(t, p.min);
     } else {
       legs.push(...p.legs);
+      steps.push(...stepsOf(p, t));
       med += p.medianMin;
       min += p.minMin;
       max += p.maxMin;
       ride += p.rideMin;
+      t = addClock(t, p.medianMin);
     }
   }
-  return { key, legs, medianMin: med, minMin: min, maxMin: max, rideMin: ride, samples: 1 };
+  // aufeinanderfolgende Fahrten mit derselben Linie (Stücke an einer Brücke/Landestelle) zu einer zusammenfassen
+  const merged: RouteLeg[] = [];
+  for (const l of legs) {
+    const prev = merged.at(-1);
+    if (prev && l.mode !== 'W' && prev.mode === l.mode && prev.line === l.line && prev.toStation && prev.toStation === l.fromStation)
+      merged[merged.length - 1] = { ...prev, toName: l.toName, toStation: l.toStation, arr: l.arr, path: [...prev.path, ...l.path.slice(1)] };
+    else merged.push(l);
+  }
+  return { key, legs: merged, medianMin: med, minMin: min, maxMin: max, rideMin: ride, samples: 1, steps };
 }
 
 // ---------------------------------------------------------------- Fleckerlteppich
@@ -354,8 +414,8 @@ export function pairFits(rr: RuleRound, all: RouteOption[], ok: RouteOption[], r
     case 'mustLine':
       return ok[0].medianMin <= best.medianMin + 12;
     case 'minBridges':
-      // mehr Brücken als die schnellste – ohne riesigen Umweg
-      return ok[0].medianMin <= best.medianMin + 15;
+      // mehr Brücken als die schnellste – ein Umweg, aber kein riesiger
+      return ok[0].medianMin <= best.medianMin + 20;
     case 'anyLine': {
       // die beste erlaubte Verbindung nimmt genau eine der drei – nie zwei (sonst wäre es keine Entscheidung)
       const req = new Set(rr.required ?? []);

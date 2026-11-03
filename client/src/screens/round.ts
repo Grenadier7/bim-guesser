@@ -4,9 +4,9 @@ import { RESTRICTIONS, TIPS, XTREME_LEVELS, baseLimitSec, restrictionAllowsLine,
 import { api } from '../api.ts';
 import { RouteBuilder } from '../builder.ts';
 import { distM, fmtDist } from '../net.ts';
-import { netLayer } from '../netmap.ts';
+import { netLayer, netView, smoothPath } from '../netmap.ts';
 import { app, routeState, currentRound, isHost, serverNow, setMapBig } from '../store.ts';
-import { esc, h, lineChip, modeChip, toast } from '../ui.ts';
+import { ask, esc, h, lineChip, modeChip, toast } from '../ui.ts';
 import { hostBar } from './host.ts';
 import { UNDERGROUND, blockedDistricts, ruleSummary, type RuleRound } from '../../../shared/challengeRules.ts';
 import { MODE_ICON, isNightSlot } from '../../../shared/rules.ts';
@@ -173,6 +173,7 @@ export function roundScreen(panel: HTMLElement): Screen {
     // Handy: zum Orten die Karte groß machen, danach wieder normal
     setMapBig(view === 'locate');
     if (view === 'locate') return renderLocate();
+    if (s.settings.task === 'future' && showMap) showFuture();
     if (showMap && (targets || waypoints || round.water || round.umland || round.helis || round.bridges || s.settings.task === 'future' || (rules && blockedDistricts(rules).length) || round.restriction === 'sunny')) showChallengeMap(true);
     else if (showMap) app.map.showEndpoints(round.from!, round.to!, true, showNames);
     else app.map.clear();
@@ -263,6 +264,10 @@ export function roundScreen(panel: HTMLElement): Screen {
     body.querySelector('[data-act=flash]')?.addEventListener('click', flashGuesses);
     if (s.settings.tips !== 'off') body.append(renderTips());
     body.append(b.el);
+    // aufgeben: für diese Runde keine Route (die anderen spielen weiter)
+    const give = h('button', { class: 'link give-up' }, '🏳️ Aufgeben');
+    give.addEventListener('click', () => void giveUp());
+    body.append(give);
     drawDraft();
   }
 
@@ -379,20 +384,14 @@ export function roundScreen(panel: HTMLElement): Screen {
       outline: round.umland ? app.net.data.districts : undefined,
       helis: round.helis,
       bridges: round.bridges ? bridgeViews() : undefined,
-      future: futureShown ? futureView() : undefined,
       fit,
     });
   }
 
-  /** Zielnetz 2040: Verläufe der neuen/geänderten Linien und die neuen Stationen */
-  function futureView() {
-    const lines = FUTURE_LINES.flatMap((id) => {
-      const l = app.net.lines.get(id);
-      if (!l) return [];
-      return app.net.patterns(l).map((p) => ({ id, color: l.color, path: p.map((x) => [app.net.station(x).lat, app.net.station(x).lon] as [number, number]) }));
-    });
-    const stations = app.net.data.stations.filter((x) => x.id.startsWith('z40-'));
-    return { lines, stations };
+  /** Zielnetz 2040: das Netz wie in den Lernkarten – neue/geänderte Linien hervorgehoben (mit Nummern), neue Stationen markiert */
+  function showFuture() {
+    if (!futureShown) return void netLayer().clear();
+    netLayer().render(netView({ focus: new Set(FUTURE_LINES.filter((id) => app.net.lines.has(id))), marks: app.net.data.stations.filter((x) => x.id.startsWith('z40-')), allLabels: true }));
   }
 
   /** Brückenkenner: je Brücke die Abschnitte (Farbe/Icon des Verkehrsmittels) und welche Linien darüber fahren */
@@ -404,10 +403,19 @@ export function roundScreen(panel: HTMLElement): Screen {
         const c = app.net.station(y);
         if (!a || !c) return [];
         // tagsüber keine Nachtbusse
-        for (const l of app.net.lines.values())
-          if (modes.includes(l.mode) && (l.mode !== 'N' || isNightSlot(s.settings.slot)) && app.net.patterns(l).some((p) => p.some((id, i) => (id === x && p[i + 1] === y) || (id === y && p[i + 1] === x))))
-            byMode.set(l.mode, (byMode.get(l.mode) ?? new Set()).add(l.id));
-        return modes.filter((m) => m !== 'N' || isNightSlot(s.settings.slot)).map((m) => ({ mode: m, path: [[a.lat, a.lon], [c.lat, c.lon]] as [number, number][] }));
+        const here = new Map<Mode, { line: string; from: string; to: string }>();
+        for (const l of app.net.lines.values()) {
+          if (!modes.includes(l.mode) || (l.mode === 'N' && !isNightSlot(s.settings.slot))) continue;
+          for (const p of app.net.patterns(l))
+            p.forEach((id, i) => {
+              if ((id === x && p[i + 1] === y) || (id === y && p[i + 1] === x)) {
+                byMode.set(l.mode, (byMode.get(l.mode) ?? new Set()).add(l.id));
+                if (!here.has(l.mode)) here.set(l.mode, { line: l.id, from: id, to: p[i + 1] });
+              }
+            });
+        }
+        // Verlauf wie auf der Karte sonst (geglättet entlang der Linie)
+        return [...here].map(([m, h]) => ({ mode: m, path: smoothPath(h.line, h.from, h.to, [[a.lat, a.lon], [c.lat, c.lon]]) as [number, number][] }));
       });
       const lines = [...byMode].map(([m, ids]) => `${MODE_ICON[m]} ${[...ids].sort((p, q) => p.localeCompare(q, 'de', { numeric: true })).join(', ')}`);
       return { name: b.name, river: b.river, lat: b.lat, lon: b.lon, modes: [...byMode.keys()], lines, segs };
@@ -436,6 +444,30 @@ export function roundScreen(panel: HTMLElement): Screen {
   }
 
   // -------------------------------------------------------------- Abgabe
+
+  /** für diese Runde aufgeben: keine Route, 0 Punkte – im Mehrspieler spielen die anderen weiter */
+  async function giveUp() {
+    if (submitting || view === 'waiting') return;
+    if (!(await ask(multi ? 'Für diese Runde aufgeben? Du bekommst 0 Punkte, die anderen spielen weiter.' : 'Diese Runde aufgeben? Du bekommst 0 Punkte und siehst gleich die Lösung.', { title: 'Aufgeben', ok: 'Aufgeben', cancel: 'Weiter suchen', danger: true })))
+      return;
+    submitting = true;
+    app.map.stopLocate();
+    b.lock();
+    submittedAt = serverNow();
+    view = 'waiting';
+    render();
+    try {
+      await api.submit(auth, idx, [], null, true);
+    } catch (e) {
+      toast((e as Error).message);
+      if (currentRound()?.submitted.includes(playerId)) return;
+      submitting = false;
+      submittedAt = null;
+      b.unlock();
+      view = 'route';
+      render();
+    }
+  }
 
   async function submit(auto: boolean) {
     if (submitting || view === 'waiting') return;

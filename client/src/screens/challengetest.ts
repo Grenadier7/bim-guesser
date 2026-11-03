@@ -22,9 +22,12 @@ export function challengeTestScreen(panel: HTMLElement, onBack: () => void): Scr
   const today = new Set(todaysChallenges().map((c) => c.id));
   const all = everyChallenge();
   panel.innerHTML = '<div class="learn"><p class="muted">Lade …</p></div>';
+  // schon weg (z.B. Logo → Startseite), bevor die Antwort kommt: nichts mehr zeichnen
+  let alive = true;
   fetch('/api/dev')
     .then((r) => r.json())
     .then((d: { dev?: boolean }) => {
+      if (!alive) return;
       if (!d.dev) {
         panel.innerHTML = `<div class="learn"><button class="link" id="back">← Zurück</button><p class="err">Die Testseite gibt es nur lokal: <code>npm run dev</code>.</p></div>`;
         panel.querySelector('#back')!.addEventListener('click', onBack);
@@ -32,7 +35,7 @@ export function challengeTestScreen(panel: HTMLElement, onBack: () => void): Scr
       }
       render();
     })
-    .catch(() => render());
+    .catch(() => alive && render());
 
   function render() {
     const districts = all.filter((c) => c.id.startsWith('district-'));
@@ -68,5 +71,5 @@ export function challengeTestScreen(panel: HTMLElement, onBack: () => void): Scr
       }),
     );
   }
-  return {};
+  return { destroy: () => void (alive = false) };
 }

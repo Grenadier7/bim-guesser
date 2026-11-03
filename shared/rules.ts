@@ -387,8 +387,8 @@ export function baseLimitSec(s: Pick<GameSettings, 'roundTimeLimitSec' | 'xtreme
   return s.roundTimeLimitSec * (s.xtreme !== 'off' ? XTREME_TIME_FACTOR : 1);
 }
 
-/** E-Scooter: 30 km/h (500 m/min, mit Umweg-Faktor 1,3), an U-/S-Bahn-Stationen 30 s Treppen ohne Scooter */
-export const SCOOTER = { mPerMin: 500, stairsMin: 0.5 };
+/** E-Scooter: 20 km/h (333 m/min, mit Umweg-Faktor 1,3), an U-/S-Bahn-Stationen 30 s Treppen ohne Scooter */
+export const SCOOTER = { mPerMin: 333, stairsMin: 0.5 };
 
 /** Minuten für einen Weg (Luftlinie m) zu Fuß (80 m/min) oder mit dem Scooter (+ Treppen an U-/S-Bahn-Stationen) */
 export function moveMinutes(m: number, scooter: boolean, stairs = 0): number {

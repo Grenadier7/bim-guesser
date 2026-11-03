@@ -65,6 +65,7 @@ select {
   gap: 8px;
   font-size: 18px;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .logo {
@@ -6613,18 +6614,25 @@ details.adm-linechg li {
   font-size: 11px;
 }
 
+/* Runde aufgeben: unauffällig unter dem Baukasten */
+.give-up {
+  display: block;
+  margin: 12px auto 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 /* Hubschrauber-Linie: Flugzeit am Strich */
-.leaflet-tooltip.heli-label {
-  padding: 1px 6px;
-  border: 0;
+.heli-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 10px;
   background: #c2185b;
   color: #fff;
+  font-size: 12px;
   font-weight: 700;
-  box-shadow: none;
-}
-.leaflet-tooltip.heli-label::before {
-  display: none;
+  white-space: nowrap;
 }
 
 /* schon gespielt: klein, eine Zeile */

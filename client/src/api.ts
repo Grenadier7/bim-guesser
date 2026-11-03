@@ -53,8 +53,8 @@ export const api = {
   cancel: (a: Auth) => call<LobbyState>('POST', `${g(a.code)}/cancel`, { token: a.token }),
   tip: (a: Auth, round: number, kind: TipKind) => call<TipResult>('POST', `${g(a.code)}/rounds/${round}/tips`, { token: a.token, kind }),
   tips: (a: Auth, round: number) => call<TipResult[]>('GET', `${g(a.code)}/rounds/${round}/tips?${q(a)}`),
-  submit: (a: Auth, round: number, legs: UserLeg[], guesses: Guesses | null) =>
-    call<SubmitResponse>('POST', `${g(a.code)}/rounds/${round}/submit`, { token: a.token, legs, guesses }),
+  submit: (a: Auth, round: number, legs: UserLeg[], guesses: Guesses | null, gaveUp = false) =>
+    call<SubmitResponse>('POST', `${g(a.code)}/rounds/${round}/submit`, { token: a.token, legs, guesses, ...(gaveUp ? { gaveUp: true } : {}) }),
   forceReveal: (a: Auth, round: number) => call<RoundReveal>('POST', `${g(a.code)}/rounds/${round}/reveal`, { token: a.token }),
   reveal: (a: Auth, round: number) => call<RoundReveal>('GET', `${g(a.code)}/rounds/${round}/reveal?${q(a)}`),
   eventsUrl: (a: Auth) => `${g(a.code)}/events?${q(a)}`,

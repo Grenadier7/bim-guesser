@@ -38,8 +38,11 @@ export class PlanRuntime {
       n = Network.load();
       n.planId = id;
       n.applyEdits(plan.edits);
-      n.applyAddresses(this.addresses());
+      // schon jetzt merken: der Fahrplan des Plans (für keepMainRoutes) fragt nach genau diesem Netz
       this.others.set(id, n);
+      // Route der Linien nach den Änderungen des Plans (verlängerte Linien)
+      n.keepMainRoutes(id);
+      n.applyAddresses(this.addresses());
     }
     return n;
   }

@@ -158,7 +158,7 @@ Verbindung, die nur mit bekannten Linien und alle Versuche mit Begründung. Die 
     zwei, z.B. Absdorf-Hippersdorf: S4 oder S40; Fahrzeit bis zur Stadtgrenze ca., `UMLAND` in `server/challengeRound.ts`)
     · 🎡 Ring-Runde (Innere Stadt nur mit Bim und Bus) · 🏠 Tür zu Tür · 🌄 Stadtrand-Tour (12–25 km) · 🚧 Aktuelles Netz ·
     🍻 Dickmacks Donnerstag (01:30 unter der Woche, Schwedenplatz → Adresse, nur Nightline) · 🌙 Nachtschicht ·
-    🧺 Sonntagsausflug · 🛴 E-Scooter (Wege mit 30 km/h, 30 s Treppen an U-/S-Bahn; auch „nur Scooter“ als Antwort) ·
+    🧺 Sonntagsausflug · 🛴 E-Scooter (Wege mit 20 km/h, 30 s Treppen an U-/S-Bahn; auch „nur Scooter“ als Antwort) ·
     🚁 Hubschrauber (drei Linien H1–H3 mit fester Flugzeit, einer bringt Zeit) · 🌉 Brückenkenner (mehr Brücken als die
     schnellste Verbindung) · 🔮 Zielnetz 2040.
   - **Abgeben** geht erst, wenn die Regel der ganzen Route erfüllt ist (mind. 3 Verkehrsmittel, 2 Umstiege,
@@ -187,8 +187,8 @@ Verbindung, die nur mit bekannten Linien und alle Versuche mit Begründung. Die 
     Neue Donau ist eine. Auf der Karte: Abschnitte in der Farbe des Verkehrsmittels, Linien im Tooltip.
   - **Zielnetz 2040:** eigener Netzplan (`server/ziel2040.ts`, beim Start angelegt, auf der Admin-Seite unter
     „Netzpläne“ änderbar und in der Lobby unter „Netz“ wählbar) – U5 (Hernals – Karlsplatz), U2 über Neubaugasse und
-    Pilgramgasse zum Wienerberg, U1 nach Rothneusiedl, S45 bis Praterkai (Ring mit der S80), S45 alle 5 / S80 alle 10 /
-    Stammstrecke je Linie alle 15 Minuten, S70 Simmering – Lobau – Essling – Aspern Nord – Süßenbrunn, Bim 15
+    Pilgramgasse zum Wienerberg, S45 bis Praterkai (Ring mit der S80), S45 alle 5 / S80 alle 10 /
+    Stammstrecke je Linie alle 15 Minuten, S70 Simmering – Stadlau (Gleise der S80) – Breitenleer Straße – Hermann-Gebauer-Straße – Süßenbrunn, Bim 15
     (Wienerberg-Tangente) und 29 neu, 12/18/25/27 verlängert. Nicht genau, sondern spielbar. Die Challenge nimmt nur
     Strecken, deren beste Verbindung wegen des neuen Netzes anders oder ≥ 2 min schneller ist (`npm run check:future`:
     30 von 30); „Zielnetz einblenden“ zeigt die Linien, die Auflösung den Vergleich mit heute.
@@ -307,6 +307,13 @@ CJX – sie zählen auf S-Bahn-Abschnitten wie eine S-Bahn, z.B. S80/R81/REX8 zw
 dort die Wartezeit), keine Abfragen (Spielstart in Sekundenbruchteilen) und kein Referenztag, der aus der Auskunft
 verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der Server weiter die Auskunft.
 
+**Jede Linie nur auf ihrer Route** (`mainPatterns` in `server/timetable.ts`, `keepMainRoutes` in `server/network.ts`):
+die Route ist die Haltefolge mit den meisten Werktagsfahrten – verlängert auf eine längere, die sie ganz enthält und
+regelmäßig fährt (≥ 20 % der Fahrten; S7 bis Leopoldau) – und ihr Gegenstück in der Gegenrichtung. Erlaubt sind nur
+Fahrten auf einem durchgehenden Stück davon (U1 nur bis Alaudagasse); Werks- und Sonderfahrten fallen aus Fahrplan und
+Netz (18er nicht mehr Stadion → Winckelmannstraße, 92B werktags nur ab Donaustadtbrücke). Was ein Netzplan ausdrücklich
+als Zusatzfahrt anlegt, bleibt.
+
 - Daten: data.mobilitaetsverbuende.at (Registrierung nötig) – „Timetable Data PTA Eastern Region (GTFS)“ nach
   `data/raw/timetables/`, „Railway Timetable Data (GTFS) – Reference Data for Timetable Changeover“ nach
   `data/raw/timetables-trains/` entpacken (beides nicht im Repo), dann `npm run build:timetable`. Das baut den Auszug
@@ -379,7 +386,10 @@ verschwindet. Railjets/IC/WESTbahn zählen nicht. Für „Aktuell“ fragt der S
      an der Start-Station abfährt; muss man erst zu einer anderen Haltestelle gehen, zählt die volle Ø-Wartezeit. Die Routendetails zeigen die Wartezeit je Umstieg.
    - **🏆 Challenges** (früher Einschränkungs-Runden) – Nie / Manchmal (ca. 30 %, mindestens eine pro Spiel) / Immer: ohne U-Bahn,
      ohne Bus, max. 1 Umstieg oder **Linie gesperrt** (eine Linie der schnellsten Verbindung, z.B. „Ohne Linie U6“).
-     Diese Runden haben doppelte Zeit, höchstens +2:30 – „Ohne U-Bahn“ bekommt fix +4:00.
+     Diese Runden haben doppelte Zeit, höchstens +2:30 – „Ohne U-Bahn“ bekommt fix +4:00. Zu Beginn jeder solchen Runde
+     zeigt ein Fenster die Einschränkung.
+   - **🏳️ Aufgeben:** jede Person kann eine Runde aufgeben (0 Punkte) – im Mehrspieler spielen die anderen weiter.
+   - **Logo** oben links → Startseite (in einer Lobby oder im Spiel mit Rückfrage).
    - **💡 Tipps** – Keine / Günstig / Teuer (günstig 5 Prozentpunkte billiger, teuer 20 teurer; bei X-treme immer teuer):
      Linien am Start / am Ziel, Verkehrsmittel-Kette, Umstiegsorte. Bei X-treme „ohne Namen“ zeigen die Tipps keine
      Stationsnamen, beim Umstiegs-Tipp nur „U6 ⇄ S1“; „ohne Karte“ zeichnet nichts ein. Keine Fußweg-Entfernungen.

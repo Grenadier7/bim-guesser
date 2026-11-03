@@ -564,6 +564,8 @@ export interface SubmitRequest {
   token: string;
   legs: UserLeg[];
   guesses: Guesses | null;
+  /** für diese Runde aufgegeben (keine Route, 0 Punkte – die anderen spielen weiter) */
+  gaveUp?: boolean;
 }
 
 export interface SubmitResponse {

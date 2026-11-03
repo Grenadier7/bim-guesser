@@ -38,6 +38,87 @@ interface Node {
   lon: number;
 }
 
+/** ist `sub` ein durchgehendes Stück von `main`? */
+export function isSubRoute<T>(sub: T[], main: T[]): boolean {
+  if (sub.length > main.length) return false;
+  for (let i = 0; i + sub.length <= main.length; i++) {
+    let k = 0;
+    while (k < sub.length && main[i + k] === sub[k]) k++;
+    if (k === sub.length) return true;
+  }
+  return false;
+}
+
+/** längstes gemeinsames durchgehendes Stück zweier Folgen */
+export function commonRun<T>(a: T[], b: T[]): T[] {
+  let best: [number, number] = [0, 0];
+  for (let i = 0; i < a.length; i++)
+    for (let j = 0; j < b.length; j++) {
+      let k = 0;
+      while (i + k < a.length && j + k < b.length && a[i + k] === b[j + k]) k++;
+      if (k > best[1]) best = [i, k];
+    }
+  return a.slice(best[0], best[0] + best[1]);
+}
+
+/**
+ * Jede Linie fährt nur auf ihrer Route: die Haltefolge mit den meisten Fahrten – verlängert auf eine längere, die sie
+ * ganz enthält und regelmäßig fährt (≥ 20 % der Fahrten; die häufigste ist oft eine Kurzführung: S7 nur bis
+ * Floridsdorf) – und ihr Gegenstück in der Gegenrichtung. Erlaubt sind Fahrten, die ein durchgehendes Stück davon
+ * sind (U1 nur bis Alaudagasse); Werks- und Sonderfahrten (18er Stadion → Winckelmannstraße) fallen weg.
+ * Verglichen wird nach Haltestellen-Namen (Steige derselben Station zählen gleich).
+ */
+function mainPatterns(raw: { nodes: [string, string, number, number][]; patterns: RawPattern[]; trips: Record<string, number[][]> }): { allowed: Set<number>; mains: Map<number, number[]> } {
+  // Fahrten am Werktag (die Route richtet sich nach dem Normalbetrieb – 92B fährt fast nur ab Donaustadtbrücke);
+  // Linien ganz ohne Werktagsfahrten: alle Tage
+  const wd = new Map<number, number>();
+  const any = new Map<number, number>();
+  for (const t of raw.trips.wd ?? []) wd.set(t[0], (wd.get(t[0]) ?? 0) + 1);
+  for (const trips of Object.values(raw.trips)) for (const t of trips) any.set(t[0], (any.get(t[0]) ?? 0) + 1);
+  const lineHasWd = new Set(raw.patterns.flatMap((p, pi) => (wd.get(pi) ? [p[0]] : [])));
+  const count = new Map(raw.patterns.map((p, pi) => [pi, lineHasWd.has(p[0]) ? (wd.get(pi) ?? 0) : (any.get(pi) ?? 0)] as const));
+  const names = (pi: number) => raw.patterns[pi][1].map((n) => raw.nodes[n][1]);
+  const dir = (pi: number) => {
+    const s = raw.patterns[pi][1];
+    const a = raw.nodes[s[0]];
+    const b = raw.nodes[s[s.length - 1]];
+    return [b[2] - a[2], b[3] - a[3]];
+  };
+  const byLine = new Map<number, number[]>();
+  raw.patterns.forEach((p, pi) => byLine.set(p[0], [...(byLine.get(p[0]) ?? []), pi]));
+  const allowed = new Set<number>();
+  const mains = new Map<number, number[]>();
+  for (const [line, list] of byLine) {
+    const withTrips = list.filter((pi) => (count.get(pi) ?? 0) > 0);
+    if (!withTrips.length) {
+      list.forEach((pi) => allowed.add(pi));
+      continue;
+    }
+    const sorted = [...withTrips].sort((x, y) => (count.get(y) ?? 0) - (count.get(x) ?? 0) || raw.patterns[y][1].length - raw.patterns[x][1].length);
+    // auf die volle Strecke verlängern: längere Haltefolge, die die bisherige ganz enthält und regelmäßig fährt
+    const extend = (start: number) => {
+      let m = start;
+      const min = (count.get(start) ?? 0) * 0.2;
+      for (;;) {
+        const longer = sorted.find((pi) => (count.get(pi) ?? 0) >= min && names(pi).length > names(m).length && isSubRoute(names(m), names(pi)));
+        if (longer == null) return m;
+        m = longer;
+      }
+    };
+    const m1 = extend(sorted[0]);
+    const d1 = dir(m1);
+    // Gegenrichtung: die meistbefahrene Haltefolge, die in die andere Richtung fährt (ebenso verlängert)
+    const back = sorted.find((pi) => dir(pi)[0] * d1[0] + dir(pi)[1] * d1[1] < 0);
+    const m2 = back != null ? extend(back) : undefined;
+    const routes = [m1, ...(m2 != null ? [m2] : [])].map(names);
+    // auch rückwärts gelesen (Linien mit gleichem Weg in beide Richtungen, aber nur einer Haltefolge mit Fahrten)
+    const all = [...routes, ...routes.map((r) => [...r].reverse())];
+    mains.set(line, [m1, ...(m2 != null ? [m2] : [])]);
+    for (const pi of list) if (all.some((r) => isSubRoute(names(pi), r))) allowed.add(pi);
+  }
+  return { allowed, mains };
+}
+
 interface Pattern {
   line: number;
   stops: number[];
@@ -76,6 +157,8 @@ interface Data {
   params: RoutingParams;
   /** Was die Änderungen des Netzplans bewirkt haben */
   report: string[];
+  /** je Linie: die Haltefolge(n) ihrer Route (Muster-Nummern) */
+  mains: Map<number, number[]>;
 }
 
 /** at:49:1040 ↔ EFA-ID 60201040 (Wiener Haltestellen) */
@@ -155,7 +238,18 @@ function load(plan: string): Data | null {
   const raw = JSON.parse(rawText) as Raw & { validUntil?: string; days: Record<string, string> };
   validUntil = raw.validUntil ?? null;
   const p = ctx.params;
+  const builtPatterns = raw.patterns.length;
   const report = ctx.stations ? applyEdits(raw, ctx.edits, ctx.stations) : [];
+  // nur Fahrten auf der Route der Linie (keine Werks- und Sonderfahrten) – was ein Netzplan ausdrücklich dazu anlegt
+  // (Zusatzfahrten auf eigener Haltefolge), bleibt
+  const { allowed, mains } = mainPatterns(raw);
+  for (let pi = builtPatterns; pi < raw.patterns.length; pi++) allowed.add(pi);
+  let dropped = 0;
+  for (const type of Object.keys(raw.trips)) {
+    const before = raw.trips[type].length;
+    raw.trips[type] = raw.trips[type].filter((t) => allowed.has(t[0]));
+    dropped += before - raw.trips[type].length;
+  }
   const nodes = raw.nodes.map(([key, name, lat, lon]) => ({ key, efaId: efaIdOf(key), name, lat, lon }));
   const patterns = raw.patterns.map(([line, stops, contLine, contAt]) => ({ line, stops, cont: contLine != null ? { line: contLine, at: contAt! } : null }));
   const stopPatterns: [number, number][][] = nodes.map(() => []);
@@ -201,11 +295,11 @@ function load(plan: string): Data | null {
     if (type === 'wd' || type === 'sa' || type === 'su') dayTypes[type] = day;
   }
   const byEfa = new Map(nodes.map((n, i) => [n.efaId, i]));
-  const data: Data = { nodes, byEfa, lines: raw.lines.map(([name, mode, mot]) => ({ name, mode, mot })), patterns, stopPatterns, footpaths, days, dayTypes, params: p, report };
+  const data: Data = { nodes, byEfa, lines: raw.lines.map(([name, mode, mot]) => ({ name, mode, mot })), patterns, stopPatterns, footpaths, days, dayTypes, params: p, report, mains };
   cache.set(plan, data);
   // zu viele Netzpläne im Speicher: den am längsten nicht benutzten (außer dem regulären) vergessen
   for (const k of cache.keys()) if (cache.size > MAX_PLANS && k !== 'regular' && k !== plan) cache.delete(k);
-  console.log(`Referenzfahrplan${plan === 'regular' ? '' : ` (Netzplan ${plan})`} geladen: ${nodes.length} Halte, ${patterns.length} Muster, Tage ${Object.values(raw.days).join(', ')}`);
+  console.log(`Referenzfahrplan${plan === 'regular' ? '' : ` (Netzplan ${plan})`} geladen: ${nodes.length} Halte, ${patterns.length} Muster, Tage ${Object.values(raw.days).join(', ')} – ${dropped} Fahrten abseits der Linienroute weggelassen`);
   return data;
 }
 
@@ -635,6 +729,29 @@ export function timetableHeadways(plan: string, lineNames: string[]): Record<str
       const gaps = best.slice(1).map((t, i) => t - best[i]).sort((a, b) => a - b);
       out[name][key] = gaps.length ? gaps[Math.floor(gaps.length / 2)] : null;
     }
+  }
+  return out;
+}
+
+/**
+ * Routen der Linien als Stationsfolgen (für das Netz: nur Haltefolgen auf der Route anbieten) – null ohne Fahrplan.
+ * `stationOf`: EFA-ID → Netz-Station.
+ */
+export function mainRoutes(plan: string, stationOf: (efaId: string) => string | null): Map<string, string[][]> | null {
+  const d = load(plan);
+  if (!d) return null;
+  const out = new Map<string, string[][]>();
+  for (const [line, pis] of d.mains) {
+    const routes = pis.map((pi) => {
+      const ids: string[] = [];
+      for (const n of d.patterns[pi].stops) {
+        const st = stationOf(d.nodes[n].efaId);
+        if (st && st !== ids.at(-1)) ids.push(st);
+      }
+      return ids;
+    });
+    const name = d.lines[line].name;
+    out.set(name, [...(out.get(name) ?? []), ...routes]);
   }
   return out;
 }

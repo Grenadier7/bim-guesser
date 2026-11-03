@@ -37,12 +37,13 @@ import {
 import { distM, NoPairError, type Network, type PastPair } from './network.ts';
 import { EfaUnavailableError, evaluateUserRoute, topRoutes, type RouteQuery } from './routing.ts';
 import { DEADLINE_GRACE_MS, GameError, Lobby } from './lobby.ts';
-import { CancelledError } from './efa.ts';
+import { CancelledError, fmtTime } from './efa.ts';
 import { waterData } from './water.ts';
 import { nearestWater, walkMinutes, type WaterHit } from '../shared/water.ts';
 import { heliMinutes, heliPart, joinRoutes, type Heli } from './challengeRound.ts';
 import { UMLAND, avoidFor, crossesCenter, legsOf, mergeRoutes, pairFits, pickDistricts, pickRequired, routeAllowed, ruleNetOf, searchVariants, umlandStart, withTrain } from './challengeRound.ts';
 import { bridgeCount } from '../shared/challengeRules.ts';
+import { bridgeData } from './bridges.ts';
 import { FUTURE_LINES } from '../shared/challenges.ts';
 import { runningLines } from './timetable.ts';
 import type { RuleNet, RuleRound } from '../shared/challengeRules.ts';
@@ -56,6 +57,8 @@ interface Submission {
   legs: UserLeg[];
   guesses: Guesses | null;
   elapsedSec: number;
+  /** für diese Runde aufgegeben */
+  gaveUp?: boolean;
 }
 
 interface Round {
@@ -326,9 +329,16 @@ export class Game extends Lobby {
       fixed = this.net.station(round.umland.options[Math.floor(Math.random() * round.umland.options.length)].entry);
     } else if (s.start) fixed = this.net.stationByName(s.start);
     if (fixed) return [fixed, s.endpoints === 'addresses' && this.net.hasAddresses ? this.net.randomAddressFrom(fixed, s) : this.net.randomTarget(fixed, s, this.usedStations)];
-    for (let i = 0; i < (round.restriction === 'avoidInner' ? 400 : 1); i++) {
+    // Brückenkenner: über Donau, Donaukanal und Wienfluss – ein Ende in Transdanubien, das andere südlich des Wienflusses
+    const across = (a: Station, b: Station) => {
+      const north = (s: Station) => [21, 22].includes(s.district);
+      const south = (s: Station) => [4, 5, 10, 12, 13, 23].includes(s.district);
+      return (north(a) && south(b)) || (north(b) && south(a));
+    };
+    const picky = round.restriction === 'avoidInner' || round.restriction === 'minBridges';
+    for (let i = 0; i < (picky ? 400 : 1); i++) {
       const [a, b] = s.endpoints === 'addresses' && this.net.hasAddresses ? this.net.randomAddressPair(s, this.pastPairs) : this.net.randomPair(s, this.usedStations, this.pastPairs);
-      if (round.restriction !== 'avoidInner' || crossesCenter(a, b)) return [a, b];
+      if (round.restriction === 'avoidInner' ? crossesCenter(a, b) : round.restriction === 'minBridges' ? across(a, b) : true) return [a, b];
     }
     throw new NoPairError('Kein Paar gefunden, das quer durch die Innenstadt führt.');
   }
@@ -417,12 +427,19 @@ export class Game extends Lobby {
       round.districts = pickDistricts(all, a, b, rn) ?? undefined;
       if (!round.districts) return null;
     }
-    // Brückenkenner: mehr Brücken als die schnellste Verbindung, mindestens 2
+    // Brückenkenner: mindestens 3 Brücken und 2 mehr als die schnellste Verbindung – geht das nicht mit vertretbarem
+    // Umweg (≤ 20 min), 1 mehr. Dazu Verbindungen gezielt über Brücken am Weg (die Suche allein findet sie selten).
+    let extra: RouteOption[] = [];
     if (round.restriction === 'minBridges') {
       const best = all.find((r) => r.key !== 'walk');
-      const legs = best && legsOf(best, this.ruleRound(round), rn);
-      if (!legs) return null;
-      round.bridges = Math.max(2, bridgeCount(legs, rn) + 1);
+      const bl = best && legsOf(best, this.ruleRound(round), rn);
+      if (!best || !bl) return null;
+      extra = await this.viaBridges(round, a, b, rn, new Set(bl.flatMap((l) => rn.bridges?.(l.line, l.from, l.to) ?? [])));
+      const found = sortRoutes(mergeRoutes([all, extra, await this.searchAll(round, a.id, b.id)]), this.settings).filter((r) => r.key !== 'walk' && r.medianMin <= best.medianMin + 20);
+      const counts = found.map((r) => bridgeCount(legsOf(r, { restriction: null }, rn) ?? [], rn));
+      const base = bridgeCount(bl, rn);
+      round.bridges = [base + 2, base + 1].find((n) => n >= 3 && counts.some((c) => c >= n));
+      if (!round.bridges) return null;
     }
     if (round.restriction === 'mustLine' || round.restriction === 'anyLine') {
       const more = await this.searchAll(round, a.id, b.id);
@@ -431,7 +448,7 @@ export class Game extends Lobby {
     }
     // dann mit allen Suchen der Regel – nur Verbindungen, die alle Regeln einhalten (die Auflösung zeigt keine
     // Bestzeit mit verbotener Linie)
-    const merged = sortRoutes(mergeRoutes([all, await this.searchAll(round, a.id, b.id)]), this.settings);
+    const merged = sortRoutes(mergeRoutes([all, extra, await this.searchAll(round, a.id, b.id)]), this.settings);
     const ok = merged.filter((r) => routeAllowed(r, this.ruleRound(round), rn));
     if (!pairFits(this.ruleRound(round), all, ok, rn, a, b, strict)) return null;
     // Zielnetz 2040: die beste Verbindung ist wegen des neuen Netzes anders oder schneller als heute
@@ -456,6 +473,48 @@ export class Game extends Lobby {
     // beste Verbindung muss mindestens so viele Umstiege haben (nach vielen Versuchen gelockert)
     if (ok[0].legs.filter((l) => l.mode !== 'W').length - 1 < wanted) return null;
     return ok;
+  }
+
+  /**
+   * Brückenkenner: Verbindungen über Brücken am Weg erzwingen – bis zur Brücke, mit der Linie darüber, weiter zum Ziel
+   * (einzeln und paarweise, in Fahrtrichtung). Nur Brücken in der Nähe der Luftlinie (Umweg ≤ 35 %).
+   */
+  private async viaBridges(round: Round, a: Station, b: Station, rn: RuleNet, used: Set<string>): Promise<RouteOption[]> {
+    const data = bridgeData();
+    if (!data) return [];
+    const d = distM(a, b);
+    const near = data.bridges
+      .filter((br) => !used.has(br.id) && distM(a, br) + distM(br, b) <= d * 1.35)
+      .sort((x, y) => distM(a, x) + distM(x, b) - (distM(a, y) + distM(y, b)))
+      .slice(0, 5);
+    // je Brücke: Abschnitt mit einem Verkehrsmittel, das tagsüber fährt; Richtung: Einstieg näher am Start
+    const hops = near.flatMap((br) => {
+      const sg = br.segs.find(([, , m]) => m.some((x) => x !== 'N'));
+      if (!sg) return [];
+      const [p, q] = sg;
+      const [x, y] = distM(a, this.net.station(p)) <= distM(a, this.net.station(q)) ? [p, q] : [q, p];
+      return [{ br, x: this.net.station(x), y: this.net.station(y) }];
+    });
+    const cache = new Map<string, Promise<RouteOption | null>>();
+    const leg = (p: Station, q: Station) => {
+      if (p.id === q.id) return Promise.resolve(null);
+      const k = `${p.id}>${q.id}`;
+      if (!cache.has(k)) cache.set(k, topRoutes(this.net, p.id, q.id, round.time, this.query(round, false)).then((rs) => sortRoutes(rs, this.settings)[0] ?? null));
+      return cache.get(k)!;
+    };
+    const start = fmtTime(round.time);
+    const out: RouteOption[] = [];
+    const build = async (chain: Station[], key: string) => {
+      const parts = await Promise.all(chain.slice(0, -1).map((p, i) => leg(p, chain[i + 1])));
+      if (parts.some((x, i) => !x && chain[i].id !== chain[i + 1].id)) return;
+      out.push(joinRoutes(key, parts, start));
+    };
+    for (const h of hops) await build([a, h.x, h.y, b], `bridge:${h.br.id}`);
+    for (const h1 of hops)
+      for (const h2 of hops)
+        if (h1 !== h2 && distM(a, h1.br) < distM(a, h2.br)) await build([a, h1.x, h1.y, h2.x, h2.y, b], `bridge:${h1.br.id}+${h2.br.id}`);
+    // nur, was die Brücken wirklich nimmt
+    return out.filter((r) => (legsOf(r, { restriction: null }, rn) ?? []).length);
   }
 
   /**
@@ -514,9 +573,10 @@ export class Game extends Lobby {
   }
 
   /**
-   * Hubschrauber: drei Linien auf der Karte. Eine bringt klar Zeit (beste Verbindung mit ihr ≥ 3 min schneller als
-   * ohne), zwei sehen ähnlich verlockend aus, bringen aber weniger. Kandidaten: Stationspaare 3–8 km, deren Flug in
-   * Richtung Ziel liegt; die vielversprechendsten werden mit den echten Verbindungen bis zum Abflug und ab der
+   * Hubschrauber: 2 Linien (kurze Strecken) oder 3. Eine bringt Zeit (3–12 min schneller als ohne), die anderen sehen
+   * ähnlich verlockend aus und bringen weniger (höchstens 8 min langsamer als die beste). Landeplätze nicht an U-/S-Bahn-
+   * Knoten und nicht direkt bei Start oder Ziel (≥ 1,2 km) – man muss erst hinkommen und danach weiter, der Weg zum
+   * Hubschrauber gehört zur Aufgabe. Alle Kandidaten werden mit den echten Verbindungen bis zum Abflug und ab der
    * Landung durchgerechnet.
    */
   private async prepHeli(round: Round, a: Station, b: Station, strict: boolean): Promise<RouteOption[] | null> {
@@ -524,49 +584,53 @@ export class Game extends Lobby {
     const base = await this.searchAll(round, a.id, b.id);
     const best = base.find((r) => r.key !== 'walk');
     if (!best) return null;
-    const pool = this.net.candidates(['U', 'S', 'Tkey'], this.settings.slot, this.settings.network);
     const d = distM(a, b);
+    const count = d < 8000 ? 2 : 3;
+    const pool = this.net.candidates(['T', 'hub'], this.settings.slot, this.settings.network).filter((s) => !s.modes.includes('U') && !s.modes.includes('S'));
     // Schätzung: Öffis ~ 300 m/min Luftlinie
     const guess = (x: Station, y: Station) => distM(a, x) / 300 + heliMinutes(distM(x, y)) + distM(y, b) / 300;
     const cands: { x: Station; y: Station; g: number }[] = [];
-    for (let n = 0; n < 400 && cands.length < 60; n++) {
+    for (let n = 0; n < 1500 && cands.length < 80; n++) {
       const x = pool[Math.floor(Math.random() * pool.length)];
       const y = pool[Math.floor(Math.random() * pool.length)];
       const m = distM(x, y);
-      if (m < 3000 || m > 8000) continue;
+      if (m < 3000 || m > 8000 || distM(a, x) < 1200 || distM(y, b) < 1200) continue;
       // in Flugrichtung: näher am Start abheben, näher am Ziel landen
-      if (distM(a, x) + distM(y, b) > d * 0.9 || distM(a, x) > distM(a, y)) continue;
+      if (distM(a, x) + distM(y, b) > d * 0.95 || distM(a, x) > distM(a, y)) continue;
       cands.push({ x, y, g: guess(x, y) });
     }
-    if (cands.length < 3) return null;
+    if (cands.length < count) return null;
     cands.sort((p, q) => p.g - q.g);
-    // die 5 besten Schätzungen echt rechnen (verschiedene Abflugorte)
+    const start = fmtTime(round.time);
     const tried: { h: Heli; route: RouteOption }[] = [];
-    for (const c of cands) {
-      if (tried.length >= 5) break;
-      if (tried.some((t) => distM(t.h.a, c.x) < 1500 && distM(t.h.b, c.y) < 1500)) continue;
+    const tryHeli = async (c: (typeof cands)[number]) => {
+      if (tried.some((t) => distM(t.h.a, c.x) < 1500 && distM(t.h.b, c.y) < 1500)) return;
       const h: Heli = { id: '', a: c.x, b: c.y, min: heliMinutes(distM(c.x, c.y)) };
       const [s1, s2] = await Promise.all([this.segment(round, a, c.x), this.segment(round, c.y, b)]);
-      if ((c.x.id !== a.id && !s1) || (c.y.id !== b.id && !s2)) continue;
-      tried.push({ h, route: joinRoutes(`heli:${c.x.id}>${c.y.id}`, [s1, heliPart(h, c.x, c.y), s2]) });
+      if (!s1 || !s2) return;
+      tried.push({ h, route: joinRoutes(`heli:${c.x.id}>${c.y.id}`, [s1, heliPart(h, c.x, c.y), s2], start) });
+    };
+    // erst die vielversprechendsten, dann weitere als Lockvögel
+    for (const c of cands.slice(0, 40)) {
+      if (tried.length >= 8) break;
+      await tryHeli(c);
     }
     tried.sort((p, q) => p.route.medianMin - q.route.medianMin);
     const win = tried[0];
     if (!win) return null;
-    if (strict && win.route.medianMin + 3 > best.medianMin) return null;
-    // Lockvögel: langsamer als der beste Flug, aber nicht offensichtlich nutzlos
-    const decoys = tried.slice(1).filter((t) => t.route.medianMin >= win.route.medianMin + 2).slice(0, 2);
-    while (decoys.length < 2) {
-      const c = cands[Math.floor(Math.random() * cands.length)];
-      if ([win, ...decoys].some((t) => distM(t.h.a, c.x) < 1500)) continue;
-      decoys.push({ h: { id: '', a: c.x, b: c.y, min: heliMinutes(distM(c.x, c.y)) }, route: null as unknown as RouteOption });
-    }
+    const gain = best.medianMin - win.route.medianMin;
+    if (strict && (gain < 3 || gain > 12)) return null;
+    // Lockvögel: langsamer als der beste Flug, aber ähnlich verlockend; sonst irgendein langsamerer (durchgerechnet)
+    const close = tried.slice(1).filter((t) => t.route.medianMin >= win.route.medianMin + 2 && t.route.medianMin <= win.route.medianMin + 8);
+    const rest = tried.slice(1).filter((t) => t.route.medianMin >= win.route.medianMin + 2 && !close.includes(t));
+    const decoys = [...close, ...rest].filter((t, i, l) => l.findIndex((u) => distM(u.h.a, t.h.a) < 1500) === i && distM(t.h.a, win.h.a) >= 1500).slice(0, count - 1);
+    if (decoys.length < count - 1) return null;
     // Reihenfolge mischen – H1 ist nicht immer der richtige
     const all = [win, ...decoys].sort(() => Math.random() - 0.5);
     all.forEach((t, i) => (t.h.id = `H${i + 1}`));
-    for (const t of all) if (t.route) t.route = { ...t.route, legs: t.route.legs.map((l) => (l.mode === 'H' ? { ...l, line: t.h.id } : l)) };
+    for (const t of all) t.route = { ...t.route, legs: t.route.legs.map((l) => (l.mode === 'H' ? { ...l, line: t.h.id } : l)), steps: t.route.steps?.map((st) => (st.mode === 'H' ? { ...st, line: t.h.id } : st)) };
     round.helis = all.map((t) => t.h);
-    return sortRoutes([...all.filter((t) => t.route).map((t) => t.route), ...base], this.settings);
+    return sortRoutes([...all.map((t) => t.route), ...base], this.settings);
   }
 
   private async evaluateHeli(round: Round, legs: UserLeg[], dest: string, q: RouteQuery) {
@@ -608,7 +672,7 @@ export class Game extends Lobby {
     } catch (e) {
       return fail((e as Error).message);
     }
-    const route = joinRoutes('heli:user', parts);
+    const route = joinRoutes('heli:user', parts, fmtTime(round.time));
     return { route, durationMin: route.medianMin, matchedRank: null, source: 'computed' as const, error: null };
   }
 
@@ -899,7 +963,7 @@ export class Game extends Lobby {
 
   // -------------------------------------------------------------- Abgabe & Auflösung
 
-  async submit(token: string, roundIdx: number, legs: unknown, guesses: Guesses | null): Promise<RoundReveal | null> {
+  async submit(token: string, roundIdx: number, legs: unknown, guesses: Guesses | null, gaveUp = false): Promise<RoundReveal | null> {
     const playerId = this.auth(token).id;
     const round = this.openRoundAt(roundIdx);
     if (round.submissions.has(playerId)) throw new GameError('Schon abgegeben');
@@ -910,9 +974,10 @@ export class Game extends Lobby {
     // benötigte Zeit ohne Pausen, höchstens das Zeitlimit
     const elapsedMs = Math.min(now - round.startedAt! - round.pausedTotalMs, (round.limitSec ?? Infinity) * 1000);
     round.submissions.set(playerId, {
-      legs: cleanLegs(legs),
+      legs: gaveUp ? [] : cleanLegs(legs),
       guesses: guesses && typeof guesses === 'object' ? { from: validLatLon(guesses.from), to: validLatLon(guesses.to) } : null,
       elapsedSec: Math.round(elapsedMs / 100) / 10,
+      ...(gaveUp ? { gaveUp: true } : {}),
     });
     this.touch();
     // Statistik der Admin-Seite: gewählte Linien
@@ -1034,9 +1099,9 @@ export class Game extends Lobby {
                 }
               : null;
           // E-Scooter: auch ganz ohne Öffis eine gültige Antwort
-          const r = sub && (sub.legs.length || this.settings.scooter)
+          const r = sub && !sub.gaveUp && (sub.legs.length || this.settings.scooter)
             ? await this.evaluate(round, sub.legs, q, routes)
-            : { route: null, durationMin: null, matchedRank: null, source: 'none' as const, error: sub ? 'Keine Route angegeben.' : 'Nicht rechtzeitig abgegeben.' };
+            : { route: null, durationMin: null, matchedRank: null, source: 'none' as const, error: sub?.gaveUp ? '🏳️ Aufgegeben.' : sub ? 'Keine Route angegeben.' : 'Nicht rechtzeitig abgegeben.' };
           const costMin = r.durationMin == null ? null : routeCost(r.durationMin, r.route ? transfersOf(r.route) : 0, this.settings);
           const score = computeScore({
             routePoints: costMin == null ? 0 : scoreRoute(costMin, best),

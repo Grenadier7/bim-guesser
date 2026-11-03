@@ -205,10 +205,13 @@ export class PlanStore {
 
   constructor() {
     this.store = new VersionedJson('plans', (v) => ({ plans: sanitizePlans(v) }), () => ({ plans: [migrated()] }));
-    // Zielnetz 2040 (Tages-Challenge) einmal anlegen – danach wie jeder Netzplan auf der Admin-Seite änderbar
-    if (!this.get(ZIEL2040.id)) {
+    // Zielnetz 2040 (Tages-Challenge) anlegen – danach wie jeder Netzplan auf der Admin-Seite änderbar. Noch nicht
+    // auf der Admin-Seite bearbeitet (kein updatedBy)? Dann auf den Stand dieser Version bringen.
+    const cur = this.get(ZIEL2040.id);
+    const stale = cur && !cur.updatedBy && JSON.stringify({ ...cur, updatedAt: undefined }) !== JSON.stringify({ ...ZIEL2040, updatedAt: undefined });
+    if (!cur || stale) {
       try {
-        this.save([...this.list(), ZIEL2040], 'system', 'Zielnetz 2040 angelegt');
+        this.save([...this.list().filter((p) => p.id !== ZIEL2040.id), ZIEL2040], 'system', cur ? 'Zielnetz 2040 aktualisiert' : 'Zielnetz 2040 angelegt');
       } catch (e) {
         console.warn(`⚠ Zielnetz 2040 nicht angelegt: ${(e as Error).message}`);
       }

@@ -59,12 +59,17 @@ export { districtGroupId };
 
 /** Fenster beim Spielstart: Icon, Name, Beschreibung – Klick oder nach ein paar Sekunden weg */
 export function showChallengeIntro(c: Challenge | null) {
+  showIntro({ icon: c?.icon ?? '🎯', kicker: 'Tages-Challenge', title: c?.title ?? 'Tages-Challenge', text: c?.text ?? '' });
+}
+
+/** Fenster beim Start (Tages-Challenge, Einschränkung der Runde): Icon, Name, Erklärung */
+export function showIntro(o: { icon: string; kicker: string; title: string; text: string }) {
   document.querySelector('.challenge-intro')?.remove();
   const el = h(
     'div',
-    { class: 'challenge-intro', role: 'dialog', 'aria-label': 'Tages-Challenge' },
-    `<div class="ci-card"><span class="ci-icon">${c?.icon ?? '🎯'}</span><small>Tages-Challenge</small><h2>${esc(c?.title ?? 'Tages-Challenge')}</h2>
-      ${c ? `<p>${esc(c.text)}</p>` : ''}<button class="btn btn-primary">Los geht’s</button></div>`,
+    { class: 'challenge-intro', role: 'dialog', 'aria-label': o.kicker },
+    `<div class="ci-card"><span class="ci-icon">${esc(o.icon)}</span><small>${esc(o.kicker)}</small><h2>${esc(o.title)}</h2>
+      ${o.text ? `<p>${esc(o.text)}</p>` : ''}<button class="btn btn-primary">Los geht’s</button></div>`,
   );
   const close = () => el.remove();
   el.addEventListener('click', close);

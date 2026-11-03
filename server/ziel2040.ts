@@ -1,6 +1,7 @@
 // Netzplan „Zielnetz 2040“ (Tages-Challenge „Zielnetz 2040“): was es in Wien bis etwa 2040 geben könnte – nicht
 // genau, sondern als spielbares Zukunftsnetz. Angelegt als eigener Netzplan (Admin → Netzpläne), dort änderbar.
-// Grundlage: Wiener-Linien-/ÖBB-Ausbaupläne (U2/U5-Linienkreuz, U1 Rothneusiedl, S-Bahn-Ausbau, neue Bim-Strecken).
+// Grundlage: Wiener-Linien-/ÖBB-Ausbaupläne (U2/U5-Linienkreuz, S-Bahn-Ausbau, neue Bim-Strecken). Jede Linie bleibt auf
+// ihrer Route – keine Äste.
 import type { DayType, LineEdit, NetworkPlan, ServiceBand } from '../shared/types.ts';
 
 /** Takt: Mo–Fr / Sa / So von früh bis Mitternacht */
@@ -23,10 +24,8 @@ export const ZIEL2040_EDITS: LineEdit[] = [
   station('z40-frankh', 'Frankhplatz', 48.214, 16.3521, 9),
   station('z40-reinp', 'Reinprechtsdorfer Straße', 48.1857, 16.3555, 5),
   station('z40-wbg', 'Wienerberg', 48.1695, 16.3445, 10),
-  station('z40-rothn', 'Rothneusiedl', 48.138, 16.3925, 10),
   station('z40-enns', 'Ennsgasse', 48.2265, 16.403, 2),
-  station('z40-lobau', 'Lobau', 48.1935, 16.4935, 22),
-  station('z40-essl', 'Essling', 48.216, 16.518, 22),
+  station('z40-breitenlee', 'Breitenleer Straße', 48.244, 16.4625, 22),
   station('z40-pilot', 'Pilotengasse', 48.2205, 16.495, 22),
   station('z40-hauptallee', 'Prater Hauptallee', 48.2145, 16.407, 2),
   station('z40-nwb', 'Nordwestbahnhof', 48.229, 16.38, 20),
@@ -67,24 +66,6 @@ export const ZIEL2040_EDITS: LineEdit[] = [
       { station: 'z40-wbg', min: 2 },
     ],
   },
-  // U1 Rothneusiedl: jeder zweite Zug ab Alaudagasse nach Rothneusiedl
-  {
-    kind: 'addVariant',
-    line: 'U1',
-    stops: [
-      { station: 's314', min: 0 },
-      { station: 's1386', min: 2 },
-      { station: 's356', min: 1 },
-      { station: 's341', min: 2 },
-      { station: 's1395', min: 1 },
-      { station: 's95', min: 1 },
-      { station: 's560', min: 2 },
-      { station: 's386', min: 2 },
-      { station: 'z40-rothn', min: 3 },
-    ],
-    service: every(8, 10, 10),
-  },
-
   // ---- S-Bahn: Ring, dichtere Takte, neue Tangente
   // S45 über Handelskai hinaus bis Praterkai – mit der S80 ein Ring um die Stadt
   { kind: 'extend', line: 'S45', at: 's691', stops: [{ station: 'z40-enns', min: 3 }, { station: 's295', min: 4 }] },
@@ -95,7 +76,8 @@ export const ZIEL2040_EDITS: LineEdit[] = [
   ...denser('S2', 15, 30),
   ...denser('S3', 15, 30),
   ...denser('S4', 15, 30),
-  // S70 neu: Simmering – Lobau – Essling – Aspern Nord – Süßenbrunn (Tangente im Osten)
+  // S70 neu: Simmering – Stadlau auf den Gleisen der S80, dann auf der bestehenden Strecke über Breitenleer Straße
+  // und Hermann-Gebauer-Straße nach Süßenbrunn
   {
     kind: 'addLine',
     line: 'S70',
@@ -103,10 +85,12 @@ export const ZIEL2040_EDITS: LineEdit[] = [
     color: '#1e6fbf',
     stops: [
       { station: 's260', min: 0 },
-      { station: 'z40-lobau', min: 5 },
-      { station: 'z40-essl', min: 3 },
-      { station: 's1636', min: 3 },
-      { station: 's346', min: 6 },
+      { station: 's1189', min: 2 },
+      { station: 's295', min: 3 },
+      { station: 's292', min: 3 },
+      { station: 'z40-breitenlee', min: 4 },
+      { station: 's658', min: 3 },
+      { station: 's346', min: 3 },
     ],
     service: every(15, 30, 30),
   },
@@ -154,7 +138,7 @@ export const ZIEL2040_EDITS: LineEdit[] = [
 export const ZIEL2040: NetworkPlan = {
   id: 'ziel2040',
   label: 'Zielnetz 2040',
-  hint: 'Wien um 2040 (nicht genau): U5 und U2 zum Wienerberg, U1 Rothneusiedl, S45 bis Praterkai, S80/S45 und Stammstrecke im dichten Takt, S70 Simmering–Süßenbrunn, neue Bim 15 und 29, 12/18/25/27 verlängert.',
+  hint: 'Wien um 2040 (nicht genau): U5 und U2 zum Wienerberg, S45 bis Praterkai, S80/S45 und Stammstrecke im dichten Takt, S70 Simmering–Stadlau–Süßenbrunn, neue Bim 15 und 29, 12/18/25/27 verlängert.',
   inMenu: true,
   params: {},
   edits: ZIEL2040_EDITS,
