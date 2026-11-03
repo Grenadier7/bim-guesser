@@ -28,8 +28,6 @@ import { adminScreen } from './screens/admin.ts';
 import { tutorialScreen } from './screens/tutorial.ts';
 import { dailyScreen } from './screens/daily.ts';
 import { meScreen } from './screens/me.ts';
-import { dailyTestScreen } from './screens/dailytest.ts';
-import { challengeTestScreen } from './screens/challengetest.ts';
 import { ChatWidget } from './chat.ts';
 import { hideIdle, idleCheck } from './idle.ts';
 import { app, currentRound, inviteLink, isHost, me, openTimer, restoreSession, serverNow, setMapBig, setMobileMap } from './store.ts';
@@ -202,8 +200,6 @@ function mount(key: string): Screen {
   if (key === 'tutorial') return tutorialScreen(panel, back);
   if (key === 'daily') return dailyScreen(panel, back);
   if (key === 'me') return meScreen(panel, back);
-  if (key === 'dailytest') return dailyTestScreen(panel, back);
-  if (key === 'challengetest') return challengeTestScreen(panel, back);
   if (key === 'admin') return adminScreen(panel, back);
   if (key === 'lobby') return lobbyScreen(panel);
   if (key === 'final') return finalScreen(panel);
@@ -340,9 +336,9 @@ async function init() {
     return;
   }
   // geteilter Einstellungs-Link → Startseite (legt die Lobby an) statt in die alte Lobby zurück
-  // geteilter Link zur Strecke des Tages (/#daily) bzw. Testwerkzeug (/#daily-test) – auch bei schon offener Seite
+  // geteilter Link zur Strecke des Tages (/#daily) – auch bei schon offener Seite
   const fromHash = () => {
-    const views: Record<string, typeof app.view> = { '#daily': 'daily', '#daily-test': 'dailytest', '#challenge-test': 'challengetest' };
+    const views: Record<string, typeof app.view> = { '#daily': 'daily' };
     if (!views[location.hash]) return false;
     app.view = views[location.hash];
     history.replaceState(null, '', location.pathname + location.search);

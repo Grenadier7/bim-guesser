@@ -108,9 +108,7 @@ Die Strecke wird nicht einfach zufällig gezogen (`server/daily.ts`):
 4. Trotzdem machbar: nur mit bekannten Linien gibt es mindestens 350 Punkte.
 5. Abwechslung: Stationen der letzten 7 Tage kommen nicht dran.
 
-Erfüllt nach 60 Versuchen keine Strecke alles, gilt die nächstbeste. **Testen:** lokal mit `npm run dev` unter
-`http://localhost:5173/#daily-test` – zieht beliebig oft neu (ohne zu speichern) und zeigt Start, Ziel, beste
-Verbindung, die nur mit bekannten Linien und alle Versuche mit Begründung. Die Strecke je Tag steht in
+Erfüllt nach 60 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strecke je Tag steht in
 `STATE_DIR/daily.json` (bleibt nach einem Neustart gleich); die Auflösung zeigt zum Vergleich die Zeit nur mit bekannten Linien.
 
 ## Fortschritt & Motivation
@@ -196,9 +194,7 @@ Verbindung, die nur mit bekannten Linien und alle Versuche mit Begründung. Die 
     ≥ 1,2 km vom Wasser und mit den Öffis klar schneller als zu Fuß; gewertet bis ans Wasser inkl. Fußweg.
   - **Medaillen:** 🎪 Challenge-Sammler (verschiedene gespielt) und 🏅 Challenge-Meister (geschafft – meist eine Runde
     mit vollen Routenpunkten, bei schweren ab 900), je Bronze/Silber/Gold.
-  - **Testen (nur lokal, `npm run dev`):** `http://localhost:5173/#challenge-test` – jede Challenge (und jeder Bezirk)
-    mit einem Klick allein spielen. `npm run check:challenges` prüft mit dem echten Fahrplan, ob jede Challenge Strecken
-    findet.
+  - **Prüfen:** `npm run check:challenges` prüft mit dem echten Fahrplan, ob jede Challenge Strecken findet.
 - **Chat**: Schnell-Reaktionen 👏 😂 😮 🔥 🚋 GG und 🎲 (= `/ez`).
 - **Tastatur**: Linie tippen, ← → (↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt sie – der Fokus steht
   beim Ausstieg (hält die Linie woanders: beim Einstieg, mit Fußweg-Hinweis). Enter öffnet die Liste, ↑ ↓ wählt den

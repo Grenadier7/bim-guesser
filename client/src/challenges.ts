@@ -13,6 +13,8 @@ import {
   type Schedule,
 } from '../../shared/challenges.ts';
 import { viennaDay } from '../../shared/career.ts';
+import { DEFAULT_SETTINGS } from '../../shared/defaults.ts';
+import type { GameSettings } from '../../shared/types.ts';
 import { app } from './store.ts';
 import type { NetIndex } from './net.ts';
 import type { RuleNet } from '../../shared/challengeRules.ts';
@@ -52,6 +54,14 @@ export function todaysChallenges(): Challenge[] {
 /** alle (Testseite; Challenge einer älteren Lobby wiederfinden) */
 export function everyChallenge(): Challenge[] {
   return [...allChallenges(context()), ...DISTRICT_GROUPS.map(districtOf)];
+}
+
+/**
+ * Einstellungen einer Challenge (wie „Spielen“ im Lobby-Banner): die Challenge legt alles selbst fest – was in der
+ * Lobby eingestellt war, zählt nicht. Der Standard füllt nur, was es neu gibt und die Challenge nicht kennt.
+ */
+export function challengeSettings(patch: Partial<GameSettings>, id: string): Partial<GameSettings> {
+  return { ...DEFAULT_SETTINGS, ...patch, challenge: id };
 }
 
 export const findChallenge = (id: string | null) => (id ? (everyChallenge().find((c) => c.id === id) ?? null) : null);

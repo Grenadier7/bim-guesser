@@ -42,8 +42,7 @@ import { inviteButton } from '../accountui.ts';
 import { deferWhileEditing, infoTip, patchQueue, seg, toggleInfo } from '../widgets.ts';
 import { bindKick, kickButton } from './host.ts';
 import type { Screen } from './screen.ts';
-import { districtCenter, findChallenge, todaysChallenges } from '../challenges.ts';
-import { challengeSettings } from './challengetest.ts';
+import { challengeSettings, districtCenter, findChallenge, todaysChallenges } from '../challenges.ts';
 import { openSettingsDialog } from '../settingsShare.ts';
 
 /**

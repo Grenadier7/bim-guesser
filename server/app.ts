@@ -126,10 +126,6 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
     if (!json) return void res.status(404).json({ error: 'Diesen Netzplan gibt es nicht.' });
     res.type('json').set('Cache-Control', 'no-cache').send(json);
   });
-  // lokal mit npm run dev (--dev): Testseiten (Challenges, Strecke des Tages)
-  app.get('/api/dev', (_req, res) => {
-    res.json({ dev: process.argv.includes('--dev') });
-  });
   // Gewässer für „Ab ins Wasser“ (Karte, Fußweg zum nächsten Wasser)
   app.get('/api/water', (_req, res) => {
     const json = waterJson();

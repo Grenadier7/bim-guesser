@@ -3,7 +3,7 @@
 // Die gezogene Strecke wird je Tag gespeichert, damit nach einem Neustart dieselbe gilt.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import type { DailyBoard, DailyResult, DailyRound, GameSettings, RouteOption, Station, StationRef } from '../shared/types.ts';
+import type { DailyBoard, DailyResult, DailyRound, GameSettings, RouteOption, Station } from '../shared/types.ts';
 import { isWellKnownLine, scoreRoute } from '../shared/rules.ts';
 import { viennaDay, weekStart } from '../shared/career.ts';
 import type { Accounts } from './accounts.ts';
@@ -51,21 +51,6 @@ export interface DailyAttempt {
   railPoints: number | null;
   penalty: number | null;
   result: string;
-}
-
-export interface DailyPreview {
-  day: string;
-  from: StationRef;
-  to: StationRef;
-  when: string;
-  routes: RouteOption[];
-  rail: RouteOption | null;
-  railPoints: number | null;
-  criteriaMet: boolean;
-  attempts: DailyAttempt[];
-  /** an diesem Tag gespeicherte Strecke (die echte) */
-  saved: { from: string; to: string } | null;
-  rules: { railMin: number; railMax: number; varietyDays: number; attempts: number };
 }
 
 interface Today {
@@ -214,32 +199,6 @@ export class DailyService {
       if (!best || penalty < best.penalty) best = { day, from, to, time, settings, routes, railMin, penalty };
     }
     return best;
-  }
-
-  /** Testwerkzeug (nur lokal mit --dev): neu ziehen, ohne zu speichern – mit allen Versuchen */
-  async preview(dayIn?: string): Promise<DailyPreview> {
-    const day = dayIn && /^\d{4}-\d{2}-\d{2}$/.test(dayIn) ? dayIn : viennaDay(this.now());
-    const settings = this.settings();
-    const time = slotTime(settings.slot, settings.network, this.net.data.regularDays);
-    const q = this.query(settings);
-    const all = this.load();
-    const attempts: DailyAttempt[] = [];
-    const best = await this.draw(day, all, settings, time, q, attempts);
-    if (!best) throw new GameError('Keine Strecke gefunden.', 502);
-    const saved = all[day];
-    return {
-      day,
-      from: this.net.ref(best.from.id),
-      to: this.net.ref(best.to.id),
-      when: describeSlotDate(time),
-      routes: best.routes.slice(0, 4),
-      rail: await this.railRoute(best.from.id, best.to.id, time, q),
-      railPoints: best.railMin == null ? null : scoreRoute(best.railMin, best.routes[0].medianMin),
-      criteriaMet: best.penalty === 0,
-      attempts,
-      saved: saved && this.net.stations.has(saved.from) && this.net.stations.has(saved.to) ? { from: this.net.station(saved.from).name, to: this.net.station(saved.to).name } : null,
-      rules: { railMin: RAIL_MIN, railMax: RAIL_MAX, varietyDays: VARIETY_DAYS, attempts: ATTEMPTS },
-    };
   }
 
   async round(userId: number | null): Promise<DailyRound> {

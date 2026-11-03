@@ -9,8 +9,6 @@ export function dailyRoutes(app: Express, daily: DailyService, optionalUser: (re
   const limitSubmit = rateLimit('daily-submit', 30, 10 * MIN, 'Viele Versuche in kurzer Zeit – nächste {wait}.');
   app.get('/api/daily', h((req) => daily.round(optionalUser(req)?.id ?? null)));
   app.post('/api/daily/submit', limitSubmit, h((req) => daily.submit(req.body?.legs, optionalUser(req)?.id ?? null)));
-  // Testwerkzeug für die Auswahl (Client: /#daily-test) – nur lokal: npm run dev startet den Server mit --dev
-  if (process.argv.includes('--dev')) app.get('/api/daily/preview', h((req) => daily.preview(typeof req.query.day === 'string' ? req.query.day : undefined)));
   app.get(
     '/api/daily/board',
     h((req) => daily.board(req.query.scope === 'week' ? 'week' : 'day', req.query.friends === '1', optionalUser(req)?.id ?? null)),

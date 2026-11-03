@@ -7173,32 +7173,6 @@ details.adm-linechg li {
   }
 }
 
-/* Testwerkzeug Strecke des Tages (nur lokal) */
-.dt-controls {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin: 8px 0;
-}
-.dt-table {
-  overflow-x: auto;
-}
-.dt-table table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-.dt-table th,
-.dt-table td {
-  padding: 4px 6px;
-  border-bottom: 1px solid var(--line);
-  text-align: left;
-  vertical-align: top;
-}
-.dt-table tr.ok td {
-  font-weight: 700;
-}
-
 /* Tages-Challenges: Punkte („3 Punkte“) */
 .pin-way span {
   background: #1e6fbf;
@@ -7221,24 +7195,3 @@ details.adm-linechg li {
   vertical-align: middle;
 }
 
-/* Testseite Tages-Challenges (nur lokal) */
-.ch-list {
-  display: grid;
-  gap: 6px;
-  padding: 0;
-  list-style: none;
-}
-.ch-list li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-}
-.ch-districts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}

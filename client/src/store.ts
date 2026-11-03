@@ -59,7 +59,7 @@ export const app = {
   /** Lernmodus gleich mit einer Übung öffnen (z.B. „Diese üben“ im Quiz-Endstand) */
   learnStart: null as null | 'mistakes',
   /** Bildschirm außerhalb einer Lobby */
-  view: 'home' as 'home' | 'learn' | 'training' | 'tutorial' | 'admin' | 'daily' | 'me' | 'dailytest' | 'challengetest',
+  view: 'home' as 'home' | 'learn' | 'training' | 'tutorial' | 'admin' | 'daily' | 'me',
   prefs: loadMerged<Prefs>(PREFS_KEY, { name: '', settings: {}, quiz: {} }),
   onChange: () => {},
   /** Chat-Nachrichten und Verlauf (vom Chat-Fenster gesetzt) */
