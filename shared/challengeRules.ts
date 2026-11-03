@@ -35,6 +35,8 @@ export interface RuleNet {
   district(stationId: string): number | null;
   /** Stationen einer Fahrt von → bis (inkl. beider) – leer, wenn die Linie so nicht fährt */
   traversed(lineId: string, from: string, to: string): string[];
+  /** Brücken, über die diese Fahrt führt (Brückenkenner; ohne Brücken-Daten leer) */
+  bridges?(lineId: string, from: string, to: string): string[];
 }
 
 /** Regeln einer Runde */
@@ -50,6 +52,13 @@ export interface RuleRound {
   entryTown?: string;
   /** Fleckerlteppich: gesperrte Bezirke */
   districts?: number[];
+  /** Brückenkenner: so viele Brücken mindestens */
+  bridges?: number;
+}
+
+/** verschiedene Brücken einer Route */
+export function bridgeCount(legs: LegLike[], net: RuleNet): number {
+  return new Set(legs.flatMap((l) => net.bridges?.(l.line, l.from, l.to) ?? [])).size;
 }
 
 /** gesperrte Bezirke der Runde (Innenstadt umfahren: 1, 4–9; Fleckerlteppich: die gezogenen) */
@@ -165,6 +174,7 @@ export function routeProblem(round: RuleRound, legs: LegLike[], net: RuleNet): s
   }
   if (r === 'min2Transfers' && legs.length < 3) return `🔀 Umsteige-Profi: mindestens 2-mal umsteigen (3 Fahrten) – bisher ${Math.max(0, legs.length - 1)}.`;
   if (r === 'oneLeg' && legs.length !== 1) return '🚶 Fußbus: genau eine Linie.';
+  if (r === 'minBridges' && bridgeCount(legs, net) < (round.bridges ?? 0)) return `🌉 Brückenkenner: mindestens ${round.bridges} Brücken – bisher ${bridgeCount(legs, net)}.`;
   if ((r === 'mustLine' || r === 'anyLine') && round.required?.length && !legs.some((l) => round.required!.includes(l.line)))
     return round.required.length === 1 ? `📌 Pflicht-Linie: Die ${round.required[0]} muss dabei sein.` : `🎲 Eine von ${round.required.join(', ')} muss dabei sein.`;
   return null;
@@ -177,6 +187,7 @@ export function ruleSummary(round: RuleRound): string | null {
   if (r === 'mustLine' && round.required?.length) return `📌 Pflicht-Linie: ${round.required[0]} muss mindestens einmal dabei sein.`;
   if (r === 'anyLine' && round.required?.length) return `🎲 Eine dieser Linien muss dabei sein: ${round.required.join(', ')}.`;
   if (r === 'umland') return `🚆 Du startest in ${round.entryTown ?? 'Niederösterreich'}. Welcher Zug bringt dich nach Wien? Umsteigen erst in Wien – die Fahrt bis zur Stadtgrenze zählt mit.`;
+  if (r === 'minBridges') return `🌉 Brückenkenner: Überquere mindestens ${round.bridges} Brücken (🌉 auf der Karte) – mehr als auf der schnellsten Verbindung.`;
   if (r === 'avoidDistricts') return `🧩 Fleckerlteppich: gesperrt sind die Bezirke ${(round.districts ?? []).join(', ')} (rot auf der Karte) – dort nicht ein-, aus- oder durchfahren.`;
   if (r === 'insider') return `${RESTRICTIONS.insider.icon} Insider – nicht erlaubt: U1–U6 und die bekannten S-Bahnen S1, S2, S3, S4, S7, S45, S80. Erlaubt: Bim, Bus und die übrigen S-Bahnen (z.B. S40, S50, S60).`;
   return `${RESTRICTIONS[r].icon} ${RESTRICTIONS[r].label}: ${RESTRICTIONS[r].hint}`;

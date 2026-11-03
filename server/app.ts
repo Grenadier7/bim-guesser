@@ -20,6 +20,7 @@ import { rateLimit, securityHeaders } from './security.ts';
 import { TrainingService } from './training.ts';
 import { waterData, waterJson } from './water.ts';
 import { challengeSchedule } from './challengeSchedule.ts';
+import { bridgeJson } from './bridges.ts';
 
 const DIST = path.resolve(import.meta.dirname, '../dist');
 
@@ -133,6 +134,12 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
   app.get('/api/water', (_req, res) => {
     const json = waterJson();
     if (!json) return void res.status(404).json({ error: 'Keine Gewässer-Daten.' });
+    res.type('json').set('Cache-Control', 'public, max-age=86400').send(json);
+  });
+  // Brücken für „Brückenkenner“ (Karte, Zählen im Baukasten)
+  app.get('/api/bridges', (_req, res) => {
+    const json = bridgeJson();
+    if (!json) return void res.status(404).json({ error: 'Keine Brücken-Daten.' });
     res.type('json').set('Cache-Control', 'public, max-age=86400').send(json);
   });
   // Plan der Tages-Challenges (einmal berechnet, als Datei abgelegt – server/challengeSchedule.ts)

@@ -17,6 +17,8 @@ export interface ChallengeContext {
   addresses?: boolean;
   /** Gewässer-Daten vorhanden („Ab ins Wasser“) */
   water?: boolean;
+  /** Netzplan „Zielnetz 2040“ vorhanden */
+  future?: boolean;
 }
 
 /** was es gibt – aus den Uhrzeiten/Netzen der Admin-Seite (Server und Browser rechnen gleich) */
@@ -25,7 +27,7 @@ export function challengeContext(addresses: boolean, water: boolean): ChallengeC
   const night = TIME_SLOTS.find((t) => isNightSlot(t.id));
   const sunday = TIME_SLOTS.find((t) => SLOT_DAYTYPE[t.id] === 'su' && !isNightSlot(t.id));
   const at = (t: { id: string } | undefined) => (t ? { id: t.id, time: hhmm(t.id) } : null);
-  return { night: at(night), sunday: at(sunday), current: NET_MODES.some((m) => m.id === 'current'), addresses, water };
+  return { night: at(night), sunday: at(sunday), current: NET_MODES.some((m) => m.id === 'current'), addresses, water, future: NET_MODES.some((m) => m.id === FUTURE_NET) };
 }
 
 /** normale Spielarten (Tempo, Netz-Regeln) und besondere (eigene Aufgaben, eigene Karte) – je Tag von beidem */
@@ -64,6 +66,10 @@ interface ChallengeDef {
 }
 
 const STEPHANSPLATZ = { lat: 48.2085, lon: 16.3731 };
+/** Netzplan der Challenge „Zielnetz 2040“ (server/ziel2040.ts) */
+export const FUTURE_NET = 'plan:ziel2040' as const;
+/** neue oder geänderte Linien im Zielnetz 2040 (Karte „Zielnetz einblenden“) */
+export const FUTURE_LINES = ['U5', 'U2', 'U1', 'S45', 'S80', 'S70', 'S1', 'S2', 'S3', 'S4', '15', '25', '27', '18', '12', '29'];
 const fixed = (text: string, settings: Partial<GameSettings>) => ({ text: () => text, settings: () => settings });
 const SPRINT = [2, 3, 5];
 const EASY = [1, 2, 3, 5];
@@ -182,6 +188,27 @@ export const CHALLENGES: ChallengeDef[] = [
     rounds: 2,
     roundOptions: EASY,
     avoid: ['scooter'],
+  },
+  {
+    id: 'bridges',
+    icon: '🌉',
+    title: 'Brückenkenner',
+    kind: 'special',
+    ...fixed('Über Donau, Donaukanal, Wienfluss und Alte Donau: Überquere mehr Brücken als die schnellste Verbindung – so schnell wie möglich', { distance: 'long', minTransfers: 0, variant: 'minBridges', roundTimeLimitSec: 300 }),
+    rounds: 1,
+    roundOptions: HARD,
+    avoid: ['water'],
+  },
+  {
+    id: 'future',
+    icon: '🔮',
+    title: 'Zielnetz 2040',
+    kind: 'special',
+    ...fixed('Wien um 2040: U5, U2 zum Wienerberg, S-Bahn-Ring, S45 und S80 im dichten Takt, neue Bim-Linien. „Zielnetz einblenden“ zeigt, was neu ist – finde die schnellste Route im Netz der Zukunft', { network: FUTURE_NET, minTransfers: 0, task: 'future', roundTimeLimitSec: 300 }),
+    rounds: 2,
+    roundOptions: EASY,
+    avoid: ['current'],
+    needs: (c) => !!c.future,
   },
   // ---- Routen-Regeln (ganze Route)
   { id: 's-fan', icon: '🚆', title: 'S-Bahn-Fan', kind: 'normal', ...fixed('Start und Ziel an der S-Bahn – und mindestens eine S-Bahn-Fahrt', { stations: ['S'], variant: 'needS' }), rounds: 2, roundOptions: EASY, avoid: ['umland'] },

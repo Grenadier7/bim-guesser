@@ -9,8 +9,11 @@ import { app, routeState, currentRound, isHost, serverNow, setMapBig } from '../
 import { esc, h, lineChip, modeChip, toast } from '../ui.ts';
 import { hostBar } from './host.ts';
 import { UNDERGROUND, blockedDistricts, ruleSummary, type RuleRound } from '../../../shared/challengeRules.ts';
+import { MODE_ICON, isNightSlot } from '../../../shared/rules.ts';
+import type { Mode } from '../../../shared/types.ts';
 import { nearestWater } from '../../../shared/water.ts';
-import { loadWater, waterNow } from '../challenges.ts';
+import { bridgesNow, loadBridges, loadWater, waterNow } from '../challenges.ts';
+import { FUTURE_LINES } from '../../../shared/challenges.ts';
 import type { Screen } from './screen.ts';
 
 type View = 'locate' | 'route' | 'waiting';
@@ -42,6 +45,8 @@ export function roundScreen(panel: HTMLElement): Screen {
   // Der Builder ruft onChange schon im Konstruktor auf – daher erst deklarieren, dann zuweisen
   let builder: RouteBuilder | undefined;
   let alive = true;
+  /** Zielnetz 2040: neue/geänderte Linien auf der Karte */
+  let futureShown = false;
   // Tages-Challenges: Regeln, Ziele/Punkte, Wasser
   const rules: RuleRound | undefined = round.restriction
     ? {
@@ -51,8 +56,10 @@ export function roundScreen(panel: HTMLElement): Screen {
         entryLines: round.umland ? [...new Set(round.umland.options.flatMap((o) => o.lines))] : undefined,
         entryTown: round.umland?.town,
         districts: round.districts,
+        bridges: round.bridges,
       }
     : undefined;
+  if (round.bridges && !bridgesNow()) void loadBridges().then(() => alive && render());
   // Hubschrauber: H1–H3 als Linien dieser Runde (A ↔ B)
   app.net.setRoundLines((round.helis ?? []).map((x) => ({ id: x.id, mode: 'H' as const, color: '#c2185b', patterns: [[x.a.id, x.b.id], [x.b.id, x.a.id]], nets: ['cr', 'cr'] })));
   const targets = round.targets?.map((t) => app.net.ensure(t));
@@ -106,6 +113,12 @@ export function roundScreen(panel: HTMLElement): Screen {
     }
     <div class="od"><div class="od-row"><span class="pin-dot a">A</span><b>${showNames ? esc(from.name) : 'Start <small>(nur auf der Karte)</small>'}</b>${round.umland ? ' <small>(Niederösterreich)</small>' : ''}</div>
     ${goalRows()}</div>`;
+  // Zielnetz 2040: neue/geänderte Linien auf der Karte ein-/ausblenden
+  head.querySelector<HTMLButtonElement>('#future-map')?.addEventListener('click', (e) => {
+    futureShown = !futureShown;
+    (e.currentTarget as HTMLButtonElement).textContent = futureShown ? 'Zielnetz ausblenden' : '🗺️ Zielnetz einblenden';
+    render();
+  });
 
   /** Ziel-Zeilen: B, „eines von 3 Zielen“, „alle 3 Punkte“ oder „nächstes Wasser“ */
   function goalRows(): string {
@@ -118,6 +131,13 @@ export function roundScreen(panel: HTMLElement): Screen {
 
   /** Regel der Challenge (verständlich, mit Pflicht-Linien als Chips) */
   function challengeHead(): string {
+    if (s.settings.task === 'future')
+      return `<div class="challenge-rule">🔮 Zielnetz 2040 – neue und geänderte Linien: ${FUTURE_LINES.filter((id) => app.net.lines.has(id))
+        .map((id) => {
+          const l = app.net.lines.get(id)!;
+          return lineChip(l.mode, l.id, l.color);
+        })
+        .join('')} <button class="link" id="future-map">${futureShown ? 'Zielnetz ausblenden' : '🗺️ Zielnetz einblenden'}</button></div>`;
     if (round.helis?.length)
       return `<div class="challenge-rule">🚁 Hubschrauber – wie eine Linie eintippen (Flug inkl. Einsteigen, danach weiter mit den Öffis): ${round.helis
         .map((x) => `${lineChip('H', x.id, '#c2185b')} ${esc(x.a.name)} ↔ ${esc(x.b.name)} · ${x.min} min`)
@@ -153,7 +173,7 @@ export function roundScreen(panel: HTMLElement): Screen {
     // Handy: zum Orten die Karte groß machen, danach wieder normal
     setMapBig(view === 'locate');
     if (view === 'locate') return renderLocate();
-    if (showMap && (targets || waypoints || round.water || round.umland || round.helis || (rules && blockedDistricts(rules).length) || round.restriction === 'sunny')) showChallengeMap(true);
+    if (showMap && (targets || waypoints || round.water || round.umland || round.helis || round.bridges || s.settings.task === 'future' || (rules && blockedDistricts(rules).length) || round.restriction === 'sunny')) showChallengeMap(true);
     else if (showMap) app.map.showEndpoints(round.from!, round.to!, true, showNames);
     else app.map.clear();
     const transferTip = tips.find((t) => t.kind === 'transfers');
@@ -358,8 +378,40 @@ export function roundScreen(panel: HTMLElement): Screen {
       // Umland: Wien umrahmt – man startet draußen
       outline: round.umland ? app.net.data.districts : undefined,
       helis: round.helis,
+      bridges: round.bridges ? bridgeViews() : undefined,
+      future: futureShown ? futureView() : undefined,
       fit,
     });
+  }
+
+  /** Zielnetz 2040: Verläufe der neuen/geänderten Linien und die neuen Stationen */
+  function futureView() {
+    const lines = FUTURE_LINES.flatMap((id) => {
+      const l = app.net.lines.get(id);
+      if (!l) return [];
+      return app.net.patterns(l).map((p) => ({ id, color: l.color, path: p.map((x) => [app.net.station(x).lat, app.net.station(x).lon] as [number, number]) }));
+    });
+    const stations = app.net.data.stations.filter((x) => x.id.startsWith('z40-'));
+    return { lines, stations };
+  }
+
+  /** Brückenkenner: je Brücke die Abschnitte (Farbe/Icon des Verkehrsmittels) und welche Linien darüber fahren */
+  function bridgeViews() {
+    return (bridgesNow()?.bridges ?? []).map((b) => {
+      const byMode = new Map<Mode, Set<string>>();
+      const segs = b.segs.flatMap(([x, y, modes]) => {
+        const a = app.net.station(x);
+        const c = app.net.station(y);
+        if (!a || !c) return [];
+        // tagsüber keine Nachtbusse
+        for (const l of app.net.lines.values())
+          if (modes.includes(l.mode) && (l.mode !== 'N' || isNightSlot(s.settings.slot)) && app.net.patterns(l).some((p) => p.some((id, i) => (id === x && p[i + 1] === y) || (id === y && p[i + 1] === x))))
+            byMode.set(l.mode, (byMode.get(l.mode) ?? new Set()).add(l.id));
+        return modes.filter((m) => m !== 'N' || isNightSlot(s.settings.slot)).map((m) => ({ mode: m, path: [[a.lat, a.lon], [c.lat, c.lon]] as [number, number][] }));
+      });
+      const lines = [...byMode].map(([m, ids]) => `${MODE_ICON[m]} ${[...ids].sort((p, q) => p.localeCompare(q, 'de', { numeric: true })).join(', ')}`);
+      return { name: b.name, river: b.river, lat: b.lat, lon: b.lon, modes: [...byMode.keys()], lines, segs };
+    }).filter((b) => b.modes.length);
   }
 
   /** Sonnenschein: wo die Linien (grob) unter der Erde fahren – Abschnitte, die eine unterirdische Station berühren */

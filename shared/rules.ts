@@ -426,6 +426,7 @@ export const RESTRICTIONS: Record<Restriction, { label: string; hint: string; ic
   anyLine: { label: 'Eine von drei', hint: 'Eine der drei Linien muss dabei sein.', icon: '🎲' },
   noRail: { label: 'Ohne U- und S-Bahn', hint: 'Nur Bim und Bus – keine U-Bahn, keine S-Bahn.', icon: '🚋' },
   avoidDistricts: { label: 'Fleckerlteppich', hint: 'Die roten Bezirke sind gesperrt – dort nicht ein-, aus- oder durchfahren.', icon: '🧩' },
+  minBridges: { label: 'Brückenkenner', hint: 'Überquere mindestens so viele Brücken wie angegeben.', icon: '🌉' },
 };
 
 /** Varianten: gelten für jede Runde (in der Lobby unter „Varianten“) */
@@ -454,6 +455,7 @@ export const VARIANTS: { id: Variant; label: string; icon: string; restriction: 
   { id: 'anyLine', label: 'Eine von drei', icon: '🎲', restriction: 'anyLine' },
   { id: 'noRail', label: 'Ohne U- und S-Bahn', icon: '🚋', restriction: 'noRail' },
   { id: 'avoidDistricts', label: 'Fleckerlteppich', icon: '🧩', restriction: 'avoidDistricts' },
+  { id: 'minBridges', label: 'Brückenkenner', icon: '🌉', restriction: 'minBridges' },
 ];
 
 export const RESTRICTION_FREQUENCIES: { id: RestrictionFrequency; label: string }[] = [

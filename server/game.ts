@@ -41,7 +41,9 @@ import { CancelledError } from './efa.ts';
 import { waterData } from './water.ts';
 import { nearestWater, walkMinutes, type WaterHit } from '../shared/water.ts';
 import { heliMinutes, heliPart, joinRoutes, type Heli } from './challengeRound.ts';
-import { UMLAND, avoidFor, crossesCenter, mergeRoutes, pairFits, pickDistricts, pickRequired, routeAllowed, ruleNetOf, searchVariants, umlandStart, withTrain } from './challengeRound.ts';
+import { UMLAND, avoidFor, crossesCenter, legsOf, mergeRoutes, pairFits, pickDistricts, pickRequired, routeAllowed, ruleNetOf, searchVariants, umlandStart, withTrain } from './challengeRound.ts';
+import { bridgeCount } from '../shared/challengeRules.ts';
+import { FUTURE_LINES } from '../shared/challenges.ts';
 import { runningLines } from './timetable.ts';
 import type { RuleNet, RuleRound } from '../shared/challengeRules.ts';
 import { withCancel } from './plancontext.ts';
@@ -87,6 +89,10 @@ interface Round {
   idle?: string[];
   /** Hubschrauber-Linien (H1–H3) */
   helis?: Heli[];
+  /** Brückenkenner: so viele Brücken mindestens */
+  bridges?: number;
+  /** Zielnetz 2040: beste Verbindung heute */
+  today?: { min: number; lines: string[] };
 }
 
 export class Game extends Lobby {
@@ -248,6 +254,7 @@ export class Game extends Lobby {
       entryLines: round.umland ? [...new Set(round.umland.options.flatMap((o) => o.lines))] : undefined,
       entryTown: round.umland?.town,
       districts: round.districts,
+      bridges: round.bridges,
     };
   }
 
@@ -410,6 +417,13 @@ export class Game extends Lobby {
       round.districts = pickDistricts(all, a, b, rn) ?? undefined;
       if (!round.districts) return null;
     }
+    // Brückenkenner: mehr Brücken als die schnellste Verbindung, mindestens 2
+    if (round.restriction === 'minBridges') {
+      const best = all.find((r) => r.key !== 'walk');
+      const legs = best && legsOf(best, this.ruleRound(round), rn);
+      if (!legs) return null;
+      round.bridges = Math.max(2, bridgeCount(legs, rn) + 1);
+    }
     if (round.restriction === 'mustLine' || round.restriction === 'anyLine') {
       const more = await this.searchAll(round, a.id, b.id);
       round.required = pickRequired(round.restriction, sortRoutes(mergeRoutes([all, more]), this.settings), (id) => this.net.lines.get(id)?.mode ?? null);
@@ -420,6 +434,22 @@ export class Game extends Lobby {
     const merged = sortRoutes(mergeRoutes([all, await this.searchAll(round, a.id, b.id)]), this.settings);
     const ok = merged.filter((r) => routeAllowed(r, this.ruleRound(round), rn));
     if (!pairFits(this.ruleRound(round), all, ok, rn, a, b, strict)) return null;
+    // Zielnetz 2040: die beste Verbindung ist wegen des neuen Netzes anders oder schneller als heute
+    if (this.settings.task === 'future') {
+      const today = this.netFor('regular');
+      const known = today.stations.has(a.id) && today.stations.has(b.id);
+      const now = known ? (await topRoutes(today, a.id, b.id, round.time, { ...this.query(round, false) })).filter((r) => r.key !== 'walk').sort((x, y) => x.medianMin - y.medianMin)[0] : null;
+      const lines = (r: RouteOption) => r.legs.filter((l) => l.mode !== 'W' && l.line).map((l) => l.line!.split('/')[0]);
+      // „wegen des Netzes“: schneller, oder eine neue/geänderte Linie, die heute nicht dabei ist (S1–S4 sind auf der
+      // Stammstrecke gleichwertig – S2 statt S1 zählt nicht)
+      const norm = (id: string) => (/^S[1-4]$/.test(id) ? 'S1-4' : id);
+      const future = new Set(FUTURE_LINES.map(norm));
+      const before = new Set(now ? lines(now).map(norm) : []);
+      const newLine = lines(ok[0]).map(norm).some((id) => future.has(id) && !before.has(id));
+      const changed = !now || ok[0].medianMin <= now.medianMin - 2 || newLine;
+      if (strict && !changed) return null;
+      round.today = now ? { min: now.medianMin, lines: lines(now) } : undefined;
+    }
     // E-Scooter: mit Öffis muss es klar schneller gehen als nur mit dem Scooter (sonst gibt es nichts zu finden)
     const solo = merged.find((r) => r.key === 'walk');
     if (this.settings.scooter && strict && solo && ok[0].medianMin + 2 > solo.medianMin) return null;
@@ -1085,6 +1115,9 @@ export class Game extends Lobby {
         required: visible ? r.required : [],
         umland: visible ? r.umland : undefined,
         districts: visible ? r.districts : undefined,
+        bridges: visible ? r.bridges : undefined,
+        // Zielnetz 2040: Vergleich mit heute erst nach der Auflösung
+        today: r.status === 'revealed' ? r.today : undefined,
         idle: visible ? r.idle : undefined,
         helis: visible && r.helis ? r.helis.map((h) => ({ id: h.id, a: this.net.ref(h.a.id), b: this.net.ref(h.b.id), min: h.min })) : undefined,
         targets: visible && r.targets ? r.targets.map((t) => this.net.ref(t.id)) : undefined,

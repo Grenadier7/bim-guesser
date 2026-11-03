@@ -550,7 +550,9 @@ export class RouteBuilder {
       // am Ziel aussteigen geht nur, wenn die ganze Route die Regeln erfüllt (z.B. letzte Fahrt mit der Bim)
       const goal = this.isGoal(s.id, [...prev, leg]);
       if (!bad && rules && goal) bad = routeProblem(rules, [...prev, leg], this.rn);
-      const flag = goal || s.id === this.dest.id ? ' 🏁' : this.opts.targets?.some((t) => t.id === s.id) ? ' 🎯' : this.opts.waypoints?.some((t) => t.id === s.id) ? ' 📍' : '';
+      // Brückenkenner: wie viele Brücken diese Fahrt überquert
+      const nb = rules?.restriction === 'minBridges' ? (this.rn.bridges?.(leg.line, leg.from, leg.to).length ?? 0) : 0;
+      const flag = (nb ? ` 🌉${nb > 1 ? `×${nb}` : ''}` : '') + (goal || s.id === this.dest.id ? ' 🏁' : this.opts.targets?.some((t) => t.id === s.id) ? ' 🎯' : this.opts.waypoints?.some((t) => t.id === s.id) ? ' 📍' : '');
       const badge = bad ? ` – ${goal && rules && !legProblem(rules, prev, leg, this.rn) ? `noch nicht: ${bad.replace(/^\S+\s/, '').slice(0, 48)}` : problemBadge(rules!)}` : '';
       return `<option value="${alt ? `${alt.id}>` : ''}${s.id}" ${bad ? 'disabled' : ''} title="${esc(bad ?? '')}">${esc(s.name)}${flag}${s.id === nearDest?.station.id ? ` 📍 ${fmtDist(nearDest.dist)} zum Ziel` : ''}${alt && alt.id !== board ? ` ↩ ab ${esc(alt.name)}` : ''}${badge}</option>`;
     };

@@ -105,7 +105,7 @@ export type StationKind = 'Ukey' | 'U' | 'Skey' | 'S' | 'Tkey' | 'T' | 'hub' | '
 export type DistanceRange = 'local' | 'short' | 'medium' | 'long' | 'xlong';
 
 /** Aufgabe einer Runde: normal (A → B), eines von 3 Zielen, 3 Punkte abklappern, zum nächsten Wasser / Bad */
-export type RoundTask = 'normal' | 'choose3' | 'visit3' | 'water' | 'bath' | 'heli';
+export type RoundTask = 'normal' | 'choose3' | 'visit3' | 'water' | 'bath' | 'heli' | 'future';
 
 /** Hubschrauber-Linie einer Runde: A ↔ B in fester Zeit (inkl. Einsteigen) */
 export interface HeliLine {
@@ -175,7 +175,8 @@ export type Restriction =
   | 'mustLine'
   | 'anyLine'
   | 'noRail'
-  | 'avoidDistricts';
+  | 'avoidDistricts'
+  | 'minBridges';
 
 /** Spielvariante für alle Runden (Tages-Challenges): ohne U-Bahn, ohne Bus, nur Bim, max. 1 Umstieg */
 export type Variant =
@@ -202,7 +203,8 @@ export type Variant =
   | 'mustLine'
   | 'anyLine'
   | 'noRail'
-  | 'avoidDistricts';
+  | 'avoidDistricts'
+  | 'minBridges';
 
 /** Wie oft Einschränkungs-Runden vorkommen */
 export type RestrictionFrequency = 'never' | 'sometimes' | 'always';
@@ -439,6 +441,10 @@ export interface RoundPublic {
   water?: 'all' | 'bath';
   /** Hubschrauber-Linien dieser Runde */
   helis?: HeliLine[];
+  /** Brückenkenner: so viele Brücken mindestens */
+  bridges?: number;
+  /** Zielnetz 2040: die beste Verbindung heute (nach der Auflösung zum Vergleich) */
+  today?: { min: number; lines: string[] };
 }
 
 export type GamePhase = 'lobby' | 'playing' | 'finished';

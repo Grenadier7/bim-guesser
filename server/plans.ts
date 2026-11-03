@@ -9,6 +9,7 @@ import type { MenuPlan } from '../shared/config.ts';
 import { GameError } from './lobby.ts';
 import { STATE_DIR } from './paths.ts';
 import { VersionedJson } from './versioned.ts';
+import { ZIEL2040 } from './ziel2040.ts';
 
 export const DEFAULT_PARAMS: RoutingParams = {
   changeMin: 2,
@@ -204,6 +205,14 @@ export class PlanStore {
 
   constructor() {
     this.store = new VersionedJson('plans', (v) => ({ plans: sanitizePlans(v) }), () => ({ plans: [migrated()] }));
+    // Zielnetz 2040 (Tages-Challenge) einmal anlegen – danach wie jeder Netzplan auf der Admin-Seite änderbar
+    if (!this.get(ZIEL2040.id)) {
+      try {
+        this.save([...this.list(), ZIEL2040], 'system', 'Zielnetz 2040 angelegt');
+      } catch (e) {
+        console.warn(`⚠ Zielnetz 2040 nicht angelegt: ${(e as Error).message}`);
+      }
+    }
   }
 
   list(): NetworkPlan[] {

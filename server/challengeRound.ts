@@ -6,6 +6,8 @@ import { INNER_DISTRICTS, UNDERGROUND, legProblem, routeProblem, undergroundStop
 import { WELL_KNOWN_S, linePatterns } from '../shared/rules.ts';
 import { distM } from '../shared/geo.ts';
 import type { Network } from './network.ts';
+import { bridgeLookup } from './bridges.ts';
+import { bridgesAlong } from '../shared/bridges.ts';
 import type { RouteQuery } from './routing.ts';
 
 export function ruleNetOf(net: Network, mode: NetMode): RuleNet {
@@ -16,7 +18,7 @@ export function ruleNetOf(net: Network, mode: NetMode): RuleNet {
       return undefined;
     }
   };
-  return {
+  const rn: RuleNet = {
     mode: (id) => net.lines.get(id)?.mode ?? null,
     name: (id) => st(id)?.name ?? id,
     district: (id) => st(id)?.district ?? null,
@@ -30,7 +32,12 @@ export function ruleNetOf(net: Network, mode: NetMode): RuleNet {
       }
       return [];
     },
+    bridges: (lineId, a, b) => {
+      const idx = bridgeLookup();
+      return idx ? bridgesAlong(idx, rn.traversed(lineId, a, b), rn.mode(lineId)) : [];
+    },
   };
+  return rn;
 }
 
 /** Fahrten einer Verbindung als Teilstrecken; bei gleichwertigen Linien („S1/S2“) die erste, die die Regeln einhält */
@@ -117,6 +124,8 @@ export function searchVariants(r: Restriction | null): Partial<RouteQuery>[] {
     case 'avoidInner':
     case 'avoidDistricts':
       return [{ onlyModes: ['S', 'T', 'B'] }];
+    case 'minBridges':
+      return [{ onlyModes: ['S', 'T', 'B'] }, { onlyModes: ['U', 'S', 'T'] }, { onlyModes: ['T', 'B'] }, { onlyModes: ['T'] }];
     default:
       return [];
   }
@@ -344,6 +353,9 @@ export function pairFits(rr: RuleRound, all: RouteOption[], ok: RouteOption[], r
     }
     case 'mustLine':
       return ok[0].medianMin <= best.medianMin + 12;
+    case 'minBridges':
+      // mehr Brücken als die schnellste – ohne riesigen Umweg
+      return ok[0].medianMin <= best.medianMin + 15;
     case 'anyLine': {
       // die beste erlaubte Verbindung nimmt genau eine der drei – nie zwei (sonst wäre es keine Entscheidung)
       const req = new Set(rr.required ?? []);

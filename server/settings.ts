@@ -75,7 +75,7 @@ export function sanitizeSettings(s: Partial<GameSettings> | undefined, base: Gam
   else if (r === true) out.restrictions = 'sometimes';
   else if (r === false) out.restrictions = 'never';
   if (VARIANTS.some((v) => v.id === s.variant)) out.variant = s.variant!;
-  if (s.task === 'normal' || s.task === 'choose3' || s.task === 'visit3' || s.task === 'water' || s.task === 'bath' || s.task === 'heli') out.task = s.task;
+  if (s.task === 'normal' || s.task === 'choose3' || s.task === 'visit3' || s.task === 'water' || s.task === 'bath' || s.task === 'heli' || s.task === 'future') out.task = s.task;
   if (s.districts === null) out.districts = null;
   else if (Array.isArray(s.districts)) {
     const ds = [...new Set(s.districts.filter((d) => Number.isInteger(d) && d >= 1 && d <= 23))].sort((a, b) => a - b);

@@ -2,6 +2,8 @@
 import L from 'leaflet';
 import { isDark } from './theme.ts';
 import type { WaterData } from '../../shared/water.ts';
+import type { Mode } from '../../shared/types.ts';
+import { MODE_COLOR, MODE_ICON } from '../../shared/rules.ts';
 import 'leaflet/dist/leaflet.css';
 import type { District, FocusArea, LatLon, RouteLeg, RouteOption, StationRef } from '../../shared/types.ts';
 import { chain, esc } from './ui.ts';
@@ -276,6 +278,10 @@ export class GameMap {
     underground?: { line: string; path: [number, number][] }[];
     /** Umland: Wien umrahmen (Start liegt außerhalb) */
     outline?: District[];
+    /** Zielnetz 2040: neue/geänderte Linien (Verlauf) und neue Stationen */
+    future?: { lines: { id: string; color: string; path: [number, number][] }[]; stations: StationRef[] };
+    /** Brückenkenner: alle Brücken, über die Öffis fahren – Abschnitte je Verkehrsmittel, Linien darüber */
+    bridges?: { name: string; river: string; lat: number; lon: number; modes: Mode[]; lines: string[]; segs: { mode: Mode; path: [number, number][] }[] }[];
     /** Hubschrauber-Linien: rosa Strich mit Flugzeit */
     helis?: { id: string; a: StationRef; b: StationRef; min: number }[];
     fit?: boolean;
@@ -300,6 +306,31 @@ export class GameMap {
     for (const d of o.inner ?? [])
       this.challenge.addLayer(L.polygon(d.rings, { color: '#c81e1e', weight: 1.5, fillColor: '#c81e1e', fillOpacity: 0.16, interactive: false }).bindTooltip(`🚫 ${esc(d.name)}`, { sticky: true }));
     for (const d of o.outline ?? []) this.challenge.addLayer(L.polygon(d.rings, { color: '#5a6b7d', weight: 1, fillColor: '#5a6b7d', fillOpacity: 0.05, interactive: false }));
+    if (o.future) {
+      for (const l of o.future.lines) {
+        this.challenge.addLayer(L.polyline(l.path, { color: '#fff', weight: 8, opacity: 0.85, interactive: false }));
+        this.challenge.addLayer(L.polyline(l.path, { color: l.color, weight: 5, opacity: 0.9 }).bindTooltip(`🔮 ${esc(l.id)}`, { sticky: true }));
+      }
+      for (const s of o.future.stations)
+        this.challenge.addLayer(L.circleMarker([s.lat, s.lon], { radius: 6, color: '#222', weight: 2, fillColor: '#fff', fillOpacity: 1 }).bindTooltip(`🆕 ${esc(s.name)}`, { direction: 'top' }));
+    }
+    for (const b of o.bridges ?? []) {
+      const tip = `<b>🌉 ${esc(b.name)}</b> (${esc(b.river)})${b.lines.length ? `<br>${b.lines.map(esc).join('<br>')}` : ''}`;
+      // Abschnitt über die Brücke in der Farbe des Verkehrsmittels (mehrere nebeneinander leicht versetzt)
+      b.segs.forEach((sg, i) => {
+        const off = (i % 3) * 0.00012;
+        const path = sg.path.map(([la, lo]) => [la + off, lo + off] as [number, number]);
+        this.challenge.addLayer(L.polyline(path, { color: '#fff', weight: 9, opacity: 0.9 }));
+        this.challenge.addLayer(L.polyline(path, { color: MODE_COLOR[sg.mode], weight: 5, opacity: 0.95 }).bindTooltip(tip, { sticky: true }));
+      });
+      const icons = b.modes.map((m) => MODE_ICON[m]).join('');
+      this.challenge.addLayer(
+        L.marker([b.lat, b.lon], {
+          icon: L.divIcon({ className: 'bridge-pin', html: `<span>🌉</span>${icons ? `<small>${icons}</small>` : ''}`, iconSize: [22 + 14 * b.modes.length, 22] }),
+          zIndexOffset: 500,
+        }).bindTooltip(tip, { direction: 'top' }),
+      );
+    }
     for (const x of o.helis ?? []) {
       const line = L.polyline(
         [

@@ -17,6 +17,7 @@ import { app } from './store.ts';
 import type { NetIndex } from './net.ts';
 import type { RuleNet } from '../../shared/challengeRules.ts';
 import type { WaterData } from '../../shared/water.ts';
+import { bridgeIndex, bridgesAlong, type BridgeData } from '../../shared/bridges.ts';
 import { esc, h } from './ui.ts';
 
 // Gewässer-Daten liegen dem Spiel bei (data/water.json)
@@ -75,7 +76,7 @@ export function showChallengeIntro(c: Challenge | null) {
 /** Netz-Ansicht für die Regeln (shared/challengeRules.ts) im Browser */
 export function clientRuleNet(net: NetIndex): RuleNet {
   const st = (id: string) => net.stations.get(id) ?? (net as unknown as { virtual?: Map<string, { name: string; district: number }> }).virtual?.get(id);
-  return {
+  const rn: RuleNet = {
     mode: (id) => net.lines.get(id)?.mode ?? null,
     name: (id) => st(id)?.name ?? id,
     district: (id) => st(id)?.district ?? null,
@@ -89,7 +90,27 @@ export function clientRuleNet(net: NetIndex): RuleNet {
       }
       return [];
     },
+    bridges: (lineId, a, b) => (bridgeIdx ? bridgesAlong(bridgeIdx, rn.traversed(lineId, a, b), rn.mode(lineId)) : []),
   };
+  return rn;
+}
+
+// ---------------------------------------------------------------- „Brückenkenner“: Brücken (einmal laden)
+
+let bridges: BridgeData | null = null;
+let bridgeIdx: Map<string, string[]> | null = null;
+let loadingBridges: Promise<BridgeData | null> | null = null;
+export const bridgesNow = () => bridges;
+export function loadBridges(): Promise<BridgeData | null> {
+  loadingBridges ??= fetch('/api/bridges')
+    .then((r) => (r.ok ? (r.json() as Promise<BridgeData>) : null))
+    .then((d) => {
+      bridges = d;
+      bridgeIdx = d ? bridgeIndex(d) : null;
+      return d;
+    })
+    .catch(() => null);
+  return loadingBridges;
 }
 
 // ---------------------------------------------------------------- „Ab ins Wasser“: Gewässer-Daten (einmal laden)

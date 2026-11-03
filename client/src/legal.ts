@@ -162,7 +162,7 @@ function quellen(): string {
       <li><b>Fahrplan:</b> Datenquelle: Mobilitätsverbünde Österreich OG – <a href="https://data.mobilitaetsverbuende.at" target="_blank" rel="noopener">data.mobilitaetsverbuende.at</a> (für das Spiel verarbeitet).</li>
       <li><b>Adressen und Bezirksgrenzen:</b> Stadt Wien – <a href="https://data.wien.gv.at" target="_blank" rel="noopener">data.wien.gv.at</a>, Lizenz CC BY 4.0.</li>
       <li><b>Karte:</b> Esri, HERE, Garmin, © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende.</li>
-      <li><b>Gewässer und Bäder</b> („Ab ins Wasser“): © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende, Lizenz ODbL (verarbeitet).</li>
+      <li><b>Gewässer, Bäder und Brücken</b> („Ab ins Wasser“, „Ab ins Bad“, „Brückenkenner“): © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende, Lizenz ODbL (verarbeitet).</li>
       <li><b>Software:</b> <a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a> (BSD-2-Clause), Express (MIT), Nodemailer (MIT-0), yauzl (MIT).</li>
     </ul>
     <p class="muted">Die Daten wurden für das Spiel aufbereitet (z.B. Haltestellen zusammengefasst, Fahrzeiten gemittelt).</p>`;

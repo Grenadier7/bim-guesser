@@ -6597,6 +6597,22 @@ details.adm-linechg li {
 .daily-card small {
   color: var(--muted);
 }
+/* Brückenkenner: Brücke auf der Karte */
+.bridge-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 11px;
+  background: var(--panel);
+  box-shadow: 0 0 0 2px #1e88e5;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.bridge-pin small {
+  font-size: 11px;
+}
+
 /* Hubschrauber-Linie: Flugzeit am Strich */
 .leaflet-tooltip.heli-label {
   padding: 1px 6px;
@@ -6665,6 +6681,19 @@ details.adm-linechg li {
 .cb-text small {
   color: var(--muted);
   font-size: 12px;
+}
+/* Banner: Titel eine Zeile, Beschreibung höchstens zwei – ganz steht sie im Fenster beim Spielstart */
+.challenge-bar .cb-text b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.challenge-bar .cb-text small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 .cb-nav {
   flex: none;

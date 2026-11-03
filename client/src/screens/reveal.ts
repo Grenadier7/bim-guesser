@@ -134,6 +134,15 @@ export function revealScreen(panel: HTMLElement): Screen {
       panel.append(h('div', { class: 'cancelled' }, 'Runde vom Host abgebrochen – keine Punkte. Die Lösung:'));
     if (round.restriction)
       panel.append(h('div', { class: 'restriction' }, `${RESTRICTIONS[round.restriction].icon} ${esc(restrictionLabel(round.restriction, round.bannedLines))}`));
+    // Zielnetz 2040: so wäre es heute
+    if (round.today && best)
+      panel.append(
+        h(
+          'div',
+          { class: 'challenge-rule' },
+          `🔮 Heute: ${esc(round.today.lines.join(' › '))} · ${Math.round(round.today.min)} min – im Zielnetz 2040: ${Math.round(best.medianMin)} min${round.today.min - best.medianMin >= 1 ? ` (<b>${Math.round(round.today.min - best.medianMin)} min schneller</b>)` : ''}`,
+        ),
+      );
     const isBest = s.settings.goal === 'best';
     const penalty = transferPenalty(s.settings);
     if (mine) {
