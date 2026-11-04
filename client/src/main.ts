@@ -5,6 +5,7 @@ import { findChallenge, loadSchedule, showChallengeIntro, showIntro } from './ch
 import { RESTRICTIONS, fmtDuration, restrictionLabel } from '../../shared/rules.ts';
 import { api } from './api.ts';
 import { ask } from './ui.ts';
+import { icon } from './icons.ts';
 import { endSession } from './store.ts';
 import { account, startPolling } from './account.ts';
 import { accountButton, announceMedals, openAccount, renderInvites, takeResetLink } from './accountui.ts';
@@ -152,28 +153,47 @@ function keyFor(): string {
 }
 
 /** Logo oben links: zur Startseite – mitten im Spiel bzw. in einer Lobby erst nach Rückfrage */
+/** ✕ beendet das Spiel nur für den Host eines laufenden Spiels – sonst verlässt man es */
+const quitsGame = () => isHost() && app.state?.phase !== 'finished' && app.state?.phase !== 'lobby';
+
+/** Spiel verlassen (nach Rückfrage) und zur Startseite */
+async function leaveToHome(text: string, opts: { title: string; ok: string; cancel: string; danger: boolean }) {
+  if (app.session) {
+    if (!(await ask(text, opts))) return;
+    await api.leave(app.session).catch(() => {});
+    endSession();
+  }
+  app.view = 'home';
+  if (location.hash) history.replaceState(null, '', location.pathname);
+  render();
+}
+
+/** ✕ in der Kopfzeile (Handy): Host beendet das Spiel für alle, alle anderen verlassen es */
+async function quit() {
+  if (quitsGame()) return hostActions.end();
+  const playing = app.state?.phase !== 'finished';
+  await leaveToHome(playing ? 'Spiel verlassen? Du kannst danach nicht mehr mitspielen.' : 'Zurück zur Startseite?', {
+    title: playing ? 'Spiel verlassen' : 'Zur Startseite',
+    ok: playing ? 'Verlassen' : 'Zur Startseite',
+    cancel: playing ? 'Weiterspielen' : 'Bleiben',
+    danger: playing,
+  });
+}
+
 function brandHome() {
   const el = document.querySelector<HTMLElement>('.brand');
   if (!el) return;
   el.setAttribute('role', 'button');
   el.tabIndex = 0;
   el.title = 'Zur Startseite';
-  const go = async () => {
-    if (app.session) {
-      const playing = app.state?.phase === 'playing';
-      const ok = await ask(playing ? 'Das Spiel läuft noch. Zur Startseite? Du verlässt dabei das Spiel.' : 'Lobby verlassen und zur Startseite?', {
-        title: 'Zur Startseite',
-        ok: 'Zur Startseite',
-        cancel: playing ? 'Weiterspielen' : 'Bleiben',
-        danger: playing,
-      });
-      if (!ok) return;
-      await api.leave(app.session).catch(() => {});
-      endSession();
-    }
-    app.view = 'home';
-    if (location.hash) history.replaceState(null, '', location.pathname);
-    render();
+  const go = () => {
+    const playing = app.state?.phase === 'playing';
+    return leaveToHome(playing ? 'Das Spiel läuft noch. Zur Startseite? Du verlässt dabei das Spiel.' : 'Lobby verlassen und zur Startseite?', {
+      title: 'Zur Startseite',
+      ok: 'Zur Startseite',
+      cancel: playing ? 'Weiterspielen' : 'Bleiben',
+      danger: playing,
+    });
   };
   el.addEventListener('click', go);
   el.addEventListener('keydown', (e) => {
@@ -272,14 +292,18 @@ function renderTop() {
     topinfo.innerHTML = '';
     return;
   }
-  const parts = [`<button class="code-badge" id="code-badge" title="Einladungslink kopieren">${s.mode === 'quiz' ? '🧠' : '🏁'} <b>${esc(s.id)}</b></button>`];
+  // schmale Bildschirme: „Runde“/„Frage“ und das Symbol im Code fallen weg (style.css)
+  const parts = [`<button class="code-badge" id="code-badge" title="Einladungslink kopieren"><i class="cb-icon">${s.mode === 'quiz' ? '🧠' : '🏁'} </i><b>${esc(s.id)}</b></button>`];
   if (s.phase !== 'lobby') {
-    if (s.mode === 'quiz') parts.push(`<span>Frage <b>${Math.min(s.current + 1, s.total)}</b>/${s.total}</span>`);
-    else parts.push(`<span>Runde <b>${Math.min(s.currentRound + 1, s.settings.rounds)}</b>/${s.settings.rounds}</span>`);
+    if (s.mode === 'quiz') parts.push(`<span><i class="top-lbl">Frage </i><b>${Math.min(s.current + 1, s.total)}</b>/${s.total}</span>`);
+    else parts.push(`<span><i class="top-lbl">Runde </i><b>${Math.min(s.currentRound + 1, s.settings.rounds)}</b>/${s.settings.rounds}</span>`);
     if (openTimer()?.deadline) parts.push('<span class="timer" id="timer"></span>');
     parts.push(`<span class="score"><b>${(me()?.score ?? 0).toLocaleString('de-AT')}</b> Pkt.</span>`);
+    // Handy: ✕ rechts oben statt Account-Knopf – verlassen bzw. (Host) beenden
+    parts.push(`<button class="top-quit" id="top-quit" title="${quitsGame() ? 'Spiel beenden' : 'Spiel verlassen'}" aria-label="${quitsGame() ? 'Spiel beenden' : 'Spiel verlassen'}">${icon('x', 18)}</button>`);
   }
   topinfo.innerHTML = parts.join('');
+  topinfo.querySelector('#top-quit')?.addEventListener('click', () => void quit());
   topinfo.querySelector('#code-badge')!.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(inviteLink(s.id));

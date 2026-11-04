@@ -115,7 +115,7 @@ test('Strecke des Tages: spielen, Ergebnis zum Teilen, Bestenliste; danach Start
   await p.locator('.progress-strip', { hasText: '1 Tag' }).waitFor();
   await p.locator('.progress-strip').click();
   await p.locator('.me h3', { hasText: 'Sammelkarte' }).waitFor();
-  assert.match(await p.locator('.me').innerText(), /Stationen und \d+ von \d+ Linien/);
+  assert.match(await p.locator('.me').innerText(), /\d+ von \d+ Linien und \d+ von 23 Bezirken/);
   await t.shot('mein-wien');
   noErrors(t);
 });

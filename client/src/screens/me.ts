@@ -39,6 +39,8 @@ export function meScreen(panel: HTMLElement, onBack: () => void): Screen {
   const regular = net.data.lines.filter((l) => !isSpecialLine(l) && l.mode !== 'N' && net.patterns(l).length);
   const stationsTotal = new Set(regular.flatMap((l) => net.patterns(l).flat())).size;
   const stationsUsed = p.career.stations.filter((id) => net.stations.has(id));
+  // in welchen Bezirken schon gefahren (greifbarer als 1.668 Stationen)
+  const districts = new Set(stationsUsed.map((id) => net.station(id).district).filter((d) => d >= 1 && d <= 23));
 
   // Karte: benutzte Linien kräftig, alles andere blass; benutzte Stationen als Punkte
   app.map.clear();
@@ -73,7 +75,9 @@ export function meScreen(panel: HTMLElement, onBack: () => void): Screen {
       ${p.guest ? '<p class="guest-hint">💾 Dein Fortschritt liegt nur in diesem Browser. <button class="link" id="signup">Mit Account auf allen Geräten behalten</button></p>' : ''}
 
       <h3>🗺️ Sammelkarte</h3>
-      <p><b>${stationsUsed.length.toLocaleString('de-AT')}</b> von ${stationsTotal.toLocaleString('de-AT')} Stationen und <b>${perMode.reduce((n, x) => n + x.mine.length, 0)}</b> von ${perMode.reduce((n, x) => n + x.all, 0)} Linien auf eigenen Routen benutzt.</p>
+      <p><b>${perMode.reduce((n, x) => n + x.mine.length, 0)}</b> von ${perMode.reduce((n, x) => n + x.all, 0)} Linien und <b>${districts.size}</b> von 23 Bezirken auf eigenen Routen befahren
+        <small class="muted">(${stationsUsed.length.toLocaleString('de-AT')} von ${stationsTotal.toLocaleString('de-AT')} Stationen)</small>.</p>
+      <div class="me-districts" aria-label="Bezirke">${Array.from({ length: 23 }, (_, i) => `<span class="${districts.has(i + 1) ? 'on' : ''}" title="${i + 1}. Bezirk">${i + 1}</span>`).join('')}</div>
       <div class="me-modes">${perMode
         .map(
           (x) => `<details class="me-mode"><summary>${MODE_ICON[x.m]} ${MODE_LABEL[x.m]} <b>${x.mine.length}/${x.all}</b>

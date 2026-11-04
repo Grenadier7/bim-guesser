@@ -1,5 +1,6 @@
 // Startseite: Routenjagd groß, darunter die weiteren Modi + Beitreten mit Code (führt automatisch in den richtigen Modus)
 import type { GameMode } from '../../../shared/types.ts';
+import { untilViennaMidnight } from '../../../shared/career.ts';
 import { api } from '../api.ts';
 import { app, savePrefs, startSession } from '../store.ts';
 import { esc, h, toast } from '../ui.ts';
@@ -75,7 +76,7 @@ function dailyCard(): string {
   const done = dailyPlayedLocally();
   // schon gespielt: nur noch eine kleine Zeile (Ergebnis, Bestenliste)
   if (done)
-    return `<button class="daily-card done" data-mode="daily">📅 <span>Strecke des Tages: <b>${done.points.toLocaleString('de-AT')} Punkte</b></span><small>Bestenliste ›</small></button>`;
+    return `<button class="daily-card done" data-mode="daily">📅 <span>Strecke des Tages: <b>${done.points.toLocaleString('de-AT')} Punkte</b><small class="next-daily">Neue Strecke in ${untilViennaMidnight()}</small></span><small>Bestenliste ›</small></button>`;
   return `<button class="daily-card" data-mode="daily"><span class="mt-icon">📅</span><span><b>Strecke des Tages</b>
     <small>Für alle dieselbe Strecke – ein Versuch am Tag. Teilen, vergleichen, Serie halten. <b>3× XP</b></small></span>
     <span class="btn btn-primary">Spielen</span></button>`;
@@ -101,14 +102,15 @@ export function homeScreen(panel: HTMLElement): Screen {
        .join('')}</div>
      <div class="home-bottom">
        <label class="field"><span>Dein Name</span><input id="name" maxlength="40" placeholder="z.B. Alex" value="${esc(account.me?.name ?? app.prefs.name)}"></label>
-       <div class="field join"><span>Mit Code beitreten</span>
+       <button class="btn btn-primary quick-new" data-mode="route">🏁 Neue Routenjagd starten<small>allein oder mit Freunden – Code kommt gleich</small></button>
+       <div class="field join"><span><i class="quick-or">oder </i>Mit Code beitreten</span>
          <div class="join-row"><input id="code" class="code-input" maxlength="5" placeholder="CODE" value="${esc(urlCode)}" autocomplete="off" spellcheck="false">
          <button class="btn btn-dark" id="join">Beitreten</button></div></div>
      </div>
      ${
        tut
          ? `<button class="tut-card" data-mode="tutorial"><span class="mt-icon">🎓</span><span><b>Tutorial: dein erstes Spiel</b>
-              <small>Zwei geführte Runden (Praterstern → Stephansplatz, Reumannplatz → Rathaus) und wie es Punkte gibt.</small></span>
+              <small>Zwei geführte Runden und wie es Punkte gibt.</small></span>
               <span class="btn btn-primary">Los</span></button>`
          : ''
      }

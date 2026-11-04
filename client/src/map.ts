@@ -60,6 +60,16 @@ export class GameMap {
       base = tiles(isDark()).addTo(this.map);
       base.bringToBack();
     });
+    // Quellenangabe: am Handy nur ein (i) (style.css) – antippen klappt auf bzw. zu, Links bleiben klickbar
+    const attr = this.map.attributionControl?.getContainer();
+    if (attr) {
+      attr.title = 'Kartenquellen';
+      attr.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('a') && attr.classList.contains('open')) return;
+        attr.classList.toggle('open');
+      });
+      this.map.on('click', () => attr.classList.remove('open'));
+    }
     this.map.fitBounds(VIENNA);
     for (const g of [this.areas, this.learnArea, this.learnMarks, this.challenge, this.guesses, this.endpoints, this.hints, this.draft, this.routes]) g.addTo(this.map);
   }

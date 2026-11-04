@@ -2,7 +2,7 @@
 // Bestenliste für Tag und Woche (mit Account; auch nur unter Freunden).
 import type { DailyBoard, DailyResult, DailyRound, UserLeg } from '../../../shared/types.ts';
 import { MODE_ICON, scoreRoute } from '../../../shared/rules.ts';
-import { XP, viennaDay } from '../../../shared/career.ts';
+import { XP, untilViennaMidnight, viennaDay } from '../../../shared/career.ts';
 import { api } from '../api.ts';
 import { account } from '../account.ts';
 import { openAccount } from '../accountui.ts';
@@ -164,7 +164,7 @@ export function dailyScreen(panel: HTMLElement, onBack: () => void): Screen {
           </div>
         </div>
         <div class="share-row"><button class="btn btn-primary" id="share">📤 Ergebnis teilen</button>
-          <small class="muted">Nächste Strecke ab Mitternacht.</small></div>
+          <small class="muted next-daily">Nächste Strecke in ${untilViennaMidnight()}</small></div>
         <pre class="share-preview">${esc(shareText(res))}</pre>
         <h3>Schnellste Verbindungen</h3>
         <ol class="route-list">${res.routes
@@ -181,6 +181,9 @@ export function dailyScreen(panel: HTMLElement, onBack: () => void): Screen {
     makeExpandable(panel.querySelector<HTMLElement>('.route-list')!);
     panel.querySelector('#back')!.addEventListener('click', onBack);
     panel.querySelector('#signup')?.addEventListener('click', () => openAccount());
+    // Countdown zur nächsten Strecke: jede Minute nachziehen, solange die Seite offen ist
+    const next = panel.querySelector<HTMLElement>('.next-daily');
+    const clock = setInterval(() => (next?.isConnected ? (next.textContent = `Nächste Strecke in ${untilViennaMidnight()}`) : clearInterval(clock)), 30_000);
     panel.querySelector('#share')!.addEventListener('click', async () => {
       const text = shareText(res);
       try {
