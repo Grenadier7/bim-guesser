@@ -1825,8 +1825,40 @@ input[type='range'] {
     padding: 0 3px;
   }
 
+  /* Quellenangabe der Karte: zugeklappt nur ein (i) links unten (rechts unten liegt der Vergrößern-Knopf) –
+     antippen zeigt den Text */
+  .leaflet-bottom.leaflet-right {
+    right: auto;
+    left: 0;
+  }
   .leaflet-control-attribution {
-    font-size: 9px;
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .leaflet-control-attribution:not(.open) {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    margin: 0 0 8px 8px !important;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 0;
+    box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
+  }
+  .leaflet-control-attribution:not(.open) > * {
+    display: none;
+  }
+  .leaflet-control-attribution:not(.open)::before {
+    content: 'i';
+    font: italic 700 13px/1 Georgia, serif;
+  }
+  .leaflet-control-attribution.open {
+    max-width: calc(100vw - 60px);
+    margin: 0 0 8px 8px !important;
+    padding: 4px 8px;
+    border-radius: 8px;
+    line-height: 1.4;
   }
 
   .stop-list {
