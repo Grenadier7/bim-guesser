@@ -14,12 +14,13 @@ export function finalScreen(panel: HTMLElement): Screen {
   app.map.overview();
   markPlayed();
   {
-    // Fortschritt: einmal je Spiel (Endstand kann nach Neuladen wieder erscheinen)
+    // Fortschritt: einmal je Spiel (Endstand kann nach Neuladen wieder erscheinen) – „heute gespielt“ zählt schon die
+    // erste Runde (reveal.ts)
     const s = routeState();
     const myId = app.session!.playerId;
     const ranking = [...s.players].sort((a, b) => b.score - a.score);
     const won = ranking.length > 1 && ranking[0]?.id === myId && ranking[0].score > 0;
-    record(`game:${s.id}:${s.rounds.map((r) => `${r.from?.id}-${r.to?.id}`).join()}`, { activity: true, xp: XP.game(won) * challengeXpFactor(s.settings.challenge, `${s.id}:${s.rounds.map((r) => r.from?.id).join()}`), count: { games: 1, wins: won ? 1 : 0 } });
+    record(`game:${s.id}:${s.rounds.map((r) => `${r.from?.id}-${r.to?.id}`).join()}`, { xp: XP.game(won) * challengeXpFactor(s.settings.challenge, `${s.id}:${s.rounds.map((r) => r.from?.id).join()}`), count: { games: 1, wins: won ? 1 : 0 } });
     // Tages-Challenge: gespielt – geschafft, wenn eine Runde die Schwelle der Challenge erreicht (meist volle Routenpunkte)
     const ch = findChallenge(s.settings.challenge);
     if (ch)

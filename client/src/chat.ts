@@ -7,7 +7,7 @@ import { esc, h, toast } from './ui.ts';
 
 const OPEN_KEY = 'oeffi-chat-open';
 /** Schnell-Reaktionen: ein Tipp, und sie stehen im Chat */
-export const REACTIONS = ['👏', '😂', '😮', '🔥', '🚋', 'GG', '/ez'];
+export const REACTIONS = ['👏', '😂', '😮', '🔥', '🚋', 'GG'];
 
 export class ChatWidget {
   readonly el = h('div', { class: 'chat', hidden: '' });
@@ -89,7 +89,7 @@ export class ChatWidget {
               .join('')
           : '<li class="system">Noch keine Nachrichten – sag Hallo!</li>'
       }</ol>
-      <div class="chat-reactions" role="group" aria-label="Schnell-Reaktionen">${REACTIONS.map((r) => `<button type="button" data-react="${esc(r)}" title="${r === '/ez' ? 'zufälliger Spruch' : `„${esc(r)}“ senden`}">${r === '/ez' ? '🎲' : esc(r)}</button>`).join('')}</div>
+      <div class="chat-reactions" role="group" aria-label="Schnell-Reaktionen">${REACTIONS.map((r) => `<button type="button" data-react="${esc(r)}" title="„${esc(r)}“ senden">${esc(r)}</button>`).join('')}</div>
       <form class="chat-form"><input class="chat-input" maxlength="300" placeholder="Nachricht …" autocomplete="off" aria-label="Nachricht"><button class="btn btn-primary" aria-label="Senden">➤</button></form>`;
     const input = this.el.querySelector<HTMLInputElement>('.chat-input')!;
     input.value = draft;

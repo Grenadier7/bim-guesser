@@ -113,6 +113,17 @@ export function roundScreen(panel: HTMLElement): Screen {
     }
     <div class="od"><div class="od-row"><span class="pin-dot a">A</span><b>${showNames ? esc(from.name) : 'Start <small>(nur auf der Karte)</small>'}</b>${round.umland ? ' <small>(Niederösterreich)</small>' : ''}</div>
     ${goalRows()}</div>`;
+  // lange Regel (am Handy auf 3 Zeilen gekürzt): antippen zeigt alles
+  const rule = head.querySelector<HTMLElement>('.challenge-rule');
+  if (rule) {
+    // passt der Text in 3 Zeilen, ändert das Kürzen nichts
+    rule.classList.add('clamped');
+    rule.title = 'Antippen für den ganzen Text';
+    rule.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('button')) return;
+      rule.classList.toggle('open');
+    });
+  }
   // Zielnetz 2040: neue/geänderte Linien auf der Karte ein-/ausblenden
   head.querySelector<HTMLButtonElement>('#future-map')?.addEventListener('click', (e) => {
     futureShown = !futureShown;

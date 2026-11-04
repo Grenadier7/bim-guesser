@@ -256,6 +256,8 @@ export function revealScreen(panel: HTMLElement): Screen {
       count: { rounds: 1, perfect: route >= 1000 ? 1 : 0, beat: route > 1000 ? 1 : 0, night: isNightSlot(s.settings.slot) ? 1 : 0, blindPerfect: s.settings.xtreme === 'noMap' && route >= 1000 ? 1 : 0 },
       legs: ev.error ? undefined : ev.legs,
     });
+    // „heute gespielt“ (Serie, Wochenziel): einmal je Spiel, schon ab der ersten Runde
+    record(`act:${s.id}:${s.rounds.map((r) => r.from?.id).join()}`, { activity: true });
   }
 
   function myCard(ev: Evaluation, best: number, isBest: boolean, penalty: number): HTMLElement {

@@ -195,7 +195,8 @@ Erfüllt nach 60 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strec
   - **Medaillen:** 🎪 Challenge-Sammler (verschiedene gespielt) und 🏅 Challenge-Meister (geschafft – meist eine Runde
     mit vollen Routenpunkten, bei schweren ab 900), je Bronze/Silber/Gold.
   - **Prüfen:** `npm run check:challenges` prüft mit dem echten Fahrplan, ob jede Challenge Strecken findet.
-- **Chat**: Schnell-Reaktionen 👏 😂 😮 🔥 🚋 GG und 🎲 (= `/ez`).
+- **Chat**: Schnell-Reaktionen 👏 😂 😮 🔥 🚋 GG als feste Zeile über dem Eingabefeld (`/ez` eintippen schickt einen
+  zufälligen Spruch).
 - **Tastatur**: Linie tippen, ← → (↑ ↓) wählt unter den Vorschlägen (52 → 52A → 52B), Enter nimmt sie – der Fokus steht
   beim Ausstieg (hält die Linie woanders: beim Einstieg, mit Fußweg-Hinweis). Enter öffnet die Liste, ↑ ↓ wählt den
   Halt, Enter übernimmt; bei zugeklappter Liste wechseln ↑ ↓ zwischen Ein- und Ausstieg. Entf verwirft die angefangene

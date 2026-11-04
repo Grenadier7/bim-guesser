@@ -73,7 +73,8 @@ const SCREENS: { name: string; go: (p: Page) => Promise<void> }[] = [
     name: 'routenjagd-lobby',
     go: async (p) => {
       await setName(p, 'A11y');
-      await p.locator('.mode-route').click();
+      // am Handy gibt es statt der großen Kachel den Start-Knopf oben
+      await p.locator('[data-mode="route"]:visible').first().click();
       await p.locator('#start').waitFor();
       await p.locator('details.advanced summary').click();
     },

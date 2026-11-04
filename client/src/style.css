@@ -4316,6 +4316,33 @@ details.host-bar {
 .acct-btn:hover {
   border-color: var(--muted);
 }
+/* langer Account-Name: gekürzt statt die Kopfzeile zu sprengen */
+.acct-btn.on > span:not(.lvl-badge):not(.badge) {
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Handy: Kopfzeile bleibt einzeilig – im Spiel (Code, Runde, Punkte) nur das Symbol bzw. Level am Account-Knopf */
+@media (max-width: 600px) {
+  .topbar {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding-inline: 10px;
+  }
+  .topinfo {
+    min-width: 0;
+    overflow: hidden;
+    gap: 8px;
+    font-size: 14px;
+  }
+  /* im Spiel: Account nur als Symbol/Level, Hell/Dunkel erst wieder außerhalb des Spiels */
+  .topbar:has(.code-badge) .acct-btn > span:not(.lvl-badge):not(.badge) {
+    display: none;
+  }
+  .topbar:has(.code-badge) .theme-btn {
+    display: none;
+  }
+}
 .badge {
   display: inline-grid;
   place-items: center;
@@ -6910,6 +6937,28 @@ details.adm-linechg li {
   }
 }
 
+/* Mein Wien: befahrene Bezirke */
+.me-districts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(30px, 1fr));
+  gap: 4px;
+  margin: 6px 0 12px;
+}
+.me-districts span {
+  padding: 4px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.me-districts span.on {
+  border-color: var(--good);
+  background: var(--good);
+  color: #fff;
+  font-weight: 700;
+}
+
 /* ---------------------------------------------------------------- Medaillen in Stufen */
 
 .medal .tier-name {
@@ -6957,15 +7006,20 @@ details.adm-linechg li {
 
 /* ---------------------------------------------------------------- Chat: Schnell-Reaktionen */
 
+/* eine feste Zeile über dem Eingabefeld – gleich breite Knöpfe, kein eigenes Scrollen */
 .chat-reactions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
   gap: 4px;
-  padding: 4px 8px 0;
-  overflow-x: auto;
+  padding: 6px 8px 0;
+  border-top: 1px solid var(--line);
+}
+.chat-reactions + .chat-form {
+  border-top: 0;
 }
 .chat-reactions button {
-  flex: none;
-  padding: 3px 8px;
+  min-width: 0;
+  padding: 4px 0;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--panel);
@@ -6980,17 +7034,97 @@ details.adm-linechg li {
 
 /* ---------------------------------------------------------------- Startseite am Handy: Beitreten weiter oben */
 
+/* nur am Handy: großer Start-Knopf in der Karte oben (am PC gibt es die große Routenjagd-Kachel) */
+.quick-new,
+.quick-or {
+  display: none;
+}
+
+/* Handy: oben eine Karte mit dem Wichtigsten – Name, neue Routenjagd, mit Code beitreten; der Rest darunter */
 @media (max-width: 760px) {
   .home {
     display: flex;
     flex-direction: column;
+    gap: 12px;
+  }
+  .home > * {
+    margin-top: 0;
+    margin-bottom: 0;
+  }
+  /* das Logo steht schon in der Kopfzeile – die große Begrüßung und die Routenjagd-Kachel braucht es hier nicht */
+  .home > .hero,
+  .home > .mode-hero {
+    display: none;
   }
   .home > .home-bottom {
     order: -1;
-    margin: 0 0 14px;
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border-radius: 18px;
   }
-  .home > .hero {
-    order: -2;
+  .home-bottom .field {
+    margin: 0;
+  }
+  .quick-new {
+    display: grid;
+    gap: 2px;
+    width: 100%;
+    padding: 16px 12px;
+    border-radius: 14px;
+    font-size: 19px;
+    font-weight: 800;
+  }
+  .quick-new small {
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .quick-or {
+    display: inline;
+    font-style: normal;
+  }
+  .home-bottom .join-row {
+    gap: 8px;
+  }
+  .home-bottom .join-row .code-input {
+    min-width: 0;
+    font-size: 22px;
+    letter-spacing: 0.3em;
+    text-align: center;
+  }
+  .home-bottom .join-row .btn {
+    padding-inline: 16px;
+  }
+  .home > .more-modes {
+    margin: 4px 0 -4px;
+  }
+  /* weitere Modi als schlanke Liste */
+  .home .mode-grid-3 {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .home .mode-tile.mode-small {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    column-gap: 12px;
+    align-items: center;
+    padding: 10px 14px;
+    text-align: left;
+  }
+  .home .mode-tile.mode-small .mt-icon {
+    grid-row: span 2;
+    font-size: 26px;
+  }
+  .home .mode-tile.mode-small .mt-title {
+    font-size: 16px;
+  }
+  .home .mode-tile.mode-small .mt-text {
+    font-size: 12px;
+    line-height: 1.3;
+  }
+  .home .mode-tile.mode-small .mt-tag {
+    display: none;
   }
 }
 
@@ -7188,6 +7322,17 @@ details.adm-linechg li {
   color: #5b4100;
   font-size: 14px;
   line-height: 1.45;
+}
+/* Handy: lange Regel (Hubschrauber, Zielnetz …) auf 3 Zeilen – antippen klappt auf */
+@media (max-width: 760px) {
+  .challenge-rule.clamped:not(.open) {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    cursor: pointer;
+  }
 }
 .challenge-rule .chips {
   display: inline-flex;

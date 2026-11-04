@@ -101,14 +101,15 @@ export function homeScreen(panel: HTMLElement): Screen {
        .join('')}</div>
      <div class="home-bottom">
        <label class="field"><span>Dein Name</span><input id="name" maxlength="40" placeholder="z.B. Alex" value="${esc(account.me?.name ?? app.prefs.name)}"></label>
-       <div class="field join"><span>Mit Code beitreten</span>
+       <button class="btn btn-primary quick-new" data-mode="route">🏁 Neue Routenjagd starten<small>allein oder mit Freunden – Code kommt gleich</small></button>
+       <div class="field join"><span><i class="quick-or">oder </i>Mit Code beitreten</span>
          <div class="join-row"><input id="code" class="code-input" maxlength="5" placeholder="CODE" value="${esc(urlCode)}" autocomplete="off" spellcheck="false">
          <button class="btn btn-dark" id="join">Beitreten</button></div></div>
      </div>
      ${
        tut
          ? `<button class="tut-card" data-mode="tutorial"><span class="mt-icon">🎓</span><span><b>Tutorial: dein erstes Spiel</b>
-              <small>Zwei geführte Runden (Praterstern → Stephansplatz, Reumannplatz → Rathaus) und wie es Punkte gibt.</small></span>
+              <small>Zwei geführte Runden und wie es Punkte gibt.</small></span>
               <span class="btn btn-primary">Los</span></button>`
          : ''
      }
