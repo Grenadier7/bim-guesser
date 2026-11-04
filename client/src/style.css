@@ -4355,7 +4355,7 @@ details.host-bar {
   text-overflow: ellipsis;
 }
 /* Handy: Kopfzeile bleibt einzeilig – im Spiel (Code, Runde, Punkte) nur das Symbol bzw. Level am Account-Knopf */
-@media (max-width: 600px) {
+@media (max-width: 760px) {
   .topbar {
     flex-wrap: nowrap;
     gap: 8px;
@@ -4374,6 +4374,43 @@ details.host-bar {
   .topbar:has(.code-badge) .theme-btn {
     display: none;
   }
+  /* im Spiel: „Runde“ und das Symbol im Code weg, statt Account-Knopf ein ✕ (verlassen/beenden) */
+  .topinfo .cb-icon,
+  .topinfo .top-lbl {
+    display: none;
+  }
+  .topbar:has(.top-quit) .acct-slot {
+    display: none;
+  }
+  .topinfo .top-quit {
+    display: grid;
+  }
+  .topinfo .score {
+    flex-shrink: 0;
+  }
+}
+.cb-icon,
+.top-lbl {
+  font-style: normal;
+}
+/* ✕ rechts oben – nur am Handy (siehe oben) */
+.top-quit {
+  display: none;
+  flex-shrink: 0;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+.top-quit:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .badge {
   display: inline-grid;
@@ -6706,6 +6743,11 @@ details.adm-linechg li {
 .daily-card.done > span:nth-child(1) {
   flex: 1;
   display: block;
+}
+.daily-card.done .next-daily {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
 }
 .home-links {
   margin-top: 18px;

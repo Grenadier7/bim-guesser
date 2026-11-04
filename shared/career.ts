@@ -77,6 +77,15 @@ export function levelOf(xp: number): LevelInfo {
 
 /** Datum in Wien als YYYY-MM-DD */
 export const viennaDay = (t = Date.now()) => new Date(t).toLocaleDateString('sv-SE', { timeZone: 'Europe/Vienna' });
+/** Zeit bis zum nächsten Tageswechsel in Wien (neue Strecke des Tages, neue Challenges) als „3 Std. 20 Min.“ */
+export function untilViennaMidnight(t = Date.now()): string {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Vienna', hour: 'numeric', minute: 'numeric', hourCycle: 'h23' }).formatToParts(t).map((x) => [x.type, x.value]),
+  );
+  const left = Math.max(1, 24 * 60 - (Number(p.hour) * 60 + Number(p.minute)));
+  const hrs = Math.floor(left / 60);
+  return hrs ? `${hrs} Std. ${left % 60} Min.` : `${left} Min.`;
+}
 
 const shift = (day: string, n: number) => {
   const d = new Date(`${day}T12:00:00Z`);

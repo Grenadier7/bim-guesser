@@ -1,5 +1,6 @@
 // Startseite: Routenjagd groß, darunter die weiteren Modi + Beitreten mit Code (führt automatisch in den richtigen Modus)
 import type { GameMode } from '../../../shared/types.ts';
+import { untilViennaMidnight } from '../../../shared/career.ts';
 import { api } from '../api.ts';
 import { app, savePrefs, startSession } from '../store.ts';
 import { esc, h, toast } from '../ui.ts';
@@ -75,7 +76,7 @@ function dailyCard(): string {
   const done = dailyPlayedLocally();
   // schon gespielt: nur noch eine kleine Zeile (Ergebnis, Bestenliste)
   if (done)
-    return `<button class="daily-card done" data-mode="daily">📅 <span>Strecke des Tages: <b>${done.points.toLocaleString('de-AT')} Punkte</b></span><small>Bestenliste ›</small></button>`;
+    return `<button class="daily-card done" data-mode="daily">📅 <span>Strecke des Tages: <b>${done.points.toLocaleString('de-AT')} Punkte</b><small class="next-daily">Neue Strecke in ${untilViennaMidnight()}</small></span><small>Bestenliste ›</small></button>`;
   return `<button class="daily-card" data-mode="daily"><span class="mt-icon">📅</span><span><b>Strecke des Tages</b>
     <small>Für alle dieselbe Strecke – ein Versuch am Tag. Teilen, vergleichen, Serie halten. <b>3× XP</b></small></span>
     <span class="btn btn-primary">Spielen</span></button>`;
