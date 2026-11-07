@@ -264,6 +264,11 @@ export class GameMap {
     this.learnMarks.clearLayers();
   }
 
+  /** nur die Markierungen (Tipp, Ziel) entfernen – eingezeichnete Linien bleiben */
+  clearLearnMarks() {
+    this.learnMarks.clearLayers();
+  }
+
   overview() {
     // über fit: ohne Kartengröße (ausgeblendet) wird nachgeholt statt mit NaN zu rechnen
     this.fit(L.latLngBounds(VIENNA as L.LatLngExpression[]));

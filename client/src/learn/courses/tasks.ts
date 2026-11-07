@@ -25,6 +25,8 @@ export interface TapStationTask {
   tolM: number;
   /** Linien als Orientierung (ohne Namen) */
   show?: string[];
+  /** Linien in der Auflösung (sonst `show`) – z.B. beide, die sich kreuzen */
+  reveal?: string[];
   explain: string;
 }
 export interface TapAreaTask {
@@ -222,6 +224,7 @@ export function crossingTask(a: string, b: string): TapStationTask | null {
     targets: xs,
     tolM: Math.max(nearTol(a), nearTol(b)),
     show: [a],
+    reveal: [a, b],
     explain: `${a} und ${b} treffen sich bei ${xs.map(name).join(' und ')}.`,
   };
 }

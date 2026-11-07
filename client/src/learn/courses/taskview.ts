@@ -50,7 +50,17 @@ function revealMap(task: Task, tap: LatLon | null) {
   app.map.onTap(null);
   const layer = netLayer();
   const lineIds =
-    task.kind === 'tapArea' ? task.lines : task.kind === 'draw' ? [task.line] : task.kind === 'choice' ? (task.show?.lines ?? []) : task.kind === 'tapStation' || task.kind === 'order' ? (task.show ?? []) : [];
+    task.kind === 'tapArea'
+      ? task.lines
+      : task.kind === 'draw'
+        ? [task.line]
+        : task.kind === 'choice'
+          ? (task.show?.lines ?? [])
+          : task.kind === 'tapStation'
+            ? (task.reveal ?? task.show ?? [])
+            : task.kind === 'order'
+              ? (task.show ?? [])
+              : [];
   const colors = task.kind === 'tapArea' ? Object.fromEntries(task.lines.map((id) => [id, task.color])) : undefined;
   const marks = task.kind === 'tapStation' ? task.targets : task.kind === 'draw' ? [task.from, task.to] : [];
   const pts = layer.render(netView({ focus: new Set(lineIds.filter((id) => L(id))), colors, marks, allLabels: lineIds.length <= 12 }));
@@ -185,7 +195,8 @@ export function mountTask(box: HTMLElement, task: Task, done: (r: TaskResult) =>
     app.map.onTap((p) => {
       if (answered) return;
       tap = p;
-      app.map.clearLearn();
+      // nur den alten Tipp weg – die eingezeichnete Linie bleibt stehen
+      app.map.clearLearnMarks();
       app.map.showTarget(p[0], p[1], 'dein Tipp');
       render();
     });
