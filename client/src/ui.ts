@@ -55,7 +55,7 @@ export function routeDetails(route: RouteOption, star?: StarFn): string {
     .map((l) => {
       const min = legMinutes(l.dep, l.arr);
       if (l.mode === 'W')
-        return `<li class="ld-walk"><span class="ld-time">${esc(l.dep)}</span><span>🚶 ${min ? `${min} min ` : ''}zu Fuß${l.toName && l.toName !== l.fromName ? ` nach ${esc(l.toName)}` : ''}</span></li>`;
+        return `<li class="ld-walk"><span class="ld-time">${esc(l.dep)}</span><span>🚶 zu Fuß${l.toName && l.toName !== l.fromName ? ` nach ${esc(l.toName)}` : ''} (${Math.max(1, min)} min)</span></li>`;
       return `<li><span class="ld-time">${esc(l.dep)}</span><span>${lineChip(l.mode, l.line, l.color)}${star && l.line ? star(l.line) : ''} <b>${esc(l.fromName)}</b> → <b>${esc(l.toName)}</b>
         <small>${esc(l.dep)}–${esc(l.arr)} · ${min} min${withText(l.with, 'auch ')}</small></span></li>`;
     })
@@ -85,7 +85,7 @@ function stepsDetails(route: RouteOption, star?: StarFn): string {
       return `<li class="ld-wait"><span class="ld-time">${esc(st.at)}</span><span>⏳ Ø ${st.min} min warten <small>(fährt etwa alle ${st.every} min${withText(st.with, 'mit ')})</small></span></li>`;
     if (st.kind === 'transfer')
       return `<li class="ld-walk"><span class="ld-time">${esc(st.at)}</span><span>🔀 ${st.min} min umsteigen</span></li>`;
-    return `<li class="ld-walk"><span class="ld-time">${esc(st.at)}</span><span>🚶 ${st.min} min zu Fuß nach ${esc(st.to)}</span></li>`;
+    return `<li class="ld-walk"><span class="ld-time">${esc(st.at)}</span><span>🚶 zu Fuß nach ${esc(st.to)} (${st.min} min)</span></li>`;
   });
   const end = route.steps!.length ? route.steps![route.steps!.length - 1] : null;
   const endAt = end ? addMin(end.at, end.min) : '';

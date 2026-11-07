@@ -151,7 +151,7 @@ export class NetIndex {
         best = { label: `Richtung ${end.name}`, stations: rest.map((id) => this.station(id)), terminals: [end], board: st, walkM: d };
       }
     }
-    if (best) best.label += ` – Einstieg ${best.board!.name} (🚶 ${fmtDist(best.walkM!)})`;
+    if (best) best.label += ` – Einstieg ${best.board!.name} (🚶 ${fmtDist(best.walkM!)}, ≈ ${Math.max(1, Math.round((best.walkM! * 1.3) / 80))} min)`;
     return best;
   }
 

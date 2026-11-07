@@ -4089,6 +4089,32 @@ details.host-bar {
 
 /* ---------------------------------------------------------------- Fußwege im Routen-Baukasten (abgestuft) */
 
+/* Fußweg mitten in der Route durch eine Linie ersetzen */
+.walk-swap {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.walk-leg .walk-swap {
+  display: block;
+  margin: 4px 0 0 40px;
+}
+.walk-swap-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 13px;
+}
+.walk-leg .walk-swap-box {
+  margin-left: 40px;
+}
+
 .leg-walk {
   font-size: 13px;
   color: var(--muted);
