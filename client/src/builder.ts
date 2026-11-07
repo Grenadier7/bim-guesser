@@ -1,7 +1,7 @@
 // Routen-Eingabe: Linie wählen -> Einstieg (auto, ggf. Fußweg) -> Ausstieg -> nächste Linie …
 import type { Line, Restriction, Station, UmlandStart, UserLeg } from '../../shared/types.ts';
 import { RESTRICTIONS, moveMinutes, restrictionAllowsLine, restrictionAllowsRoute, restrictionLabel, restrictionMaxLegs } from '../../shared/rules.ts';
-import { legProblem, lineProblem, problemBadge, routeProblem, stationProblem, type RuleRound } from '../../shared/challengeRules.ts';
+import { legProblem, lineProblem, missingDistricts, problemBadge, routeProblem, stationProblem, type RuleRound } from '../../shared/challengeRules.ts';
 import { clientRuleNet } from './challenges.ts';
 import { distM, fmtDist, type NetIndex } from './net.ts';
 import { smoothPath } from './netmap.ts';
@@ -131,6 +131,8 @@ export class RouteBuilder {
       const seen = new Set(legs.flatMap((l) => this.rn.traversed(l.line, l.from, l.to)));
       return this.opts.waypoints.every((w) => seen.has(w.id)) && this.opts.waypoints.some((w) => w.id === id);
     }
+    // Bezirkstour: am Ziel erst, wenn die Route durch alle grünen Bezirke führt (sonst geht es von B aus weiter)
+    if (this.opts.rules && missingDistricts(this.opts.rules, legs, this.rn).length) return false;
     return id === this.dest.id;
   }
 
@@ -152,6 +154,11 @@ export class RouteBuilder {
     const missing = this.missingWaypoints();
     if (missing.length) return `📍 Noch nicht befahren: ${missing.map((w) => w.name).join(', ')}.`;
     return this.opts.rules ? routeProblem(this.opts.rules, this.plain(), this.rn) : null;
+  }
+
+  /** Bezirkstour: Bezirke, durch die die Route noch nicht führt */
+  missingDistricts(): number[] {
+    return this.opts.rules ? missingDistricts(this.opts.rules, this.plain(), this.rn) : [];
   }
 
   /** „3 Punkte“: noch nicht befahren */

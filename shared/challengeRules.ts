@@ -50,7 +50,7 @@ export interface RuleRound {
   entryLines?: string[];
   /** Umland: Name der Stadt (für die Meldung) */
   entryTown?: string;
-  /** Fleckerlteppich: gesperrte Bezirke */
+  /** Fleckerlteppich / Sperrzone XXL: gesperrte Bezirke; Bezirkstour: Bezirke, durch die die Route führen muss */
   districts?: number[];
   /** Brückenkenner: so viele Brücken mindestens */
   bridges?: number;
@@ -64,15 +64,24 @@ export function bridgeCount(legs: LegLike[], net: RuleNet): number {
 /** gesperrte Bezirke der Runde (Innenstadt umfahren: 1, 4–9; Fleckerlteppich: die gezogenen) */
 export function blockedDistricts(round: RuleRound): number[] {
   if (round.restriction === 'avoidInner') return INNER_DISTRICTS;
-  if (round.restriction === 'avoidDistricts') return round.districts ?? [];
+  if (round.restriction === 'avoidDistricts' || round.restriction === 'avoidMany') return round.districts ?? [];
   return [];
+}
+
+/** Bezirkstour: Bezirke, durch die die Route noch nicht führt (ein-, aus-, umsteigen oder durchfahren) */
+export function missingDistricts(round: RuleRound, legs: LegLike[], net: RuleNet): number[] {
+  if (round.restriction !== 'visitDistricts') return [];
+  const seen = new Set(legs.flatMap((l) => net.traversed(l.line, l.from, l.to).map((id) => net.district(id) ?? 0)));
+  return (round.districts ?? []).filter((d) => !seen.has(d));
 }
 
 /** Meldung für eine Station in einem gesperrten Bezirk */
 function districtText(round: RuleRound, name: string, d: number): string {
   return round.restriction === 'avoidInner'
     ? `🚫 ${name} liegt im ${d}. Bezirk – die inneren Bezirke (1, 4–9) sind tabu.`
-    : `🧩 ${name} liegt im ${d}. Bezirk – der ist heute gesperrt (rot auf der Karte).`;
+    : round.restriction === 'avoidMany'
+      ? `🟥 ${name} liegt im ${d}. Bezirk – Sperrzone (rot schraffiert), dort geht nichts.`
+      : `🧩 ${name} liegt im ${d}. Bezirk – der ist heute gesperrt (rot schraffiert).`;
 }
 
 export interface LegLike {
@@ -134,6 +143,7 @@ export function problemBadge(round: RuleRound): string {
   if (round.restriction === 'sunny') return '☁️ unter der Erde';
   if (round.restriction === 'avoidInner') return '🚫 innerer Bezirk';
   if (round.restriction === 'avoidDistricts') return '🧩 gesperrter Bezirk';
+  if (round.restriction === 'avoidMany') return '🟥 Sperrzone';
   return '⛔ nicht erlaubt';
 }
 
@@ -174,6 +184,10 @@ export function routeProblem(round: RuleRound, legs: LegLike[], net: RuleNet): s
   }
   if (r === 'min2Transfers' && legs.length < 3) return `🔀 Umsteige-Profi: mindestens 2-mal umsteigen (3 Fahrten) – bisher ${Math.max(0, legs.length - 1)}.`;
   if (r === 'oneLeg' && legs.length !== 1) return '🚶 Fußbus: genau eine Linie.';
+  if (r === 'visitDistricts') {
+    const miss = missingDistricts(round, legs, net);
+    if (miss.length) return `🗺️ Bezirkstour: noch nicht durch ${miss.map((d) => `${d}.`).join(', ')} Bezirk.`;
+  }
   if (r === 'minBridges' && bridgeCount(legs, net) < (round.bridges ?? 0)) return `🌉 Brückenkenner: mindestens ${round.bridges} Brücken – bisher ${bridgeCount(legs, net)}.`;
   if ((r === 'mustLine' || r === 'anyLine') && round.required?.length && !legs.some((l) => round.required!.includes(l.line)))
     return round.required.length === 1 ? `📌 Pflicht-Linie: Die ${round.required[0]} muss dabei sein.` : `🎲 Eine von ${round.required.join(', ')} muss dabei sein.`;
@@ -188,7 +202,9 @@ export function ruleSummary(round: RuleRound): string | null {
   if (r === 'anyLine' && round.required?.length) return `🎲 Eine dieser Linien muss dabei sein: ${round.required.join(', ')}.`;
   if (r === 'umland') return `🚆 Du startest in ${round.entryTown ?? 'Niederösterreich'}. Welcher Zug bringt dich nach Wien? Umsteigen erst in Wien – die Fahrt bis zur Stadtgrenze zählt mit.`;
   if (r === 'minBridges') return `🌉 Brückenkenner: Überquere mindestens ${round.bridges} Brücken (🌉 auf der Karte) – mehr als auf der schnellsten Verbindung.`;
-  if (r === 'avoidDistricts') return `🧩 Fleckerlteppich: gesperrt sind die Bezirke ${(round.districts ?? []).join(', ')} (rot auf der Karte) – dort nicht ein-, aus- oder durchfahren.`;
+  if (r === 'avoidDistricts') return `🧩 Fleckerlteppich: gesperrt sind die Bezirke ${(round.districts ?? []).join(', ')} (rot schraffiert) – dort nicht ein-, aus- oder durchfahren.`;
+  if (r === 'avoidMany') return `🟥 Sperrzone XXL: gesperrt sind die Bezirke ${(round.districts ?? []).join(', ')} (rot schraffiert) – dort nicht ein-, aus- oder durchfahren.`;
+  if (r === 'visitDistricts') return `🗺️ Bezirkstour: Deine Route muss durch die Bezirke ${(round.districts ?? []).join(', ')} führen (grün auf der Karte) – einsteigen, umsteigen oder durchfahren zählt. Reihenfolge egal.`;
   if (r === 'insider') return `${RESTRICTIONS.insider.icon} Insider – nicht erlaubt: U1–U6 und die bekannten S-Bahnen S1, S2, S3, S4, S7, S45, S80. Erlaubt: Bim, Bus und die übrigen S-Bahnen (z.B. S40, S50, S60).`;
   return `${RESTRICTIONS[r].icon} ${RESTRICTIONS[r].label}: ${RESTRICTIONS[r].hint}`;
 }

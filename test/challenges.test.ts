@@ -18,7 +18,7 @@ import {
 } from '../shared/challenges.ts';
 import { DEFAULT_SETTINGS } from '../shared/defaults.ts';
 import { sanitizeSettings } from '../server/settings.ts';
-import { lineProblem, legProblem, routeProblem, ruleSummary, stationProblem, type RuleNet } from '../shared/challengeRules.ts';
+import { lineProblem, legProblem, missingDistricts, routeProblem, ruleSummary, stationProblem, type RuleNet } from '../shared/challengeRules.ts';
 import { pickRequired } from '../server/challengeRound.ts';
 import type { GameSettings, RouteOption } from '../shared/types.ts';
 
@@ -199,7 +199,23 @@ test('Fleckerlteppich: gesperrte Bezirke – Einstieg und Durchfahrt, klare Meld
   assert.match(stationProblem(rr, 'U1', 'b', net)!, /1\. Bezirk – der ist heute gesperrt/);
   assert.match(legProblem(rr, [], leg('U1', 'a', 'c'), net)!, /Karlsplatz liegt im 1\. Bezirk/);
   assert.equal(legProblem({ ...rr, districts: [3] }, [], leg('U1', 'a', 'c'), net), null);
-  assert.match(ruleSummary(rr)!, /Bezirke 1 \(rot auf der Karte\)/);
+  assert.match(ruleSummary(rr)!, /Bezirke 1 \(rot schraffiert\)/);
+});
+
+test('Sperrzone XXL: wie Fleckerlteppich, eigene Meldung', () => {
+  const rr = { restriction: 'avoidMany' as const, districts: [1, 2, 3] };
+  assert.match(legProblem(rr, [], leg('U1', 'a', 'c'), net)!, /Karlsplatz liegt im 1\. Bezirk – Sperrzone/);
+  assert.equal(legProblem(rr, [], leg('43', 'c', 'd'), net), null);
+  assert.match(ruleSummary(rr)!, /Sperrzone XXL: gesperrt sind die Bezirke 1, 2, 3/);
+});
+
+test('Bezirkstour: durch jeden markierten Bezirk – auch nur durchfahren zählt', () => {
+  const rr = { restriction: 'visitDistricts' as const, districts: [1] };
+  assert.match(routeProblem(rr, [leg('43', 'c', 'd')], net)!, /noch nicht durch 1\. Bezirk/);
+  // U1 a → c fährt durch b (1. Bezirk), ohne dort zu halten
+  assert.equal(routeProblem(rr, [leg('U1', 'a', 'c'), leg('43', 'c', 'd')], net), null);
+  assert.equal(missingDistricts(rr, [leg('U1', 'a', 'c')], net).length, 0);
+  assert.deepEqual(missingDistricts({ ...rr, districts: [1, 7] }, [leg('U1', 'a', 'c')], net), [7]);
 });
 
 test('Eine von drei: lästige Linien, die beste erlaubte Verbindung nimmt genau eine', () => {

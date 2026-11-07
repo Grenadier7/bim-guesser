@@ -41,7 +41,7 @@ import { CancelledError, fmtTime } from './efa.ts';
 import { waterData } from './water.ts';
 import { nearestWater, walkMinutes, type WaterHit } from '../shared/water.ts';
 import { heliMinutes, heliPart, joinRoutes, type Heli } from './challengeRound.ts';
-import { UMLAND, avoidFor, crossesCenter, legsOf, mergeRoutes, pairFits, pickDistricts, pickRequired, routeAllowed, ruleNetOf, searchVariants, umlandStart, withTrain } from './challengeRound.ts';
+import { UMLAND, avoidFor, crossesCenter, legsOf, mergeRoutes, pairFits, pickDistricts, pickManyDistricts, pickRequired, pickVisitDistricts, routeAllowed, ruleNetOf, searchVariants, umlandStart, withTrain } from './challengeRound.ts';
 import { bridgeCount } from '../shared/challengeRules.ts';
 import { bridgeData, bridgeLookup } from './bridges.ts';
 import { FUTURE_LINES } from '../shared/challenges.ts';
@@ -427,8 +427,8 @@ export class Game extends Lobby {
     round.districts = undefined;
     const all = sortRoutes(await topRoutes(this.net, a.id, b.id, round.time, { ...this.query(round, false), minTransfers: wanted }), this.settings);
     if (!all.length) return null;
-    if (round.restriction === 'avoidDistricts') {
-      round.districts = pickDistricts(all, a, b, rn) ?? undefined;
+    if (round.restriction === 'avoidDistricts' || round.restriction === 'avoidMany') {
+      round.districts = (round.restriction === 'avoidMany' ? pickManyDistricts(all, a, b, rn) : pickDistricts(all, a, b, rn)) ?? undefined;
       if (!round.districts) return null;
     }
     // Brückenkenner: mindestens 3 Brücken und 2 mehr als die schnellste Verbindung – geht das nicht mit vertretbarem
@@ -444,6 +444,13 @@ export class Game extends Lobby {
       const base = bridgeCount(bl, rn);
       round.bridges = [base + 2, base + 1].find((n) => n >= 3 && counts.some((c) => c >= n));
       if (!round.bridges) return null;
+    }
+    // Bezirkstour: Bezirke abseits der schnellsten Verbindung; Verbindungen gezielt über ihre Knoten (die Suche allein
+    // fährt nie einen Umweg)
+    if (round.restriction === 'visitDistricts') {
+      round.districts = pickVisitDistricts(all, a, b, rn, this.net) ?? undefined;
+      if (!round.districts) return null;
+      extra = await this.viaDistricts(round, a, b, round.districts);
     }
     if (round.restriction === 'mustLine' || round.restriction === 'anyLine') {
       const more = await this.searchAll(round, a.id, b.id);
@@ -519,6 +526,39 @@ export class Game extends Lobby {
         if (h1 !== h2 && distM(a, h1.br) < distM(a, h2.br)) await build([a, h1.x, h1.y, h2.x, h2.y, b], `bridge:${h1.br.id}+${h2.br.id}`);
     // nur, was die Brücken wirklich nimmt
     return out.filter((r) => (legsOf(r, { restriction: null }, rn) ?? []).length);
+  }
+
+  /**
+   * Bezirkstour: Verbindungen Start → Knoten im 1. Bezirk → Knoten im 2. … → Ziel, in jeder Reihenfolge; je Bezirk die
+   * Haltestellen mit den meisten Linien (dort steigt man am ehesten um).
+   */
+  private async viaDistricts(round: Round, a: Station, b: Station, districts: number[]): Promise<RouteOption[]> {
+    const hubsOf = (d: number) =>
+      [...this.net.stations.values()]
+        .filter((s) => s.district === d && s.lines.length)
+        .sort((x, y) => y.lines.length - x.lines.length || distM(a, x) + distM(x, b) - (distM(a, y) + distM(y, b)))
+        .slice(0, districts.length > 2 ? 1 : 2);
+    const hubs = districts.map(hubsOf);
+    if (hubs.some((h) => !h.length)) return [];
+    const cache = new Map<string, Promise<RouteOption | null>>();
+    const leg = (p: Station, q: Station) => {
+      const k = `${p.id}>${q.id}`;
+      if (!cache.has(k)) cache.set(k, topRoutes(this.net, p.id, q.id, round.time, this.query(round, false)).then((rs) => sortRoutes(rs, this.settings)[0] ?? null));
+      return cache.get(k)!;
+    };
+    const orders = (l: number[]): number[][] => (l.length <= 1 ? [l] : l.flatMap((x, i) => orders([...l.slice(0, i), ...l.slice(i + 1)]).map((r) => [x, ...r])));
+    const combos = (lists: Station[][]): Station[][] => lists.reduce<Station[][]>((acc, l) => acc.flatMap((c) => l.map((s) => [...c, s])), [[]]);
+    const start = fmtTime(round.time);
+    const out: RouteOption[] = [];
+    for (const order of orders(districts.map((_, i) => i)))
+      for (const via of combos(order.map((i) => hubs[i]))) {
+        const chain = [a, ...via, b];
+        if (chain.some((s, i) => i > 0 && s.id === chain[i - 1].id)) continue;
+        const parts = await Promise.all(chain.slice(0, -1).map((p, i) => leg(p, chain[i + 1])));
+        if (parts.some((x) => !x || x.key === 'walk')) continue;
+        out.push(joinRoutes(`districts:${via.map((s) => s.id).join('+')}`, parts, start));
+      }
+    return out;
   }
 
   /**

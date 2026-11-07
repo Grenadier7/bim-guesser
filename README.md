@@ -151,7 +151,9 @@ Erfüllt nach 60 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strec
     die besten Verbindungen stellt) · ☝️ Eine U reicht · 🎨 Bunt gemischt (≥ 3 Verkehrsmittel) · 🔁 Nie zweimal dasselbe ·
     🦘 Bim-Hüpfer (erste und letzte Fahrt Bim) · 📌 Pflicht-Linie · 🎲 Eine von drei (drei lästige Linien; die beste
     erlaubte Verbindung nimmt genau eine) · 🧩 Fleckerlteppich (zufällige Bezirke gesperrt, mind. einer liegt auf der
-    besten Verbindung) · 🎯 Drei Ziele (zu einem davon) · 📍 Drei Punkte (alle befahren) · 🏊 Ab ins Wasser · 🩱 Ab ins Bad
+    besten Verbindung) · 🟥 Sperrzone XXL (7–9 Bezirke gesperrt, 2 davon auf der besten Verbindung; Umweg ≤ 25 min) ·
+    🗺️ Bezirkstour (2–3 grüne Bezirke abseits der besten Verbindung, die Route muss durch jeden führen – auch nur
+    durchfahren zählt; Vergleichsrouten über die Knoten der Bezirke, `viaDistricts`) · 🎯 Drei Ziele (zu einem davon) · 📍 Drei Punkte (alle befahren) · 🏊 Ab ins Wasser · 🩱 Ab ins Bad
     (nur Bäder) · 🚆 Aus dem Umland (Start im Ort in Niederösterreich, den richtigen Zug selbst finden – manche Orte haben
     zwei, z.B. Absdorf-Hippersdorf: S4 oder S40; Fahrzeit bis zur Stadtgrenze ca., `UMLAND` in `server/challengeRound.ts`)
     · 🎡 Ring-Runde (Innere Stadt nur mit Bim und Bus) · 🏠 Tür zu Tür · 🌄 Stadtrand-Tour (12–25 km) · 🚧 Aktuelles Netz ·
@@ -159,6 +161,11 @@ Erfüllt nach 60 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strec
     🧺 Sonntagsausflug · 🛴 E-Scooter (Wege mit 20 km/h, 30 s Treppen an U-/S-Bahn; auch „nur Scooter“ als Antwort) ·
     🚁 Hubschrauber (drei Linien H1–H3 mit fester Flugzeit, einer bringt Zeit) · 🌉 Brückenkenner (mehr Brücken als die
     schnellste Verbindung) · 🔮 Zielnetz 2040.
+  - **Karte:** gesperrte Bezirke rot schraffiert mit gestricheltem Rand und „⛔ 7.“ in der Mitte; Bezirkstour grün
+    mit „🎯 7.“, befahrene mit Haken.
+  - **Daten:** Brückenkenner braucht `data/bridges.json`, Ab ins Wasser/Bad `data/water.json` – fehlen sie, gibt es die
+    Challenges nicht (Plan) bzw. gleich eine Meldung statt langer Suche. `test/docker.test.ts` prüft, dass das
+    Dockerfile alle Dateien aus `data/` ins Image kopiert.
   - **Abgeben** geht erst, wenn die Regel der ganzen Route erfüllt ist (mind. 3 Verkehrsmittel, 2 Umstiege,
     Pflicht-Linie, alle Punkte …) – nur bei Zeitablauf geht die Route trotzdem raus (zählt dann nicht).
   - **Verteilung:** Start und Ziel nach Fläche (jedes ~1,2-km-Feld mit Haltestellen gleich oft, nicht jede Station),
@@ -395,6 +402,9 @@ als Zusatzfahrt anlegt, bleibt.
      Oberlaa), die Einstiegs-Station steht markiert und nicht wählbar mittendrin.
      Hält die Linie an der Station nur in eine Richtung (Schleifen/Einbahnen, z.B. 40 bei Schöffelgasse), wird die
      Gegenrichtung ab der nächsten Haltestelle (bis 700 m) angeboten – inkl. Fußweg dorthin.
+     Jeder Fußweg zeigt seine Dauer in Klammern („560 m zu Fuß (≈ 9 min)“). Ein Fußweg **mitten in der Route** lässt
+     sich mit „🔁 Linie statt Fußweg“ durch eine Linie ersetzen, die direkt zwischen den beiden Stationen fährt (mit
+     den Regeln der Runde); fährt dieselbe Linie davor oder danach weiter, wird daraus eine Fahrt.
    - **📍 Start & Ziel** (Erweitert → Schwierigkeit): *Haltestellen* oder *Adressen* – zufällige echte Adressen
      (Stadt Wien, OGD), gleichmäßig über die bebaute Fläche verteilt (400-m-Raster, höchstens 3 je Zelle, nur bis
      1,5 km von einer Haltestelle; `node scripts/build-addresses.ts` → `data/addresses.json`). Die Auskunft rechnet

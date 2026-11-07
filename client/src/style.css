@@ -7440,3 +7440,34 @@ details.adm-linechg li {
   vertical-align: middle;
 }
 
+
+/* ---------------------------------------------------------------- Challenges: Bezirke auf der Karte */
+/* gesperrt: rot schraffiert (Muster in map.ts) – auf einen Blick „hier nicht“ */
+.leaflet-interactive.blocked-area,
+path.blocked-area {
+  fill: url(#hatch-blocked);
+  fill-opacity: 1;
+}
+.area-label {
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
+}
+.area-label.blocked {
+  background: #c81e1e;
+  color: #fff;
+}
+.area-label.visit {
+  background: #13804a;
+  color: #fff;
+}
+.area-label.visit.done {
+  background: #fff;
+  color: #13804a;
+  border: 2px solid #13804a;
+}

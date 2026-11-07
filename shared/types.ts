@@ -176,7 +176,9 @@ export type Restriction =
   | 'anyLine'
   | 'noRail'
   | 'avoidDistricts'
-  | 'minBridges';
+  | 'minBridges'
+  | 'avoidMany'
+  | 'visitDistricts';
 
 /** Spielvariante für alle Runden (Tages-Challenges): ohne U-Bahn, ohne Bus, nur Bim, max. 1 Umstieg */
 export type Variant =
@@ -204,7 +206,9 @@ export type Variant =
   | 'anyLine'
   | 'noRail'
   | 'avoidDistricts'
-  | 'minBridges';
+  | 'minBridges'
+  | 'avoidMany'
+  | 'visitDistricts';
 
 /** Wie oft Einschränkungs-Runden vorkommen */
 export type RestrictionFrequency = 'never' | 'sometimes' | 'always';

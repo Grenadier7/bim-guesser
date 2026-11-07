@@ -377,7 +377,7 @@ export function roundScreen(panel: HTMLElement): Screen {
     // X-treme: die eigene Route wird erst bei der Auflösung gezeigt
     if (builder && view !== 'locate' && !xtreme) app.map.showDraft(builder.segments(), builder.transferPoints());
     // „3 Punkte“: befahrene Punkte abhaken
-    if (builder && waypoints && view !== 'locate') showChallengeMap(false);
+    if (builder && (waypoints || round.restriction === 'visitDistricts') && view !== 'locate') showChallengeMap(false);
   }
 
   function showChallengeMap(fit: boolean) {
@@ -390,6 +390,11 @@ export function roundScreen(panel: HTMLElement): Screen {
       // „Ab ins Bad“: nur die Bäder
       water: round.water && waterNow() ? (round.water === 'bath' ? { waters: [], baths: waterNow()!.baths } : waterNow()) : null,
       inner: rules && blockedDistricts(rules).length ? app.net.data.districts.filter((d) => blockedDistricts(rules).includes(d.id)) : undefined,
+      // Bezirkstour: grüne Bezirke, abgehakt, sobald die Route hindurchführt
+      visit:
+        round.restriction === 'visitDistricts'
+          ? app.net.data.districts.filter((d) => round.districts?.includes(d.id)).map((d) => ({ d, done: !(builder?.missingDistricts() ?? round.districts ?? []).includes(d.id) }))
+          : undefined,
       underground: round.restriction === 'sunny' ? undergroundPaths() : undefined,
       // Umland: Wien umrahmt – man startet draußen
       outline: round.umland ? app.net.data.districts : undefined,
