@@ -56,7 +56,8 @@ export class NetGraph {
       const lineSeqs = patternsOf(line)
         .map((p) => p.filter((id, i) => id !== p[i - 1]))
         .filter((s) => s.length >= 2);
-      const interior = new Set(lineSeqs.flatMap((s) => s.slice(1, -1)));
+      // Wendeschleifen (37: … Hohe Warte → Döblinger Bad → Hohe Warte) machen die Endstation nicht zur Zwischenstation
+      const interior = new Set(lineSeqs.flatMap((s) => s.slice(1, -1).filter((id) => id !== s[0] && id !== s[s.length - 1])));
       const visits = new Map<string, number>();
       for (const sq of lineSeqs) for (const id of new Set(sq)) visits.set(id, (visits.get(id) ?? 0) + 1);
       const cands = lineSeqs.flatMap((sq) => [sq[0], sq[sq.length - 1]]).filter((id) => !interior.has(id));
