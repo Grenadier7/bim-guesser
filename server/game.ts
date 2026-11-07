@@ -43,7 +43,7 @@ import { nearestWater, walkMinutes, type WaterHit } from '../shared/water.ts';
 import { heliMinutes, heliPart, joinRoutes, type Heli } from './challengeRound.ts';
 import { UMLAND, avoidFor, crossesCenter, legsOf, mergeRoutes, pairFits, pickDistricts, pickRequired, routeAllowed, ruleNetOf, searchVariants, umlandStart, withTrain } from './challengeRound.ts';
 import { bridgeCount } from '../shared/challengeRules.ts';
-import { bridgeData } from './bridges.ts';
+import { bridgeData, bridgeLookup } from './bridges.ts';
 import { FUTURE_LINES } from '../shared/challenges.ts';
 import { runningLines } from './timetable.ts';
 import type { RuleNet, RuleRound } from '../shared/challengeRules.ts';
@@ -351,6 +351,10 @@ export class Game extends Lobby {
   private async prepareInner(round: Round, gen: number): Promise<RouteOption[]> {
     const wanted = this.minTransfersFor(round);
     const rn = ruleNetOf(this.net, this.settings.network);
+    // fehlen die Gewässer- bzw. Brücken-Daten, gibt es diese Challenges nicht – gleich sagen statt lange zu suchen
+    const water = this.settings.task === 'water' || this.settings.task === 'bath';
+    if ((water && !waterData()) || (round.restriction === 'minBridges' && !bridgeLookup()))
+      throw new GameError('Diese Challenge ist gerade nicht verfügbar – bitte eine andere wählen.', 503);
     for (let attempt = 0; attempt < 18; attempt++) {
       if (gen !== this.generation) return [];
       let a: Station, b: Station;
