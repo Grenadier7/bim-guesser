@@ -9,11 +9,17 @@ import { isOffensive, moderate } from './moderation.ts';
 
 export class GameError extends Error {
   status: number;
-  constructor(message: string, status = 400) {
+  /** maschinenlesbarer Grund (z.B. 'not-member'), damit der Browser passend reagiert */
+  code?: string;
+  constructor(message: string, status = 400, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
+
+/** Token passt zu keinem Spieler – oder die Lobby gibt es nicht mehr (beides gleich, siehe Befund L-07) */
+export const notMember = () => new GameError('Du bist nicht (mehr) in diesem Spiel.', 403, 'not-member');
 
 const MAX_PLAYERS = 12;
 /** Live-Verbindungen pro Spieler (mehrere Tabs) */
@@ -299,7 +305,7 @@ export abstract class Lobby extends EventEmitter {
 
   protected auth(token: string): Player {
     const p = this.byToken.get(String(token));
-    if (!p) throw new GameError('Du bist nicht (mehr) in dieser Lobby.', 403);
+    if (!p) throw notMember();
     return p;
   }
 

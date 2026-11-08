@@ -4,11 +4,17 @@ import type { ChatMessage, DailyBoard, DailyResult, DailyRound, GameMode, GameSe
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Grund vom Server, z.B. 'not-member' (Lobby weg oder entfernt) */
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
+
+/** store.ts hängt sich hier ein: Server sagt „nicht (mehr) in diesem Spiel“ → zurück zur Startseite */
+export const apiHooks = { notMember: () => {} };
 
 /** Lobby-Code + geheimer Spieler-Token */
 export interface Auth {
@@ -23,7 +29,10 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error ?? `HTTP ${res.status}`, res.status);
+  if (!res.ok) {
+    if (data.code === 'not-member') apiHooks.notMember();
+    throw new ApiError(data.error ?? `HTTP ${res.status}`, res.status, data.code);
+  }
   return data as T;
 }
 

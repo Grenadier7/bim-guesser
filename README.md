@@ -432,6 +432,9 @@ als Zusatzfahrt anlegt, bleibt.
 6. **Inaktive Lobby**: nach 9 min ohne Aktion fragt ein Fenster die Hosts „Lobby behalten?“ (30 s). Keine Antwort →
    der nächste verbundene Spieler wird Host und gefragt; antwortet niemand oder „Lobby löschen“ → Lobby wird
    geschlossen (`LOBBY_IDLE_MS`, `LOBBY_IDLE_ANSWER_MS`).
+7. **Lobby weg** (z.B. Seite nach Stunden wieder geöffnet): Der Server antwortet mit `code: 'not-member'`; der Browser
+   geht dann sofort zur Startseite und erklärt es in einem Fenster – auch schon beim Zurückkehren in den Tab, nicht
+   erst bei der nächsten Aktion (`apiHooks.notMember`, `visibilitychange` in `client/src/store.ts`).
 
 **Training** (Startseite, ohne Lobby): echte Strecken ohne Zeitdruck und Punkte – zum praxisnahen Lernen.
 - *Coach*: nach jeder Teilstrecke Rückmeldung – „genau wie die schnellste Verbindung“, „richtige Linie, aber falsche
@@ -449,7 +452,7 @@ als Zusatzfahrt anlegt, bleibt.
 
 **Lernmodus** (Startseite, ohne Lobby) – drei Einstiege, keine Einstellungen vorab:
 - *🎓 Lernpfad*: die geführten Kurse in fester Reihenfolge („Weiter mit …“): U-Bahn-Kreuzungen → S-Bahn
-  (Stammstrecke, Äste S1/S2/S3+S4, S7, S40/S45/S50, S60/S80) → Radiallinien → die Ringe → Querverbindungen →
+  (Stammstrecke, Äste S1/S2/S3+S4, S7, S40/S50/S60 als Pendlerzüge ins Umland, S45 und S80 einzeln mit Umstiegen) → Radiallinien → die Ringe → Querverbindungen →
   über die Donau & Transdanubien (Brücken; U6/U1/U2 als „Finger“, Bims 25/26/27 quer, Busse von der U1 zur U2,
   Zubringer je U-Bahn-Knoten) → der Süden (Meidling, Liesing, Favoriten, Simmering: U6/U1/U3, S-Bahn, Knoten,
   Bims 6/11/71/62/BB/1, 60er/70er-Busse) → Busnummern (Zehnerstelle läuft gegen den Uhrzeigersinn um die Stadt)
