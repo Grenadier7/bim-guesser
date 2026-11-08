@@ -81,7 +81,7 @@ export const BANDS: Record<keyof NetView['bands'], { label: string; parts: [stri
     label: 'Gürtel',
     parts: [
       ['U6', 'Spittelau', 'Gumpendorfer Straße'],
-      ['18', 'Gumpendorfer Straße', 'St. Marx'],
+      ['18', 'Gumpendorfer Straße', 'Stadion'],
     ],
   },
   vorort: { label: 'Vorortelinie', parts: [['S45', 'Heiligenstadt', 'Hütteldorf']] },
