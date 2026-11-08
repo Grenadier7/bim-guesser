@@ -26,6 +26,8 @@ export interface Piece {
   label?: string;
   /** wo entlang des Abschnitts das Schild sitzt (0 = Anfang, 1 = Ende) */
   labelFrac?: number;
+  /** kräftig zeichnen, aber die Knoten darauf nicht hervorheben (keine Namen) – z.B. der Anlauf einer Linie */
+  quiet?: boolean;
 }
 
 export interface NetView {
@@ -47,6 +49,8 @@ export interface NetView {
   allLabels?: boolean;
   /** angetippte Linien: Name an beiden Endstationen (z.B. „S2“ bei Liesing und bei Leopoldau) */
   bothEnds?: boolean;
+  /** nur diese Linien an beiden Endstationen beschriften (z.B. Durchmesser, aber Strahlen nur außen) */
+  bothEndsFor?: Set<string>;
   /** nur diese Linien der Grundkarte zeichnen (z.B. leise Orientierung beim Nachzeichnen) */
   only?: Set<string>;
   /** zusätzliche Haltestellen als kleine, anklickbare Punkte */
@@ -77,7 +81,7 @@ export const BANDS: Record<keyof NetView['bands'], { label: string; parts: [stri
     label: 'Gürtel',
     parts: [
       ['U6', 'Spittelau', 'Gumpendorfer Straße'],
-      ['18', 'Gumpendorfer Straße', 'St. Marx'],
+      ['18', 'Gumpendorfer Straße', 'Stadion'],
     ],
   },
   vorort: { label: 'Vorortelinie', parts: [['S45', 'Heiligenstadt', 'Hütteldorf']] },
@@ -231,7 +235,7 @@ export class NetMapLayer {
       const graph = g.has(p.line) ? g : this.extra;
       const path = graph.along(p.line, p.from, p.to);
       if (path.length < 2) continue;
-      for (const id of graph.stationsAlong(p.line, p.from, p.to)) pieceNodes.add(id);
+      if (!p.quiet) for (const id of graph.stationsAlong(p.line, p.from, p.to)) pieceNodes.add(id);
       const l = graph.net.lines.get(p.line)!;
       const s = STYLE[kindOf(l)!];
       const w = Math.max(s.w, 4) + 1;
@@ -275,7 +279,7 @@ export class NetMapLayer {
         // hervorgehobene Strahlen nur am äußeren Ende beschriften – sonst ballen sich die Schilder am Ring
         const central = (id: string) => distM(graph.station(id), CENTER) < 2000;
         const far = (a: [string, string], b: [string, string]) => distM(graph.station(b[0]), CENTER) - distM(graph.station(a[0]), CENTER);
-        const outer = v.bothEnds
+        const outer = v.bothEnds || v.bothEndsFor?.has(l.id)
           ? ends
           : v.allLabels
           ? ends.sort(far).slice(0, 1)

@@ -1,9 +1,10 @@
 // Routen-Eingabe: Linie wählen -> Einstieg (auto, ggf. Fußweg) -> Ausstieg -> nächste Linie …
 import type { Line, Restriction, Station, UmlandStart, UserLeg } from '../../shared/types.ts';
 import { RESTRICTIONS, moveMinutes, restrictionAllowsLine, restrictionAllowsRoute, restrictionLabel, restrictionMaxLegs } from '../../shared/rules.ts';
-import { legProblem, lineProblem, problemBadge, routeProblem, stationProblem, type RuleRound } from '../../shared/challengeRules.ts';
+import { legProblem, lineProblem, missingDistricts, problemBadge, routeProblem, stationProblem, type RuleRound } from '../../shared/challengeRules.ts';
 import { clientRuleNet } from './challenges.ts';
-import { distM, fmtDist, type NetIndex } from './net.ts';
+import { fmtDist, walkM, walkVia, type NetIndex } from './net.ts';
+import { bridgeLabel } from '../../shared/barrier.ts';
 import { smoothPath } from './netmap.ts';
 import { esc, h, lineChip, toast } from './ui.ts';
 
@@ -28,6 +29,8 @@ const walkMinutes = (m: number) => Math.max(1, Math.round((m * 1.3) / 80));
 let scooterMode = false;
 const walkText = (m: number) => (scooterMode ? `${fmtDist(m)} mit dem Scooter (≈ ${moveMinutes(m, true)} min)` : `${fmtDist(m)} zu Fuß (≈ ${walkMinutes(m)} min)`);
 const walkIcon = () => (scooterMode ? '🛴' : '🚶');
+/** Dauer eines Weges in Klammern – „(≈ 4 min)“, steht bei jedem angezeigten Fußweg */
+const walkMin = (m: number) => `(≈ ${scooterMode ? moveMinutes(m, true) : walkMinutes(m)} min)`;
 /** ab hier ist ein Weg „weit“ – mit dem Scooter fünfmal so weit */
 const loud = () => WALK_LOUD_M * (scooterMode ? 5 : 1);
 const quiet = () => WALK_QUIET_M * (scooterMode ? 5 : 1);
@@ -56,6 +59,12 @@ export interface BuilderOptions {
 }
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** Fußweg für die Karte – über die Donau mit Knick an der Brücke */
+function walkPath(a: { lat: number; lon: number }, b: { lat: number; lon: number }): [number, number][] {
+  const via = walkVia(a, b).via;
+  return via ? [[a.lat, a.lon], [via.lat, via.lon], [b.lat, b.lon]] : [[a.lat, a.lon], [b.lat, b.lon]];
+}
 
 /** Ausstiegs-Wert: "ausstieg" oder "einstieg>ausstieg" (Gegenrichtung hält woanders) */
 function parseAlight(v: string, board: string): [string, string] {
@@ -129,6 +138,8 @@ export class RouteBuilder {
       const seen = new Set(legs.flatMap((l) => this.rn.traversed(l.line, l.from, l.to)));
       return this.opts.waypoints.every((w) => seen.has(w.id)) && this.opts.waypoints.some((w) => w.id === id);
     }
+    // Bezirkstour: am Ziel erst, wenn die Route durch alle grünen Bezirke führt (sonst geht es von B aus weiter)
+    if (this.opts.rules && missingDistricts(this.opts.rules, legs, this.rn).length) return false;
     return id === this.dest.id;
   }
 
@@ -137,8 +148,8 @@ export class RouteBuilder {
     if (this.opts.water) return this.opts.water(p);
     const list = this.opts.targets ?? (this.opts.waypoints ? this.missingWaypoints() : null) ?? [this.dest];
     const pool = list.length ? list : (this.opts.waypoints ?? [this.dest]);
-    const best = pool.reduce((m, s) => (distM(s, p) < distM(m, p) ? s : m));
-    return { name: best.name, dist: distM(best, p), lat: best.lat, lon: best.lon };
+    const best = pool.reduce((m, s) => (walkM(s, p) < walkM(m, p) ? s : m));
+    return { name: best.name, dist: walkM(best, p), lat: best.lat, lon: best.lon };
   }
 
   /**
@@ -150,6 +161,11 @@ export class RouteBuilder {
     const missing = this.missingWaypoints();
     if (missing.length) return `📍 Noch nicht befahren: ${missing.map((w) => w.name).join(', ')}.`;
     return this.opts.rules ? routeProblem(this.opts.rules, this.plain(), this.rn) : null;
+  }
+
+  /** Bezirkstour: Bezirke, durch die die Route noch nicht führt */
+  missingDistricts(): number[] {
+    return this.opts.rules ? missingDistricts(this.opts.rules, this.plain(), this.rn) : [];
   }
 
   /** „3 Punkte“: noch nicht befahren */
@@ -167,11 +183,47 @@ export class RouteBuilder {
   /** Warum diese Linie jetzt nicht geht (Challenge-Regeln, fährt gerade nicht) – null = ok */
   lineBlocked(lineId: string): string | null {
     if (this.opts.idle?.includes(lineId)) return `🌙 Die ${lineId} fährt um diese Uhrzeit nicht.`;
-    return this.opts.rules ? lineProblem(this.opts.rules, this.plain(), lineId, this.rn) : null;
+    return this.opts.rules ? lineProblem(this.opts.rules, this.before(), lineId, this.rn) : null;
   }
 
   get position(): Station {
+    // Einfügemodus: die nächste Linie startet dort, wo der Fußweg beginnt
+    if (this.swapAt != null) return this.swapAt === 0 ? this.start : this.net.station(this.legs[this.swapAt - 1].to);
     return this.legs.length ? this.net.station(this.legs[this.legs.length - 1].to) : this.start;
+  }
+
+  /** Teilstrecken vor der nächsten Linie (im Einfügemodus nur die vor dem Fußweg) – für die Regeln */
+  private before() {
+    return this.plain(this.swapAt != null ? this.legs.slice(0, this.swapAt) : this.legs);
+  }
+
+  /**
+   * Neue Teilstrecke: normal ans Ende, im Einfügemodus an die Stelle des Fußwegs. Die Fahrt danach steigt dann am neuen
+   * Ausstieg ein (oder fällt weg, wenn sie von dort nicht mehr passt). Dieselbe Linie direkt davor/danach → eine Fahrt.
+   */
+  private addLeg(leg: DraftLeg) {
+    const i = this.swapAt;
+    this.swapAt = null;
+    if (i == null) {
+      // dieselbe Linie direkt weiter (U1 bis Kagran, dann U1 ab Kagran) → eine Fahrt
+      const last = this.legs[this.legs.length - 1];
+      if (last && last.line.id === leg.line.id && last.to === leg.from && this.along(leg.line, last.from, leg.to)) last.to = leg.to;
+      else this.legs.push(leg);
+      return;
+    }
+    const prev = this.legs[i - 1];
+    if (prev && prev.line.id === leg.line.id && prev.to === leg.from && this.along(leg.line, prev.from, leg.to)) {
+      prev.to = leg.to;
+      this.reflow(i - 1);
+    } else {
+      this.legs.splice(i, 0, leg);
+      this.reflow(i);
+    }
+  }
+
+  /** fährt die Linie (in einer Haltefolge) von `from` weiter nach `to`? */
+  private along(line: Line, from: string, to: string): boolean {
+    return this.net.patterns(line).some((p) => p.indexOf(from) >= 0 && p.indexOf(to, p.indexOf(from) + 1) > p.indexOf(from));
   }
 
   userLegs(): UserLeg[] {
@@ -182,19 +234,19 @@ export class RouteBuilder {
   segments() {
     const segs: { path: [number, number][]; color: string; walk: boolean }[] = [];
     let pos = this.start;
-    const ll = (s: Station): [number, number] => [s.lat, s.lon];
     for (const l of this.legs) {
       const from = this.net.station(l.from);
-      if (from.id !== pos.id) segs.push({ path: [ll(pos), ll(from)], color: '#666', walk: true });
+      if (from.id !== pos.id) segs.push({ path: walkPath(pos, from), color: '#666', walk: true });
       segs.push({ path: smoothPath(l.line.id, l.from, l.to, this.net.legPath(l.line, l.from, l.to)), color: l.line.color, walk: false });
       pos = this.net.station(l.to);
     }
     if (this.legs.length && !this.isGoal(pos.id)) {
       const g = this.goalNear(pos);
-      segs.push({ path: [ll(pos), [g.lat, g.lon]], color: '#666', walk: true });
+      segs.push({ path: walkPath(pos, g), color: '#666', walk: true });
     }
-    if (this.pickedLine && this.board && this.board !== pos.id)
-      segs.push({ path: [ll(pos), ll(this.net.station(this.board))], color: '#666', walk: true });
+    const at = this.position;
+    if (this.pickedLine && this.board && this.board !== at.id)
+      segs.push({ path: walkPath(at, this.net.station(this.board)), color: '#666', walk: true });
     return segs;
   }
 
@@ -211,6 +263,18 @@ export class RouteBuilder {
 
   /** Hinweis, nachdem eine frühere Teilstrecke geändert wurde (z.B. „ab hier neu wählen“) */
   private notice = '';
+  /** Fußweg vor Teilstrecke i wird gerade durch eine Linie ersetzt (Auswahl offen) */
+  private swapAt: number | null = null;
+
+  /**
+   * Fußweg mitten in der Route: ein reines Werkzeug – antippen, dann kommt die nächste eingegebene Linie an diese
+   * Stelle statt ans Ende (ohne Vorschläge, die würden die Lösung verraten). „Beenden“ verlässt den Modus.
+   */
+  private swapControls(i: number): string {
+    if (this.opts.typed || this.locked) return '';
+    if (this.swapAt !== i) return `<button class="walk-swap link" data-swap="${i}" title="Die nächste Linie hier statt am Ende einfügen">➕ Linie einfügen</button>`;
+    return `<span class="walk-swap-on">⤵ nächste Linie kommt hierher <button class="link" data-swap-cancel>Beenden</button></span>`;
+  }
   /** Linie per Tastatur gewählt → Fokus beim Ausstieg bzw. (hält woanders) beim Einstieg */
   private openPicker = false;
   /** Einstieg gerade geändert → Fokus bleibt dort */
@@ -230,26 +294,40 @@ export class RouteBuilder {
       if (train) list.append(h('li', { class: 'leg-walk walk-quiet' }, `🚆 Im Zug aus ${esc(this.opts.umland!.town)} – ca. ${train.min} min bis ${esc(from.name)}`));
       // Fußweg vor dieser Teilstrecke: zwischendurch und über 250 m als eigener Block (wie eine Fahrt)
       else if (from.id !== pos.id) {
-        const d = distM(pos, from);
+        const d = walkM(pos, from);
+        // über die Donau: nur über eine Brücke – im Text dazusagen
+        const bridge = walkVia(pos, from).via;
         const level = d > loud() ? 'walk-loud' : d > quiet() ? 'walk-mid' : 'walk-quiet';
+        // Fußweg durch eine Linie ersetzen – mittendrin und am Anfang (dort bleibt der Weg eine leise Zeile)
+        const swap = this.swapControls(i);
         if (i > 0 && d > quiet() && !hideD)
           list.append(
-            h('li', { class: `leg walk-leg ${level}` }, `<div class="leg-main"><span class="walk-icon">${walkIcon()}</span>
-              <span class="leg-text">${esc(pos.name)} → <b>${esc(from.name)}</b><small>${walkText(d)}</small></span></div>`),
+            h('li', { class: `leg walk-leg ${level}${this.swapAt === i ? ' inserting' : ''}` }, `<div class="leg-main"><span class="walk-icon">${walkIcon()}</span>
+              <span class="leg-text">${esc(pos.name)} → <b>${esc(from.name)}</b><small>${walkText(d)}${bridge && !hideD ? ` · über die ${esc(bridgeLabel(bridge.name))}` : ''}</small></span>${swap}</div>`),
           );
-        else list.append(h('li', { class: `leg-walk ${level}` }, `${walkIcon()} ${hideD ? '' : `${fmtDist(d)} `}${scooterMode ? 'mit dem Scooter' : 'zu Fuß'} nach ${esc(from.name)}`));
+        else list.append(h('li', { class: `leg-walk ${level}${this.swapAt === i ? ' inserting' : ''}` }, `${walkIcon()} ${hideD ? '' : `${fmtDist(d)} `}${scooterMode ? 'mit dem Scooter' : 'zu Fuß'} nach ${esc(from.name)}${hideD ? '' : ` ${walkMin(d)}`}${bridge && !hideD ? ` über die ${esc(bridgeLabel(bridge.name))}` : ''} ${swap}`));
       }
       const stops = this.net.stopsBetween(l.line, l.from, l.to);
       const last = i === this.legs.length - 1;
       const fromName = this.opts.hideStart && from.id === this.start.id ? 'Start' : from.name;
       // Einbahn/Schleife: die Linie hält hier, aber nicht in diese Richtung → Einstieg woanders (Punkt 11)
-      const oneWay = !train && from.id !== pos.id && this.net.patterns(l.line).some((p) => p.includes(pos.id));
+      // nur wenn die Linie hier hält, das Ziel der Teilstrecke von hier aber in keiner Fahrtrichtung erreicht –
+      // wer bewusst ein Stück geht (U6 bis Burggasse, zu Fuß zur Josefstädter Straße), bekommt keinen Hinweis
+      const pats = this.net.patterns(l.line);
+      const oneWay =
+        !train &&
+        from.id !== pos.id &&
+        pats.some((p) => p.includes(pos.id)) &&
+        !pats.some((p) => {
+          const a = p.indexOf(pos.id);
+          return a >= 0 && p.indexOf(l.to, a + 1) > a;
+        });
       const li = h(
         'li',
         { class: 'leg' },
         `<div class="leg-main">${lineChip(l.line.mode, l.line.id, l.line.color)}
           <span class="leg-text">${esc(fromName)} →${typed ? ` <b>${esc(to.name)}</b>` : ''}${typed ? '<small></small>' : `<small>${stops} Station${stops === 1 ? '' : 'en'}</small>`}</span>
-          ${last ? '<button class="icon-btn" data-act="remove" title="Teilstrecke entfernen">✕</button>' : ''}</div>
+          <button class="icon-btn" data-act="remove" title="${last ? 'Teilstrecke entfernen' : 'Teilstrecke entfernen – dazwischen wird gegangen'}">✕</button></div>
           ${oneWay ? `<div class="one-way">↩ Die ${esc(l.line.id)} hält in diese Richtung nicht bei ${esc(pos.name)} (Einbahn/Schleife) – Einstieg ${esc(from.name)}.</div>` : ''}`,
       );
       if (!typed) {
@@ -263,13 +341,16 @@ export class RouteBuilder {
           const [nf, nt] = parseAlight(sel.value, l.from);
           l.from = nf;
           l.to = nt;
+          this.swapAt = null;
           this.reflow(i);
           this.resetForm();
         });
         li.querySelector('.leg-text small')!.before(sel);
       }
       li.querySelector('[data-act=remove]')?.addEventListener('click', () => {
-        this.legs.pop();
+        // auch mittendrin: die Fahrten danach bleiben, dazwischen wird gegangen (Lücke lässt sich wieder füllen)
+        this.legs.splice(i, 1);
+        this.swapAt = null;
         this.notice = '';
         this.resetForm();
       });
@@ -277,12 +358,27 @@ export class RouteBuilder {
       pos = to;
     });
     if (this.legs.length) this.el.append(list);
+    // Einfügemodus an/aus
+    list.querySelectorAll<HTMLElement>('[data-swap]').forEach((b) =>
+      b.addEventListener('click', () => {
+        this.swapAt = Number(b.dataset.swap);
+        this.notice = '';
+        this.resetForm();
+      }),
+    );
+    list.querySelectorAll<HTMLElement>('[data-swap-cancel]').forEach((b) =>
+      b.addEventListener('click', () => {
+        this.swapAt = null;
+        this.resetForm();
+      }),
+    );
     if (this.notice) this.el.append(h('div', { class: 'warn' }, esc(this.notice)));
 
     const arrived = this.isGoal(pos.id);
     const full = this.legs.length >= restrictionMaxLegs(this.restriction);
-    if (!arrived && !full) this.el.append(this.renderForm());
-    if (!arrived && full)
+    if (this.swapAt != null && !full) this.el.append(this.renderForm());
+    else if (!arrived && !full) this.el.append(this.renderForm());
+    if ((!arrived || this.swapAt != null) && full)
       this.el.append(h('div', { class: 'warn' }, `${esc(restrictionLabel(this.restriction!, this.banned))}: keine weitere Linie möglich.`));
 
     // E-Scooter: noch keine Linie – ganz mit dem Scooter abgeben geht auch
@@ -333,11 +429,22 @@ export class RouteBuilder {
    * nächstgelegenen Haltestelle (wie beim Neu-Hinzufügen). Kommt sie von dort nicht mehr in ihre Richtung zum alten
    * Ausstieg, fallen sie und alle späteren weg.
    */
-  private reflow(i: number) {
+  private reflow(i: number): void {
     this.notice = '';
+    const cur = this.legs[i];
     const next = this.legs[i + 1];
     if (!next) return;
-    const at = this.legs[i].to;
+    // dieselbe Linie fährt weiter (oder deckt die nächste Fahrt schon ab) → eine Fahrt, ohne Meldung
+    if (next.line.id === cur.line.id && this.along(cur.line, cur.from, next.to)) {
+      if (this.along(cur.line, cur.to, next.to)) cur.to = next.to;
+      this.legs.splice(i + 1, 1);
+      return this.reflow(i);
+    }
+    if (next.line.id === cur.line.id && next.to === cur.to) {
+      this.legs.splice(i + 1, 1);
+      return this.reflow(i);
+    }
+    const at = cur.to;
     const reach = (from: string) => this.net.patterns(next.line).some((p) => p.indexOf(from) >= 0 && p.indexOf(next.to, p.indexOf(from) + 1) > p.indexOf(from));
     const here = this.net.patterns(next.line).some((p) => p.includes(at));
     const board = here && reach(at) ? at : this.net.boardOptions(next.line, this.net.station(at), 1)[0]?.station.id;
@@ -359,7 +466,15 @@ export class RouteBuilder {
     const pos = this.position;
     const form = h('div', { class: 'leg-form' });
     const posName = this.opts.hideStart && pos.id === this.start.id ? 'dem Start' : pos.name;
-    form.append(h('div', { class: 'form-title' }, this.legs.length ? `Weiter ab <b>${esc(posName)}</b>` : `Los geht's ab <b>${esc(posName)}</b>`));
+    if (this.swapAt != null) {
+      const to = this.net.station(this.legs[this.swapAt].from);
+      const title = h('div', { class: 'form-title inserting' }, `Einfügen ab <b>${esc(posName)}</b> <small>statt zu Fuß nach ${esc(to.name)}</small> <button class="link" data-act="insert-off">Beenden</button>`);
+      title.querySelector('button')!.addEventListener('click', () => {
+        this.swapAt = null;
+        this.resetForm();
+      });
+      form.append(title);
+    } else form.append(h('div', { class: 'form-title' }, this.legs.length ? `Weiter ab <b>${esc(posName)}</b>` : `Los geht's ab <b>${esc(posName)}</b>`));
 
     if (!this.pickedLine) {
       const input = h('input', { type: 'text', class: 'line-input', placeholder: 'Linie eingeben, z.B. U2, 5B, 43, S45 …', autocomplete: 'off', spellcheck: 'false' });
@@ -431,7 +546,7 @@ export class RouteBuilder {
       .map((o) => {
         const bad = stProblem(o.station.id);
         if (train) return `<option value="${o.station.id}">${esc(this.opts.umland!.town)} – im Zug (in Wien ab ${esc(o.station.name)})</option>`;
-        return `<option value="${o.station.id}" ${bad ? 'disabled' : ''} title="${esc(bad ?? '')}">${o.dist === 0 ? `${esc(o.station.name)} (hier)` : `${esc(o.station.name)} · ${walkIcon()} ${fmtDist(o.dist)}`}${bad ? ` – ${problemBadge(this.opts.rules!)}` : ''}</option>`;
+        return `<option value="${o.station.id}" ${bad ? 'disabled' : ''} title="${esc(bad ?? '')}">${o.dist === 0 ? `${esc(o.station.name)} (hier)` : `${esc(o.station.name)} · ${walkIcon()} ${fmtDist(o.dist)} ${walkMin(o.dist)}`}${bad ? ` – ${problemBadge(this.opts.rules!)}` : ''}</option>`;
       })
       .join('');
     // gesperrter Einstieg vorgewählt → den ersten erlaubten nehmen
@@ -475,19 +590,20 @@ export class RouteBuilder {
         h(
           'div',
           { class: 'walk-alert walk-mid' },
+          // hält die Linie hier, ist ein anderer Einstieg selbst gewählt – dann nur den Weg nennen
           servesHere
-            ? `↩ In diese Richtung hält die ${esc(line.id)} nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`
-            : `${walkIcon()} Die ${esc(line.id)} hält nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`,
+            ? `${walkIcon()} Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`
+            :`${walkIcon()} Die ${esc(line.id)} hält nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`,
         ),
       );
-    else if (boardDist > 0 && !this.opts.hideDistances) form.append(h('div', { class: 'walk-note' }, `${walkIcon()} ${fmtDist(boardDist)} zum Einstieg ${esc(boardName)}`));
+    else if (boardDist > 0 && !this.opts.hideDistances) form.append(h('div', { class: 'walk-note' }, `${walkIcon()} ${fmtDist(boardDist)} zum Einstieg ${esc(boardName)} ${walkMin(boardDist)}`));
 
     // Ausstieg nach Richtung gruppiert
-    const alightSel = this.alightSelect(line, this.board!, null, this.plain(), !!train);
+    const alightSel = this.alightSelect(line, this.board!, null, this.before(), !!train);
     const commit = () => {
       if (!alightSel.value) return;
       const [from, to] = parseAlight(alightSel.value, this.board!);
-      this.legs.push({ line, from, to });
+      this.addLeg({ line, from, to });
       this.resetForm();
     };
     alightSel.addEventListener('change', commit);
@@ -530,7 +646,7 @@ export class RouteBuilder {
     let best: { station: Station; dist: number } | null = null;
     for (const st of this.net.stations.values()) {
       if (!st.lines.length) continue;
-      const d = distM(st, p);
+      const d = walkM(st, p);
       if (!best || d < best.dist) best = { station: st, dist: d };
     }
     return best;
@@ -554,7 +670,7 @@ export class RouteBuilder {
       const nb = rules?.restriction === 'minBridges' ? (this.rn.bridges?.(leg.line, leg.from, leg.to).length ?? 0) : 0;
       const flag = (nb ? ` 🌉${nb > 1 ? `×${nb}` : ''}` : '') + (goal || s.id === this.dest.id ? ' 🏁' : this.opts.targets?.some((t) => t.id === s.id) ? ' 🎯' : this.opts.waypoints?.some((t) => t.id === s.id) ? ' 📍' : '');
       const badge = bad ? ` – ${goal && rules && !legProblem(rules, prev, leg, this.rn) ? `noch nicht: ${bad.replace(/^\S+\s/, '').slice(0, 48)}` : problemBadge(rules!)}` : '';
-      return `<option value="${alt ? `${alt.id}>` : ''}${s.id}" ${bad ? 'disabled' : ''} title="${esc(bad ?? '')}">${esc(s.name)}${flag}${s.id === nearDest?.station.id ? ` 📍 ${fmtDist(nearDest.dist)} zum Ziel` : ''}${alt && alt.id !== board ? ` ↩ ab ${esc(alt.name)}` : ''}${badge}</option>`;
+      return `<option value="${alt ? `${alt.id}>` : ''}${s.id}" ${bad ? 'disabled' : ''} title="${esc(bad ?? '')}">${esc(s.name)}${flag}${s.id === nearDest?.station.id ? ` 📍 ${fmtDist(nearDest.dist)} zum Ziel ${walkMin(nearDest.dist)}` : ''}${alt && alt.id !== board ? ` ↩ ab ${esc(alt.name)}` : ''}${badge}</option>`;
     };
     const here = this.net.station(board);
     // Reihenfolge wie auf dem Linienplan: obere Stationen · "↑ Richtung …" · hier · "↓ Richtung …" · untere Stationen.
@@ -595,7 +711,7 @@ export class RouteBuilder {
         err.textContent = `Station „${bad}“ gibt es nicht – bitte aus den Vorschlägen wählen.`;
         return;
       }
-      this.legs.push({ line, from: from!, to: to! });
+      this.addLeg({ line, from: from!, to: to! });
       this.resetForm();
     };
     fields.querySelector('[data-act=add]')!.addEventListener('click', add);

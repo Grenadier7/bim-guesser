@@ -1,14 +1,21 @@
 import type { QuizSettings } from '../../shared/quiz.ts';
 import type { PublicConfig } from '../../shared/config.ts';
+import type { BarrierJson } from '../../shared/barrier.ts';
 import type { ChatMessage, DailyBoard, DailyResult, DailyRound, GameMode, GameSettings, Guesses, JoinResponse, LatLon, LobbyState, NetworkPublic, RoundReveal, SubmitResponse, TipKind, TipResult, TrainingResult, TrainingRound, UserLeg } from '../../shared/types.ts';
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Grund vom Server, z.B. 'not-member' (Lobby weg oder entfernt) */
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
+
+/** store.ts hängt sich hier ein: Server sagt „nicht (mehr) in diesem Spiel“ → zurück zur Startseite */
+export const apiHooks = { notMember: () => {} };
 
 /** Lobby-Code + geheimer Spieler-Token */
 export interface Auth {
@@ -23,7 +30,10 @@ async function call<T>(method: string, url: string, body?: unknown): Promise<T> 
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new ApiError(data.error ?? `HTTP ${res.status}`, res.status);
+  if (!res.ok) {
+    if (data.code === 'not-member') apiHooks.notMember();
+    throw new ApiError(data.error ?? `HTTP ${res.status}`, res.status, data.code);
+  }
   return data as T;
 }
 
@@ -33,6 +43,8 @@ const q = (a: Auth) => `token=${encodeURIComponent(a.token)}`;
 export const api = {
   network: (plan?: string) => call<NetworkPublic>('GET', plan && plan !== 'regular' ? `/api/network?plan=${encodeURIComponent(plan)}` : '/api/network'),
   config: () => call<PublicConfig>('GET', '/api/config'),
+  /** Donau als Hindernis für Fußwege */
+  barrier: () => call<BarrierJson>('GET', '/api/barrier'),
   create: (playerName: string, mode: GameMode, settings: Partial<GameSettings> | Partial<QuizSettings>) =>
     call<JoinResponse>('POST', '/api/games', { playerName, mode, settings }),
   exists: (code: string) => call<{ exists: boolean; mode?: GameMode; phase?: 'lobby' | 'playing' | 'finished' }>('GET', `${g(code)}/exists`),

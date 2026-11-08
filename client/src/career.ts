@@ -1,7 +1,7 @@
 // Fortschritt im Browser (auch ohne Account): XP & Level, Serie mit Joker, Wochenziel, Sammelkarte „Mein Wien“,
 // Medaillen. Mit Account wird der Stand synchronisiert (account.ts) – Level und Medaillen kommen dann vom Server.
 import type { LevelInfo, MedalPublic, UserLeg } from '../../shared/types.ts';
-import { CAREER_KEY, XP, emptyCareer, levelOf, medalList, reachedKeys, streakOf, trimActs, viennaDay, weekCount, type Career, type CareerCounters, type MedalStats } from '../../shared/career.ts';
+import { CAREER_KEY, COURSE_IDS, XP, emptyCareer, levelOf, medalList, reachedKeys, streakOf, trimActs, viennaDay, weekCount, type Career, type CareerCounters, type MedalStats } from '../../shared/career.ts';
 import { isSpecialLine } from '../../shared/rules.ts';
 import { SEEN_MEDALS, account } from './account.ts';
 import { loadJson, saveJson } from './storage.ts';
@@ -15,7 +15,10 @@ export function career(): Career {
 
 /** Kurse & Tutorial aus dem Lernstand (gleiche Schlüssel wie am Server) */
 function learnState(): { done: number; mastered: number; tutorial: boolean } {
-  const courses = Object.values(loadJson<Record<string, { done?: boolean; mastered?: boolean }>>('oeffi-courses-v1', {}));
+  // nur Kurse aus dem Lernpfad (ein entfernter Kurs zählt nicht mehr)
+  const courses = Object.entries(loadJson<Record<string, { done?: boolean; mastered?: boolean }>>('oeffi-courses-v1', {}))
+    .filter(([id]) => COURSE_IDS.includes(id))
+    .map(([, c]) => c);
   const p = loadJson<{ tutorialDone?: boolean }>('oeffi-progress-v1', {});
   return { done: courses.filter((c) => c?.done).length, mastered: courses.filter((c) => c?.mastered).length, tutorial: !!p.tutorialDone };
 }

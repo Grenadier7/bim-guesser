@@ -83,7 +83,7 @@ export function stationsOf(r: RouteOption, rn: RuleNet): string[] {
  * gesperrte Bezirke, unterirdische Abschnitte, Insider-Linien.
  */
 export function avoidFor(rr: RuleRound, net: Network): Pick<RouteQuery, 'avoidStations' | 'avoidLines' | 'avoidLineStations'> {
-  const blocked = rr.restriction === 'avoidInner' ? INNER_DISTRICTS : rr.restriction === 'avoidDistricts' ? (rr.districts ?? []) : [];
+  const blocked = rr.restriction === 'avoidInner' ? INNER_DISTRICTS : rr.restriction === 'avoidDistricts' || rr.restriction === 'avoidMany' ? (rr.districts ?? []) : [];
   if (blocked.length) return { avoidStations: [...net.stations.values()].filter((s) => blocked.includes(s.district)).map((s) => s.id) };
   if (rr.restriction === 'sunny') {
     const byName = new Map<string, string[]>();
@@ -123,6 +123,7 @@ export function searchVariants(r: Restriction | null): Partial<RouteQuery>[] {
     case 'sunny':
     case 'avoidInner':
     case 'avoidDistricts':
+    case 'avoidMany':
       return [{ onlyModes: ['S', 'T', 'B'] }];
     case 'minBridges':
       return [{ onlyModes: ['S', 'T', 'B'] }, { onlyModes: ['U', 'S', 'T'] }, { onlyModes: ['T', 'B'] }, { onlyModes: ['T'] }];
@@ -355,6 +356,52 @@ export function pickDistricts(routes: RouteOption[], a: Station, b: Station, rn:
   return [...picked].sort((x, y) => x - y);
 }
 
+/**
+ * Sperrzone XXL: viel mehr gesperrt – 2 Bezirke auf der schnellsten Verbindung, ein paar auf den nächstbesten, dazu
+ * zufällige, insgesamt 7–9 (Start- und Ziel-Bezirk nie). Ob es noch einen Weg gibt, prüft pairFits.
+ */
+export function pickManyDistricts(routes: RouteOption[], a: Station, b: Station, rn: RuleNet): number[] | null {
+  const valid = routes.filter((r) => r.key !== 'walk');
+  if (!valid.length) return null;
+  const own = new Set([a.district, b.district]);
+  const districtsOf = (r: RouteOption) => new Set(stationsOf(r, rn).map((id) => rn.district(id) ?? 0).filter((d) => d && !own.has(d)));
+  const shuffle = <T>(l: T[]) => l.map((x) => ({ x, k: Math.random() })).sort((p, q) => p.k - q.k).map((p) => p.x);
+  const onBest = shuffle([...districtsOf(valid[0])]);
+  if (!onBest.length) return null;
+  const want = 7 + Math.floor(Math.random() * 3);
+  const picked = new Set<number>(onBest.slice(0, 2));
+  for (const d of shuffle([...new Set(valid.slice(1, 5).flatMap((r) => [...districtsOf(r)]))])) if (picked.size < 4) picked.add(d);
+  for (const d of shuffle(Array.from({ length: 23 }, (_, i) => i + 1).filter((d) => !own.has(d) && !picked.has(d)))) if (picked.size < want) picked.add(d);
+  return [...picked].sort((x, y) => x - y);
+}
+
+/**
+ * Bezirkstour: 2 (manchmal 3) Bezirke, durch die die schnellste Verbindung nicht führt, die aber grob am Weg liegen
+ * (Umweg über den Bezirk ≤ 60 % mehr Luftlinie). Mittelpunkt eines Bezirks = Mittel seiner Haltestellen.
+ */
+export function pickVisitDistricts(routes: RouteOption[], a: Station, b: Station, rn: RuleNet, net: Network): number[] | null {
+  const valid = routes.filter((r) => r.key !== 'walk');
+  if (!valid.length) return null;
+  const onBest = new Set(stationsOf(valid[0], rn).map((id) => rn.district(id) ?? 0));
+  const sum = new Map<number, { lat: number; lon: number; n: number }>();
+  for (const s of net.stations.values()) {
+    if (!s.lines.length || s.district < 1 || s.district > 23) continue;
+    const c = sum.get(s.district) ?? { lat: 0, lon: 0, n: 0 };
+    sum.set(s.district, { lat: c.lat + s.lat, lon: c.lon + s.lon, n: c.n + 1 });
+  }
+  const d = distM(a, b);
+  const near = [...sum.entries()]
+    .filter(([id]) => id !== a.district && id !== b.district && !onBest.has(id))
+    .map(([id, c]) => ({ id, at: { lat: c.lat / c.n, lon: c.lon / c.n } }))
+    .filter((x) => distM(a, x.at) + distM(x.at, b) <= d * 1.6)
+    .map((x) => x.id);
+  if (near.length < 2) return null;
+  const shuffle = <T>(l: T[]) => l.map((x) => ({ x, k: Math.random() })).sort((p, q) => p.k - q.k).map((p) => p.x);
+  return shuffle(near)
+    .slice(0, near.length >= 3 && Math.random() < 0.3 ? 3 : 2)
+    .sort((x, y) => x - y);
+}
+
 // ---------------------------------------------------------------- Kriterien je Challenge
 
 const STEPHANSPLATZ = { lat: 48.2085, lon: 16.3731 };
@@ -406,6 +453,12 @@ export function pairFits(rr: RuleRound, all: RouteOption[], ok: RouteOption[], r
     case 'avoidDistricts':
       // die Sperre kostet etwas, aber nicht die halbe Stadt
       return !routeAllowed(best, rr, rn) && ok[0].medianMin <= best.medianMin + 15;
+    case 'avoidMany':
+      // viel gesperrt: ein deutlicher Umweg, aber es gibt einen Weg durch die Lücken
+      return !routeAllowed(best, rr, rn) && ok[0].medianMin <= best.medianMin + 25;
+    case 'visitDistricts':
+      // die schnellste führt nicht schon durch alle Bezirke – der Umweg bleibt machbar
+      return !routeAllowed(best, rr, rn) && ok[0].medianMin <= best.medianMin + 25;
     case 'sunny': {
       // sonst wäre es keine Herausforderung: die schnellste Verbindung führt unter die Erde
       const legs = rides(best);

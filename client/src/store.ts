@@ -4,7 +4,7 @@ import type { GameEvent, GameSettings, GameState, LobbyState, PlayerPublic, Quiz
 import type { QuizSettings } from '../../shared/quiz.ts';
 import { TIME_LIMITS } from '../../shared/rules.ts';
 import { NOT_REMEMBERED } from '../../shared/defaults.ts';
-import { api } from './api.ts';
+import { api, apiHooks } from './api.ts';
 import type { GameMap } from './map.ts';
 import type { NetIndex } from './net.ts';
 import { loadMerged, saveJson } from './storage.ts';
@@ -34,6 +34,8 @@ interface Prefs {
   settings: Partial<GameSettings>;
   /** zuletzt verwendete Quiz-Einstellungen */
   quiz: Partial<QuizSettings>;
+  /** „nur fahrende Linien“ ist seit v1.3 Standard – alte gespeicherte „aus“ einmalig verwerfen */
+  runningDefault?: boolean;
 }
 
 const SESSION_KEY = 'oeffi-guesser-session';
@@ -57,7 +59,8 @@ export const app = {
   /** Quiz: eigenes Ergebnis je Frage (Liste im Endstand) – beginnt bei Frage 1 neu */
   quizLog: new Map<number, QuizLogEntry>(),
   /** Lernmodus gleich mit einer Übung öffnen (z.B. „Diese üben“ im Quiz-Endstand) */
-  learnStart: null as null | 'mistakes',
+  /** Lernen gleich mit etwas starten: Fehlerliste (Quiz) oder ein Kurs (Kurs-Tipp nach der Routenjagd) */
+  learnStart: null as null | 'mistakes' | { course: string },
   /** Bildschirm außerhalb einer Lobby */
   view: 'home' as 'home' | 'learn' | 'training' | 'tutorial' | 'admin' | 'daily' | 'me',
   prefs: loadMerged<Prefs>(PREFS_KEY, { name: '', settings: {}, quiz: {} }),
@@ -70,12 +73,18 @@ export const app = {
   onIdle: (_ids: string[], _deadline: number) => {},
   /** Lobby geschlossen (Inaktivität / Host) */
   onClosed: (_reason: string) => {},
+  /** Lobby gibt es nicht mehr oder man ist nicht mehr dabei (z.B. Seite nach Stunden wieder geöffnet) */
+  onLost: () => {},
 };
 
 // gespeicherte Zeitlimits, die es nicht mehr gibt (z.B. altes 1:30), verwerfen
 {
   const t = app.prefs.settings.roundTimeLimitSec;
   if (t != null && !TIME_LIMITS.includes(t)) delete app.prefs.settings.roundTimeLimitSec;
+  if (!app.prefs.runningDefault) {
+    delete app.prefs.settings.onlyRunning;
+    app.prefs.runningDefault = true;
+  }
   // Netz (Aktuell) und Fokus-Kreis starten immer mit dem Standard
   for (const k of NOT_REMEMBERED) delete app.prefs.settings[k];
   // Schnellwahl gespeichert? Dann bestimmt sie die Regler (die Stufen können sich geändert haben)
@@ -172,6 +181,31 @@ export function endSession() {
   app.onChange();
 }
 
+/** Server kennt uns in dieser Lobby nicht mehr → Sitzung beenden, Startseite, Erklärung (einmal) */
+function sessionLost() {
+  if (!app.session) return;
+  endSession();
+  app.view = 'home';
+  app.onChange();
+  app.onLost();
+}
+apiHooks.notMember = sessionLost;
+
+/** Tab war lange im Hintergrund (Handy gesperrt, Laptop zu): gleich nachsehen, ob es das Spiel noch gibt */
+// (Tests laden den Store ohne Browser)
+if (typeof document !== 'undefined') document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !app.session) return;
+  const auth = app.session;
+  api
+    .state(auth)
+    .then((res) => {
+      if (app.session !== auth) return;
+      setState(res.state);
+      if (!es || es.readyState === EventSource.CLOSED) connect();
+    })
+    .catch(() => {}); // „nicht mehr dabei“ erledigt sessionLost
+});
+
 /** Nach Neuladen der Seite wieder in die Lobby einsteigen */
 export async function restoreSession(): Promise<boolean> {
   const saved = loadMerged<Partial<Session>>(SESSION_KEY, {}, tabStore);
@@ -224,7 +258,7 @@ function connect() {
     } catch (err) {
       // 403: nicht mehr in der Lobby, 404: Lobby existiert nicht mehr
       const status = (err as { status?: number }).status;
-      if (status === 403 || status === 404) endSession();
+      if (status === 404) sessionLost(); // 403 „nicht mehr dabei“ erledigt schon apiHooks
     } finally {
       checking = false;
     }

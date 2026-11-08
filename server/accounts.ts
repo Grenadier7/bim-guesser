@@ -34,7 +34,7 @@ import type {
 import { isSpecialLine } from '../shared/rules.ts';
 import { MONOTONE_KEYS, mergeProgress } from '../shared/progress.ts';
 import type { DailyBoardRow } from '../shared/types.ts';
-import { CAREER_KEY, XP, levelOf, medalList, reachedKeys, streakOf, viennaDay, type Career, type MedalStats } from '../shared/career.ts';
+import { CAREER_KEY, COURSE_COUNT, COURSE_IDS, XP, levelOf, medalList, reachedKeys, streakOf, viennaDay, type Career, type MedalStats } from '../shared/career.ts';
 import { GameError, type Lobby } from './lobby.ts';
 import type { Network } from './network.ts';
 import { STATE_DIR } from './paths.ts';
@@ -463,7 +463,8 @@ export class Accounts {
   /** Kurse aus dem synchronisierten Lernstand */
   private courses(userId: number): { done: number; mastered: number; total: number } {
     const c = this.data(userId)[COURSES_KEY];
-    const list = c && typeof c === 'object' ? Object.values(c as Record<string, { done?: boolean; mastered?: boolean }>) : [];
+    // nur Kurse, die es im Lernpfad gibt (ein entfernter Kurs zählt nicht mehr)
+    const list = c && typeof c === 'object' ? Object.entries(c as Record<string, { done?: boolean; mastered?: boolean }>).filter(([id]) => COURSE_IDS.includes(id)).map(([, x]) => x) : [];
     return { done: list.filter((x) => x?.done).length, mastered: list.filter((x) => x?.mastered).length, total: COURSE_COUNT };
   }
 
@@ -1189,8 +1190,8 @@ function bucketMax(rows: AdminStats['samples'], ms: number): AdminStats['samples
   return [...out.values()];
 }
 
-/** Anzahl der Kurse im Lernpfad (für „alle Kurse“) – muss zu client/src/learn/courses/index.ts passen */
-export const COURSE_COUNT = 9;
+/** Anzahl der Kurse im Lernpfad (für „alle Kurse“) – Liste in shared/career.ts */
+export { COURSE_COUNT };
 
 /** leer → null (keine Adresse), ungültig → undefined */
 function cleanEmail(v: unknown): string | null | undefined {

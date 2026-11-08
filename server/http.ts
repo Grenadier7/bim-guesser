@@ -40,5 +40,5 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   if (err instanceof GameError && status >= 500) console.warn(`[${new Date().toLocaleTimeString('de-AT')}] ${err.message}`);
   else if (status >= 500) console.error(err);
   const msg = err instanceof GameError ? err.message : status < 500 ? 'Ungültige Anfrage' : 'Interner Fehler';
-  res.status(status).json({ error: msg });
+  res.status(status).json(err instanceof GameError && err.code ? { error: msg, code: err.code } : { error: msg });
 }

@@ -5,11 +5,8 @@ import { esc } from '../../ui.ts';
 import { compass } from '../../training/coach.ts';
 import { ask, CENTER, chip, chips, type Course, crossings, DIAMETRAL, districtName, farEnd, have, lineQuiz, mainOf, nearEnd, pick, quiz, RADIAL_FAMILY, RADIAL_OTHER, RING_LINES, route, stationByName, type Step, table, TANGENTIAL } from './common.ts';
 
-/**
- * Farben für den Gesamtüberblick: drei Sorten Strahlen. U-Bahnen behalten immer ihre Linienfarbe; die übrigen Farben
- * dürfen keiner U-Bahn (U3 orange, U4 grün …) und nicht der S-Bahn (blau) ähneln.
- */
-const KIND_COLOR = { radial: '#9e1b32', diameter: '#5f3dc4', ring: '#0c8599' };
+/** Bims im Gesamtüberblick alle in ihrer Farbe – die Sorte zeigt die Beschriftung (Strahl: außen, sonst beide Enden) */
+const TRAM = NET_COLOR.Tfocus;
 
 export const radialCourse: Course = {
   id: 'radial',
@@ -31,24 +28,24 @@ export const radialCourse: Course = {
       // jede Linie nur in einer Sorte – wer ein Stück die Ringstraße fährt, ist ein Ring-Strahl
       const rays = radials.filter((id) => !ringRays.includes(id));
       const colors: Record<string, string> = {};
-      // Badner Bahn bleibt blau wie überall
-      for (const id of rays) colors[id] = id === 'BB' ? NET_COLOR.BB : KIND_COLOR.radial;
-      for (const id of diameters) colors[id] = app.net.lines.get(id)?.mode === 'U' ? app.net.lines.get(id)!.color : KIND_COLOR.diameter;
-      for (const id of ringRays) colors[id] = KIND_COLOR.ring;
-      const sw = (c: string) => `<span class="swatch" style="background:${c}"></span>`;
+      // Badner Bahn bleibt blau wie überall, U-Bahnen in ihrer Farbe, alle Bims im Bim-Rot
+      for (const id of rays) colors[id] = id === 'BB' ? NET_COLOR.BB : TRAM;
+      for (const id of diameters) colors[id] = app.net.lines.get(id)?.mode === 'U' ? app.net.lines.get(id)!.color : TRAM;
+      for (const id of ringRays) colors[id] = TRAM;
       return {
         title: 'Alle Strahlen zusammen',
         html: `<p>So sieht das ganze Spinnennetz aus – drei Sorten Strahlen:</p>
           ${table([
-            [`${sw(KIND_COLOR.radial)} <b>Radial</b>`, `vom Ring hinaus: ${chips(rays, colors)}`],
-            [`${diameters.every((id) => app.net.lines.get(id)?.mode === 'U') ? '🚇' : sw(KIND_COLOR.diameter)} <b>Durchmesser</b>`, `quer durchs Zentrum: ${chips(diameters, colors)}${diameters.some((id) => app.net.lines.get(id)?.mode === 'U') ? ' <small class="muted">(U-Bahn in ihren Linienfarben)</small>' : ''}`],
-            [`${sw(KIND_COLOR.ring)} <b>Ring-Strahlen</b>`, `ein Stück die Ringstraße entlang, dann hinaus: ${chips(ringRays, colors)}`],
+            ['<b>Radial</b>', `vom Ring hinaus – Nummer nur außen: ${chips(rays, colors)}`],
+            ['<b>Durchmesser</b>', `quer durchs Zentrum – Nummer an beiden Enden: ${chips(diameters, colors)}`],
+            ['<b>Ring-Strahlen</b>', `ein Stück die Ringstraße entlang, dann hinaus – Nummer an beiden Enden: ${chips(ringRays, colors)}`],
           ])}
           <p class="muted">Fast jede Gegend hat „ihren“ Strahl ins Zentrum – wer ihn kennt, findet fast immer eine direkte Verbindung.</p>`,
         lines: [...rays, ...diameters, ...ringRays],
         colors,
         bands: { ring: true },
         allLabels: true,
+        bothEnds: [...diameters, ...ringRays],
       };
     };
     const steps: Step[] = [
@@ -88,6 +85,8 @@ export const radialCourse: Course = {
         lines: radials,
         context: ['U2', 'U6'],
         marks: u6x.map(([, s]) => s),
+        // ausnahmsweise näher: es geht ums Prinzip am Gürtel, nicht um die Endstationen
+        fitMarks: true,
       },
     ];
     const [qLine, qStation] = pick(u6x);

@@ -42,7 +42,7 @@ test('Ausstieg einer früheren Teilstrecke ändern → nächste Teilstrecke star
   await t.shot('builder-walk-loud');
   await p.locator('[data-act=change]').click();
 
-  // Punkt 3: zwei Teilstrecken mit derselben U-Bahn, dann den ersten Ausstieg früher setzen
+  // dieselbe U-Bahn zweimal hintereinander → eine Fahrt; danach den Ausstieg früher setzen
   const line = net.lines.find((l) => l.mode === 'U' && l.patterns.some((pt) => pt.indexOf(start.id) >= 0 && pt.indexOf(start.id) + 5 < pt.length))!;
   const pat = line.patterns.find((pt) => pt.indexOf(start.id) >= 0 && pt.indexOf(start.id) + 5 < pt.length)!;
   const k = pat.indexOf(start.id);
@@ -55,13 +55,14 @@ test('Ausstieg einer früheren Teilstrecke ändern → nächste Teilstrecke star
   };
   await pickLeg(x);
   await pickLeg(y);
-  assert.equal(await p.locator('ol.legs li.leg:not(.walk-leg)').count(), 2);
-  // erster Ausstieg: x → x2 (früher) – zweite Teilstrecke startet jetzt bei x2
-  const first = p.locator('ol.legs li.leg:not(.walk-leg)').first().locator('.leg-alight');
-  const v2 = await first.locator('option').evaluateAll((os, id) => os.map((o) => (o as HTMLOptionElement).value).find((v) => v === id || v.endsWith(`>${id}`))!, x2);
-  await first.selectOption(v2);
-  const second = await p.locator('ol.legs li.leg:not(.walk-leg)').nth(1).locator('.leg-text').innerText();
-  assert.ok(second.startsWith(name(x2)), `zweite Teilstrecke beginnt bei „${second.split('→')[0].trim()}“ statt ${name(x2)}`);
+  assert.equal(await p.locator('ol.legs li.leg:not(.walk-leg)').count(), 1, 'gleiche Linie direkt weiter → eine Fahrt');
+  const legSel = p.locator('ol.legs li.leg:not(.walk-leg)').first().locator('.leg-alight');
+  assert.equal(await legSel.inputValue().then((v) => v.split('>').pop()), y);
+  // Ausstieg früher setzen (x2)
+  const v2 = await legSel.locator('option').evaluateAll((os, id) => os.map((o) => (o as HTMLOptionElement).value).find((v) => v === id || v.endsWith(`>${id}`))!, x2);
+  await legSel.selectOption(v2);
+  assert.equal(await p.locator('ol.legs li.leg:not(.walk-leg)').count(), 1);
+  assert.ok((await p.locator('.form-title').innerText()).includes(name(x2)), 'weiter ab dem neuen Ausstieg');
   await t.shot('builder-reflow');
   assert.deepEqual(t.errors, []);
   await t.context.close();

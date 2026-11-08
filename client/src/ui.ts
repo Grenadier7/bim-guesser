@@ -55,7 +55,7 @@ export function routeDetails(route: RouteOption, star?: StarFn): string {
     .map((l) => {
       const min = legMinutes(l.dep, l.arr);
       if (l.mode === 'W')
-        return `<li class="ld-walk"><span class="ld-time">${esc(l.dep)}</span><span>🚶 ${min ? `${min} min ` : ''}zu Fuß${l.toName && l.toName !== l.fromName ? ` nach ${esc(l.toName)}` : ''}</span></li>`;
+        return `<li class="ld-walk"><span class="ld-time">${esc(l.dep)}</span><span>🚶 zu Fuß${l.toName && l.toName !== l.fromName ? ` nach ${esc(l.toName)}` : ''} (${Math.max(1, min)} min)</span></li>`;
       return `<li><span class="ld-time">${esc(l.dep)}</span><span>${lineChip(l.mode, l.line, l.color)}${star && l.line ? star(l.line) : ''} <b>${esc(l.fromName)}</b> → <b>${esc(l.toName)}</b>
         <small>${esc(l.dep)}–${esc(l.arr)} · ${min} min${withText(l.with, 'auch ')}</small></span></li>`;
     })
@@ -85,7 +85,7 @@ function stepsDetails(route: RouteOption, star?: StarFn): string {
       return `<li class="ld-wait"><span class="ld-time">${esc(st.at)}</span><span>⏳ Ø ${st.min} min warten <small>(fährt etwa alle ${st.every} min${withText(st.with, 'mit ')})</small></span></li>`;
     if (st.kind === 'transfer')
       return `<li class="ld-walk"><span class="ld-time">${esc(st.at)}</span><span>🔀 ${st.min} min umsteigen</span></li>`;
-    return `<li class="ld-walk"><span class="ld-time">${esc(st.at)}</span><span>🚶 ${st.min} min zu Fuß nach ${esc(st.to)}</span></li>`;
+    return `<li class="ld-walk"><span class="ld-time">${esc(st.at)}</span><span>🚶 zu Fuß nach ${esc(st.to)} (${st.min} min)</span></li>`;
   });
   const end = route.steps!.length ? route.steps![route.steps!.length - 1] : null;
   const endAt = end ? addMin(end.at, end.min) : '';
@@ -161,11 +161,11 @@ export function makeExpandable(list: HTMLElement) {
  * Eigener Bestätigungsdialog statt confirm() (das wirkt fremd und sieht am Handy je nach Browser anders aus).
  * Escape oder „Abbrechen“ = nein; `danger` färbt den Ja-Knopf rot.
  */
-export function ask(message: string, opts: { ok?: string; cancel?: string; danger?: boolean; title?: string } = {}): Promise<boolean> {
+export function ask(message: string, opts: { ok?: string; cancel?: string | null; danger?: boolean; title?: string } = {}): Promise<boolean> {
   return new Promise((resolve) => {
     const dlg = h('dialog', { class: 'ask-dlg', 'aria-label': opts.title ?? 'Bestätigen' });
     dlg.innerHTML = `${opts.title ? `<h3>${esc(opts.title)}</h3>` : ''}<p>${esc(message)}</p>
-      <div class="ask-btns"><button class="btn" data-v="0">${esc(opts.cancel ?? 'Abbrechen')}</button>
+      <div class="ask-btns">${opts.cancel === null ? '' : `<button class="btn" data-v="0">${esc(opts.cancel ?? 'Abbrechen')}</button>`}
       <button class="btn ${opts.danger ? 'btn-danger' : 'btn-primary'}" data-v="1">${esc(opts.ok ?? 'OK')}</button></div>`;
     let done = false;
     const finish = (v: boolean) => {
@@ -190,7 +190,12 @@ export function ask(message: string, opts: { ok?: string; cancel?: string; dange
   });
 }
 
+let quietUntil = 0;
+/** Meldungen kurz unterdrücken – z.B. während ein Dialog schon erklärt, was los ist */
+export const quietToasts = (ms: number) => (quietUntil = Date.now() + ms);
+
 export function toast(msg: string, kind: 'error' | 'info' = 'error', action?: { label: string; run: () => void }) {
+  if (Date.now() < quietUntil) return;
   const el = h('div', { class: `toast toast-${kind}`, role: kind === 'error' ? 'alert' : 'status', 'aria-live': kind === 'error' ? 'assertive' : 'polite' }, esc(msg));
   // optionaler Knopf (z.B. „nur S1 merken“) – Meldung bleibt dann etwas länger
   if (action) {

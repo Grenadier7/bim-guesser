@@ -19,15 +19,17 @@ export interface ChallengeContext {
   water?: boolean;
   /** Netzplan „Zielnetz 2040“ vorhanden */
   future?: boolean;
+  /** Brücken-Daten vorhanden („Brückenkenner“) */
+  bridges?: boolean;
 }
 
 /** was es gibt – aus den Uhrzeiten/Netzen der Admin-Seite (Server und Browser rechnen gleich) */
-export function challengeContext(addresses: boolean, water: boolean): ChallengeContext {
+export function challengeContext(addresses: boolean, water: boolean, bridges = true): ChallengeContext {
   const hhmm = (id: string) => SLOT_TIME[id].map((n) => String(n).padStart(2, '0')).join(':');
   const night = TIME_SLOTS.find((t) => isNightSlot(t.id));
   const sunday = TIME_SLOTS.find((t) => SLOT_DAYTYPE[t.id] === 'su' && !isNightSlot(t.id));
   const at = (t: { id: string } | undefined) => (t ? { id: t.id, time: hhmm(t.id) } : null);
-  return { night: at(night), sunday: at(sunday), current: NET_MODES.some((m) => m.id === 'current'), addresses, water, future: NET_MODES.some((m) => m.id === FUTURE_NET) };
+  return { night: at(night), sunday: at(sunday), current: NET_MODES.some((m) => m.id === 'current'), addresses, water, bridges, future: NET_MODES.some((m) => m.id === FUTURE_NET) };
 }
 
 /** normale Spielarten (Tempo, Netz-Regeln) und besondere (eigene Aufgaben, eigene Karte) – je Tag von beidem */
@@ -99,7 +101,7 @@ export const CHALLENGE_BASE: Partial<GameSettings> = {
   variant: 'none',
   task: 'normal',
   start: null,
-  onlyRunning: false,
+  onlyRunning: true,
   scooter: false,
 };
 
@@ -170,6 +172,26 @@ export const CHALLENGES: ChallengeDef[] = [
     roundOptions: EASY,
   },
   {
+    id: 'lockdown',
+    icon: '🟥',
+    title: 'Sperrzone XXL',
+    kind: 'special',
+    ...fixed('Fast halb Wien ist gesperrt (rot schraffiert) – dort nicht ein-, aus- oder durchfahren. Finde den Weg durch die Lücken', { distance: 'long', minTransfers: 0, variant: 'avoidMany', roundTimeLimitSec: 300 }),
+    rounds: 1,
+    roundOptions: HARD,
+    avoid: ['patchwork'],
+  },
+  {
+    id: 'district-tour',
+    icon: '🗺️',
+    title: 'Bezirkstour',
+    kind: 'special',
+    ...fixed('Ein paar Bezirke sind grün markiert – deine Route muss durch jeden davon führen (einsteigen, umsteigen oder durchfahren). Die Reihenfolge ist egal', { distance: 'long', minTransfers: 0, variant: 'visitDistricts', roundTimeLimitSec: 300 }),
+    rounds: 1,
+    roundOptions: HARD,
+    avoid: ['visit3', 'lockdown'],
+  },
+  {
     id: 'scooter',
     icon: '🛴',
     title: 'E-Scooter',
@@ -198,6 +220,7 @@ export const CHALLENGES: ChallengeDef[] = [
     rounds: 1,
     roundOptions: HARD,
     avoid: ['water'],
+    needs: (c) => c.bridges !== false,
   },
   {
     id: 'future',

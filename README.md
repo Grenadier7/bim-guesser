@@ -126,7 +126,7 @@ Erfüllt nach 60 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strec
 - **Endstand** (Routenjagd und Quiz gleich): Punkte mit Balken und Urteil bzw. Siegertreppchen, 🔁 **Revanche** (gleiche
   Einstellungen, sofort los), allein: Vorschlag der nächsten Stufe (≥ 70 %) bzw. einer leichteren (< 25 %).
   „Spiel beenden“ mitten im Spiel zeigt den Endstand der gespielten Runden.
-- **Tages-Challenges** in der Routenjagd-Lobby – kurze Abwechslung für etwa 5 Minuten (`shared/challenges.ts`,
+- **Tages-Challenges** in der Routenjagd-Lobby (eigene Überschrift „Daily Events“ über den Einstellungen) – kurze Abwechslung für etwa 5 Minuten (`shared/challenges.ts`,
   Regeln in `shared/challengeRules.ts`, Server `server/challengeRound.ts`): ein niedriges Banner unter
   „Einstellungen“, mit ‹ › blätterbar (Titel eine Zeile, Beschreibung höchstens zwei) – jeden Tag **3 aus dem Plan
   + 🏘️ Bezirk des Tages** (für alle gleich, zufällig gemischt, die erste ist der Vorschlag).
@@ -151,7 +151,9 @@ Erfüllt nach 60 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strec
     die besten Verbindungen stellt) · ☝️ Eine U reicht · 🎨 Bunt gemischt (≥ 3 Verkehrsmittel) · 🔁 Nie zweimal dasselbe ·
     🦘 Bim-Hüpfer (erste und letzte Fahrt Bim) · 📌 Pflicht-Linie · 🎲 Eine von drei (drei lästige Linien; die beste
     erlaubte Verbindung nimmt genau eine) · 🧩 Fleckerlteppich (zufällige Bezirke gesperrt, mind. einer liegt auf der
-    besten Verbindung) · 🎯 Drei Ziele (zu einem davon) · 📍 Drei Punkte (alle befahren) · 🏊 Ab ins Wasser · 🩱 Ab ins Bad
+    besten Verbindung) · 🟥 Sperrzone XXL (7–9 Bezirke gesperrt, 2 davon auf der besten Verbindung; Umweg ≤ 25 min) ·
+    🗺️ Bezirkstour (2–3 grüne Bezirke abseits der besten Verbindung, die Route muss durch jeden führen – auch nur
+    durchfahren zählt; Vergleichsrouten über die Knoten der Bezirke, `viaDistricts`) · 🎯 Drei Ziele (zu einem davon) · 📍 Drei Punkte (alle befahren) · 🏊 Ab ins Wasser · 🩱 Ab ins Bad
     (nur Bäder) · 🚆 Aus dem Umland (Start im Ort in Niederösterreich, den richtigen Zug selbst finden – manche Orte haben
     zwei, z.B. Absdorf-Hippersdorf: S4 oder S40; Fahrzeit bis zur Stadtgrenze ca., `UMLAND` in `server/challengeRound.ts`)
     · 🎡 Ring-Runde (Innere Stadt nur mit Bim und Bus) · 🏠 Tür zu Tür · 🌄 Stadtrand-Tour (12–25 km) · 🚧 Aktuelles Netz ·
@@ -159,6 +161,11 @@ Erfüllt nach 60 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strec
     🧺 Sonntagsausflug · 🛴 E-Scooter (Wege mit 20 km/h, 30 s Treppen an U-/S-Bahn; auch „nur Scooter“ als Antwort) ·
     🚁 Hubschrauber (drei Linien H1–H3 mit fester Flugzeit, einer bringt Zeit) · 🌉 Brückenkenner (mehr Brücken als die
     schnellste Verbindung) · 🔮 Zielnetz 2040.
+  - **Karte:** gesperrte Bezirke rot schraffiert mit gestricheltem Rand und „⛔ 7.“ in der Mitte; Bezirkstour grün
+    mit „🎯 7.“, befahrene mit Haken.
+  - **Daten:** Brückenkenner braucht `data/bridges.json`, Ab ins Wasser/Bad `data/water.json` – fehlen sie, gibt es die
+    Challenges nicht (Plan) bzw. gleich eine Meldung statt langer Suche. `test/docker.test.ts` prüft, dass das
+    Dockerfile alle Dateien aus `data/` ins Image kopiert.
   - **Abgeben** geht erst, wenn die Regel der ganzen Route erfüllt ist (mind. 3 Verkehrsmittel, 2 Umstiege,
     Pflicht-Linie, alle Punkte …) – nur bei Zeitablauf geht die Route trotzdem raus (zählt dann nicht).
   - **Verteilung:** Start und Ziel nach Fläche (jedes ~1,2-km-Feld mit Haltestellen gleich oft, nicht jede Station),
@@ -344,8 +351,8 @@ als Zusatzfahrt anlegt, bleibt.
    - **Netz**: *Regulär* = Referenztag ohne Baustellen, aus dem **eigenen Referenzfahrplan** (siehe unten) – mit
      Regionalzügen (R, REX, CJX), ganz ohne Abfrage bei der Auskunft · *Aktuell* = nächster echter Tag inkl. Sperren
      (Wiener-Linien-Auskunft). Bei *Regulär*: **Nur fahrende Linien** – beim Eintippen nur Linien vorschlagen, die in
-     der Stunde ab der gewählten Uhrzeit unterwegs sind (`runningLines` in `server/timetable.ts`; Nachtschicht und
-     Dickmacks Donnerstag haben es immer an).
+     der Stunde ab der gewählten Uhrzeit unterwegs sind (`runningLines` in `server/timetable.ts`; Nachtschicht und Dickmacks Donnerstag haben es immer an). Standard: an
+     (alte gespeicherte Einstellungen „aus“ werden einmalig verworfen, `runningDefault` in `client/src/store.ts`).
      Referenztage derzeit **Di 30.6., Sa 27.6., So 28.6.2026** (`PREFERRED_DAYS` in `scripts/build-network.ts`):
      nur Ende Juni fährt die S-Bahn-Stammstrecke (ab ca. 8.7. bis mindestens Dezember gesperrt) und Bim/Bus sind
      fast im Normalbetrieb. Ohne passende Wunschtage sucht das Build-Skript selbst (Tag ohne Ersatzverkehr, mit
@@ -395,6 +402,15 @@ als Zusatzfahrt anlegt, bleibt.
      Oberlaa), die Einstiegs-Station steht markiert und nicht wählbar mittendrin.
      Hält die Linie an der Station nur in eine Richtung (Schleifen/Einbahnen, z.B. 40 bei Schöffelgasse), wird die
      Gegenrichtung ab der nächsten Haltestelle (bis 700 m) angeboten – inkl. Fußweg dorthin.
+     Jeder Fußweg zeigt seine Dauer in Klammern („560 m zu Fuß (≈ 9 min)“). **Über die Donau** (Donau, Neue Donau)
+     geht man nur über eine Brücke: schneidet der gerade Weg den Fluss, zählt der Umweg über die nächste Donaubrücke
+     („· über die Reichsbrücke“, auf der Karte mit Knick) – in Auswertung, Referenzroute und Baukasten gleich
+     (`shared/barrier.ts`, Daten aus `data/water.json` und `data/bridges.json`, `/api/barrier`; ohne Daten Luftlinie). Jede Fahrt lässt sich mit ✕ entfernen,
+     auch mittendrin (dazwischen wird dann gegangen). Ein Fußweg **mitten in der Route oder am Anfang** (dort bleibt er
+     eine leise Zeile) lässt sich mit „➕ Linie einfügen“ füllen: ein reiner Einfügemodus ohne Vorschläge – die nächste eingegebene Linie
+     kommt an die Stelle des Fußwegs statt ans Ende (Fahrt danach steigt am neuen Ausstieg ein); „Beenden“ verlässt
+     den Modus. Fährt dieselbe Linie davor oder danach weiter, wird daraus eine Fahrt – ebenso, wenn man nach einer Fahrt
+     dieselbe Linie ab dem Ausstieg weiter eingibt (U1 bis Kagran, dann U1 ab Kagran → eine U1-Fahrt).
    - **📍 Start & Ziel** (Erweitert → Schwierigkeit): *Haltestellen* oder *Adressen* – zufällige echte Adressen
      (Stadt Wien, OGD), gleichmäßig über die bebaute Fläche verteilt (400-m-Raster, höchstens 3 je Zelle, nur bis
      1,5 km von einer Haltestelle; `node scripts/build-addresses.ts` → `data/addresses.json`). Die Auskunft rechnet
@@ -422,6 +438,9 @@ als Zusatzfahrt anlegt, bleibt.
 6. **Inaktive Lobby**: nach 9 min ohne Aktion fragt ein Fenster die Hosts „Lobby behalten?“ (30 s). Keine Antwort →
    der nächste verbundene Spieler wird Host und gefragt; antwortet niemand oder „Lobby löschen“ → Lobby wird
    geschlossen (`LOBBY_IDLE_MS`, `LOBBY_IDLE_ANSWER_MS`).
+7. **Lobby weg** (z.B. Seite nach Stunden wieder geöffnet): Der Server antwortet mit `code: 'not-member'`; der Browser
+   geht dann sofort zur Startseite und erklärt es in einem Fenster – auch schon beim Zurückkehren in den Tab, nicht
+   erst bei der nächsten Aktion (`apiHooks.notMember`, `visibilitychange` in `client/src/store.ts`).
 
 **Training** (Startseite, ohne Lobby): echte Strecken ohne Zeitdruck und Punkte – zum praxisnahen Lernen.
 - *Coach*: nach jeder Teilstrecke Rückmeldung – „genau wie die schnellste Verbindung“, „richtige Linie, aber falsche
@@ -437,15 +456,30 @@ als Zusatzfahrt anlegt, bleibt.
 - Einstellungen: Uhrzeit, Schwierigkeit, Gebiet (Ganz Wien oder Schwerpunkt-Bezirk, wird eingefärbt), Coach an/aus. Endpunkte: `POST /api/training/round`,
   `POST /api/training/:id/evaluate`.
 
+**Kurs-Tipp** nach der Routenjagd (`client/src/coach.ts`, Fenster in `screens/coachTip.ts`): Jedes Spiel wird
+gemerkt (letzte 8, mit Account synchronisiert) – Ø Routenpunkte und in schwachen Runden (< 700) die Linien der
+schnellsten Verbindung, die man nicht nahm, je Kurs (U-Bahn, S-Bahn, Busse, Bims ins Zentrum/rundherum, Donau, Süden,
+Nacht). Frühestens nach 2 Spielen, dann höchstens alle 3 Spiele und einmal in 20 h: Wer insgesamt schwach ist (Ø unter
+45 %) und noch keinen Kurs gemacht hat, wird gefragt, ob er mit dem Lernpfad anfangen will; sonst kommt der Kurs, dessen
+Linien zuletzt am öftesten fehlten (gemachte Kurse erst bei deutlich mehr Fehlern, gemeisterte nie). „Kurs starten“
+verlässt das Spiel und öffnet den Kurs, „Später“ legt ihn eine Woche weg. Nicht bei Tages-Challenges.
+
 **Lernmodus** (Startseite, ohne Lobby) – drei Einstiege, keine Einstellungen vorab:
 - *🎓 Lernpfad*: die geführten Kurse in fester Reihenfolge („Weiter mit …“): U-Bahn-Kreuzungen → S-Bahn
-  (Stammstrecke, Äste S1/S2/S3+S4, S7, S40/S45/S50, S60/S80) → Radiallinien → die Ringe → Querverbindungen →
+  (Stammstrecke, Äste S1/S2/S3+S4, S7, S40/S50/S60 als Pendlerzüge ins Umland, S45 und S80 einzeln mit Umstiegen; Aufgabe „Welche S-Bahn ist welche?“: farbige Strecken mit Buchstaben, Linien
+  per Ziehen oder Antippen zuordnen) → Radiallinien → die Ringe →
   über die Donau & Transdanubien (Brücken; U6/U1/U2 als „Finger“, Bims 25/26/27 quer, Busse von der U1 zur U2,
   Zubringer je U-Bahn-Knoten) → der Süden (Meidling, Liesing, Favoriten, Simmering: U6/U1/U3, S-Bahn, Knoten,
   Bims 6/11/71/62/BB/1, 60er/70er-Busse) → Busnummern (Zehnerstelle läuft gegen den Uhrzeigersinn um die Stadt)
   → Nachts in Transdanubien. Inhalte und Fragen werden aus den Netzdaten berechnet (`client/src/learn/courses/`),
   jede Frage hat genau eine richtige Antwort. Alle Schritte zeigen dieselbe Netzkarte und blenden nur hervor
-  oder aus; bei Fragen bleibt die Karte leer. Liniennummern im Kurstext sind antippbar (Steckbrief, „← zurück zum
+  oder aus, mit knappem Rand eingepasst; bei Fragen bleibt die Karte leer, in der Auflösung erscheinen die Linien der
+  Frage (`quizLines`), bei Aufgaben nie das ganze Netz (sonst die Linien aus Frage/Erklärung oder nur die Station).
+  „Wohin fährt …“ zeigt die bekannte Endstation als A, „In welcher Reihenfolge …“ A und einen Richtungspfeil.
+  „Zeichne die X von A nach B“ zeigt A und B mit Namen; eigene Tipps und Zeichnungen
+  verschwinden beim nächsten Schritt. Kurse mit eigenen, machbaren Aufgaben (Kreuzungen mit der U-Bahn) – sonst
+  kämen zufällige Aufgaben aus den Kurslinien (z.B. „Wohin fährt der 84A?“). Ein entfernter Kurs (Querverbindungen)
+  zählt nicht mehr für Level und Medaille (`COURSE_IDS` in `shared/career.ts`). Liniennummern im Kurstext sind antippbar (Steckbrief, „← zurück zum
   Kurs“); am Kursende lassen sich die Linien des Kurses mit einem Tipp zum Üben merken (bis 25 Linien).
 - *🗺 Netzkarte* (`client/src/learn/atlas.ts`): Linie oder Station suchen bzw. auf der Karte antippen. Linie →
   **Steckbrief** (Merksatz mit den wichtigsten Umstiegen, Bezirke, U-/S-Bahn-Umstiege, alle Stationen); Station →

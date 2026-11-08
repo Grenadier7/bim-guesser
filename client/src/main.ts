@@ -11,7 +11,7 @@ import { account, startPolling } from './account.ts';
 import { accountButton, announceMedals, openAccount, renderInvites, takeResetLink } from './accountui.ts';
 import { isMine, setMine } from './learn/model.ts';
 import { GameMap } from './map.ts';
-import { NetIndex } from './net.ts';
+import { NetIndex, setWalkBarrier } from './net.ts';
 import { resetNetLayer } from './netmap.ts';
 import { openLegalFromHash } from './legal.ts';
 import { applyGameConfig } from '../../shared/config.ts';
@@ -32,7 +32,7 @@ import { meScreen } from './screens/me.ts';
 import { ChatWidget } from './chat.ts';
 import { hideIdle, idleCheck } from './idle.ts';
 import { app, currentRound, inviteLink, isHost, me, openTimer, restoreSession, serverNow, setMapBig, setMobileMap } from './store.ts';
-import { esc, toast } from './ui.ts';
+import { esc, quietToasts, toast } from './ui.ts';
 
 const panel = document.getElementById('panel')!;
 const topinfo = document.getElementById('topinfo')!;
@@ -160,8 +160,10 @@ const quitsGame = () => isHost() && app.state?.phase !== 'finished' && app.state
 async function leaveToHome(text: string, opts: { title: string; ok: string; cancel: string; danger: boolean }) {
   if (app.session) {
     if (!(await ask(text, opts))) return;
-    await api.leave(app.session).catch(() => {});
+    // erst abmelden, dann dem Server Bescheid geben – gibt es die Lobby nicht mehr, kommt keine zweite Meldung
+    const s = app.session;
     endSession();
+    await api.leave(s).catch(() => {});
   }
   app.view = 'home';
   if (location.hash) history.replaceState(null, '', location.pathname);
@@ -339,6 +341,16 @@ async function init() {
     hideIdle();
     toast(reason, 'info');
   };
+  app.onLost = () => {
+    hideIdle();
+    // die fehlgeschlagene Aktion meldet sich sonst noch mit „nicht (mehr) in diesem Spiel“
+    quietToasts(2000);
+    void ask('Dieses Spiel gibt es nicht mehr – es wurde nach längerer Pause beendet oder du bist nicht mehr dabei. Auf der Startseite kannst du ein neues starten oder beitreten.', {
+      title: 'Spiel nicht mehr verfügbar',
+      ok: 'Zur Startseite',
+      cancel: null,
+    });
+  };
   chatSync = () => chat.sync();
   account.listeners.add(renderAccount);
   renderAccount();
@@ -347,7 +359,9 @@ async function init() {
   panel.innerHTML = loadingHtml('Wird geladen …');
   try {
     // erst die Spiel-Konfiguration (Uhrzeiten, Wertungen, Standard-Einstellungen …), dann das Netz
-    const [config, network] = await Promise.all([api.config(), api.network()]);
+    // Donau-Hindernis für Fußwege: fehlt es, rechnet der Baukasten Luftlinie (wie früher)
+    const [config, network, barrier] = await Promise.all([api.config(), api.network(), api.barrier().catch(() => null)]);
+    setWalkBarrier(barrier);
     app.config = config;
     applyGameConfig(config);
     renderNotice();

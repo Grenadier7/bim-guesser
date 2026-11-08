@@ -427,6 +427,8 @@ export const RESTRICTIONS: Record<Restriction, { label: string; hint: string; ic
   noRail: { label: 'Ohne U- und S-Bahn', hint: 'Nur Bim und Bus – keine U-Bahn, keine S-Bahn.', icon: '🚋' },
   avoidDistricts: { label: 'Fleckerlteppich', hint: 'Die roten Bezirke sind gesperrt – dort nicht ein-, aus- oder durchfahren.', icon: '🧩' },
   minBridges: { label: 'Brückenkenner', hint: 'Überquere mindestens so viele Brücken wie angegeben.', icon: '🌉' },
+  avoidMany: { label: 'Sperrzone XXL', hint: 'Viele Bezirke sind gesperrt (rot schraffiert) – dort nicht ein-, aus- oder durchfahren.', icon: '🟥' },
+  visitDistricts: { label: 'Bezirkstour', hint: 'Fahr durch jeden grün markierten Bezirk – Reihenfolge egal.', icon: '🗺️' },
 };
 
 /** Varianten: gelten für jede Runde (in der Lobby unter „Varianten“) */
@@ -456,6 +458,8 @@ export const VARIANTS: { id: Variant; label: string; icon: string; restriction: 
   { id: 'noRail', label: 'Ohne U- und S-Bahn', icon: '🚋', restriction: 'noRail' },
   { id: 'avoidDistricts', label: 'Fleckerlteppich', icon: '🧩', restriction: 'avoidDistricts' },
   { id: 'minBridges', label: 'Brückenkenner', icon: '🌉', restriction: 'minBridges' },
+  { id: 'avoidMany', label: 'Sperrzone XXL', icon: '🟥', restriction: 'avoidMany' },
+  { id: 'visitDistricts', label: 'Bezirkstour', icon: '🗺️', restriction: 'visitDistricts' },
 ];
 
 export const RESTRICTION_FREQUENCIES: { id: RestrictionFrequency; label: string }[] = [
@@ -469,7 +473,7 @@ export const RESTRICTION_CHANCE = 0.3;
 /** Einschränkungs-Runden haben doppelte Zeit, aber höchstens 2:30 mehr … */
 export const RESTRICTION_EXTRA_MAX_SEC = 150;
 /** … schwere Einschränkungen (ohne U-Bahn) bekommen fix 4 Minuten mehr */
-export const HARD_RESTRICTIONS: Restriction[] = ['noU', 'onlyTram', 'insider', 'busOnly', 'oneLeg', 'sunny', 'avoidInner', 'anyLine', 'mustLine', 'noRail', 'avoidDistricts'];
+export const HARD_RESTRICTIONS: Restriction[] = ['noU', 'onlyTram', 'insider', 'busOnly', 'oneLeg', 'sunny', 'avoidInner', 'anyLine', 'mustLine', 'noRail', 'avoidDistricts', 'avoidMany', 'visitDistricts'];
 export const HARD_RESTRICTION_EXTRA_SEC = 240;
 
 export function roundLimitSec(base: number | null, restriction: Restriction | null): number | null {

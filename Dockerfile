@@ -19,7 +19,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY server ./server
 COPY shared ./shared
-COPY data/network.json data/headways.json data/addresses.json data/timetable.json ./data/
+# alle Daten aus dem Repo (test/docker.test.ts prüft, dass keine fehlt – sonst fehlen z.B. Brücken und Bäder)
+COPY data/network.json data/headways.json data/addresses.json data/timetable.json data/bridges.json data/water.json ./data/
 COPY --from=build /app/dist ./dist
 RUN mkdir -p /app/state && chown node:node /app/state
 ARG APP_VERSION=dev

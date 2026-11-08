@@ -4,7 +4,7 @@ import type { AccountUser, Accounts } from '../accounts.ts';
 import type { CreateGameRequest, GameEvent, JoinResponse, SubmitRequest, SubmitResponse, TipKind } from '../../shared/types.ts';
 import { Game } from '../game.ts';
 import { h, MIN, param, token } from '../http.ts';
-import { GameError } from '../lobby.ts';
+import { GameError, notMember } from '../lobby.ts';
 import type { GameManager } from '../manager.ts';
 import { QuizGame } from '../quiz.ts';
 import { closeStream, openStream, rateLimit } from '../security.ts';
@@ -21,7 +21,7 @@ export function gameRoutes(app: Express, games: GameManager, account?: { account
   // fehlende Lobby antwortet wie ein fremder Token (403) – sonst ließen sich Codes ausprobieren (Befund L-07).
   // Nur „Beitreten“ sagt ausdrücklich „Lobby nicht gefunden“ (dort mit eigenem Rate-Limit).
   const game = (req: Request) => {
-    if (!games.has(param(req, 'code'))) throw new GameError('Du bist nicht in dieser Lobby.', 403);
+    if (!games.has(param(req, 'code'))) throw notMember();
     return games.get(param(req, 'code'));
   };
   /** Nur Routenjagd bzw. nur Quiz */
@@ -82,7 +82,7 @@ export function gameRoutes(app: Express, games: GameManager, account?: { account
   /** Nur für Mitglieder der Lobby */
   const member = (req: Request) => {
     const g = game(req);
-    if (!g.isMember(token(req))) throw new GameError('Du bist nicht in dieser Lobby.', 403);
+    if (!g.isMember(token(req))) throw notMember();
     return g;
   };
 

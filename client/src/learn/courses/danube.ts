@@ -2,7 +2,9 @@
 import type { Station } from '../../../../shared/types.ts';
 import { esc } from '../../ui.ts';
 import type { Piece } from '../../netmap.ts';
-import { ask, chip, chips, colorOf, type Course, farEnd, have, L, lineQuiz, mainOf, net, pick, quiz, stationByName, stationsOf, type Step, table, TRANSDANUBIEN, U_LINES } from './common.ts';
+import { ask, chip, chips, colorOf, type Course, farEnd, have, L, lineQuiz, mainOf, net, pick, quiz, stationByName, stationsOf, type Step, table, taskStep, TRANSDANUBIEN, U_LINES } from './common.ts';
+import { isSpecialLine } from '../model.ts';
+import { crossingTask } from './tasks.ts';
 
 export const danubeCourse: Course = {
   id: 'danube',
@@ -11,7 +13,7 @@ export const danubeCourse: Course = {
   short: 'Die Brücken – und wie U6, U1 und U2 drüben verbunden sind',
   build() {
     const crossers = net()
-      .data.lines.filter((l) => l.mode !== 'N' && L(l.id))
+      .data.lines.filter((l) => l.mode !== 'N' && L(l.id) && !isSpecialLine(l))
       .filter((l) => {
         const st = stationsOf(l.id);
         return st.some((s) => TRANSDANUBIEN.has(s.district)) && st.some((s) => !TRANSDANUBIEN.has(s.district));
@@ -58,22 +60,6 @@ export const danubeCourse: Course = {
           <p class="muted">Auf der Karte nur die Stücke über den Fluss – S-Bahnen auf derselben Brücke als ein Strich.</p>`,
         pieces: crossPieces([...by('U'), ...by('S'), ...trams, ...buses]),
       },
-      {
-        title: 'Wo die Brücken sind',
-        html: table(
-          [...by('U'), ...trams].map((id) => {
-            const br = bridge(id);
-            if (!br) return [chip(id), '–'];
-            const [a, b] = TRANSDANUBIEN.has(br.m[br.i].district) ? [br.m[br.i - 1], br.m[br.i]] : [br.m[br.i], br.m[br.i - 1]];
-            return [chip(id), `${esc(a.name)} → ${esc(b.name)}`];
-          }),
-        ),
-        pieces: crossPieces([...by('U'), ...trams]),
-        marks: [...by('U'), ...trams].flatMap((id) => {
-          const br = bridge(id);
-          return br ? [TRANSDANUBIEN.has(br.m[br.i].district) ? br.m[br.i] : br.m[br.i - 1]] : [];
-        }),
-      },
       ...transdanubienSteps(),
     ];
     if (trams.length)
@@ -113,12 +99,13 @@ function transdanubienSteps(): Step[] {
     return m.filter((s) => TRANSDANUBIEN.has(s.district)).length / m.length >= 0.6;
   };
   // Querverbindungen: Bims, die mindestens zwei der drei U-Bahnen treffen
+  // ohne Sonderlinien wie 26E (Verstärker) – die verwirren nur
   const trams = net()
-    .data.lines.filter((l) => l.mode === 'T' && L(l.id))
+    .data.lines.filter((l) => l.mode === 'T' && L(l.id) && !isSpecialLine(l))
     .map((l) => l.id)
     .filter((id) => uSeq(id).length >= 2);
   const buses = net()
-    .data.lines.filter((l) => l.mode === 'B' && L(l.id) && inTd(l.id))
+    .data.lines.filter((l) => l.mode === 'B' && L(l.id) && !isSpecialLine(l) && inTd(l.id))
     .map((l) => l.id);
   const touches = (id: string) => new Set(uSeq(id).map((x) => x.u));
   const links12 = buses.filter((id) => touches(id).has('U1') && touches(id).has('U2'));
@@ -179,6 +166,11 @@ function transdanubienSteps(): Step[] {
       allLabels: true,
       marks: bigHubs.slice(0, 6).map(([name]) => stationByName(name)).filter((x): x is Station => !!x),
     });
+  // eigene, machbare Aufgaben: wo trifft eine Quer-Bim die U-Bahn (sonst kämen zufällige wie „Wohin fährt der 84A?“)
+  const tramU1 = trams.filter((id) => touches(id).has('U1'));
+  const tramU2 = trams.filter((id) => touches(id).has('U2'));
+  if (tramU1.length) steps.push(...taskStep(crossingTask(pick(tramU1), 'U1')));
+  if (tramU2.length) steps.push(...taskStep(crossingTask(pick(tramU2), 'U2')));
   if (links12.length)
     steps.push(
       ...ask(lineQuiz('Welcher Bus verbindet die U1 mit der U2?', pick(links12), feeders, `${links12.join(', ')} fahren von der U1 zur U2.`)),

@@ -8,6 +8,7 @@ import { findChallenge } from '../challenges.ts';
 import { bindEndActions, earlyNote, endActions, levelSuggestion, podium, soloCard } from './result.ts';
 import type { Screen } from './screen.ts';
 import { markPlayed } from '../progress.ts';
+import { offerCourse } from './coachTip.ts';
 
 export function finalScreen(panel: HTMLElement): Screen {
   app.map.clear();
@@ -37,6 +38,9 @@ export function finalScreen(panel: HTMLElement): Screen {
     .then((rs) => {
       reveals = rs.filter(Boolean) as RoundReveal[];
       render();
+      // ab und zu: passenden Kurs vorschlagen (nicht bei Tages-Challenges)
+      const s = routeState();
+      if (!s.settings.challenge) offerCourse(`${s.id}:${s.rounds.map((r) => `${r.from?.id}-${r.to?.id}`).join()}`, reveals);
     })
     .catch(() => {});
 

@@ -20,7 +20,8 @@ import { rateLimit, securityHeaders } from './security.ts';
 import { TrainingService } from './training.ts';
 import { waterData, waterJson } from './water.ts';
 import { challengeSchedule } from './challengeSchedule.ts';
-import { bridgeJson } from './bridges.ts';
+import { bridgeData, bridgeJson } from './bridges.ts';
+import { barrierData } from './barrier.ts';
 
 const DIST = path.resolve(import.meta.dirname, '../dist');
 
@@ -126,6 +127,10 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
     if (!json) return void res.status(404).json({ error: 'Diesen Netzplan gibt es nicht.' });
     res.type('json').set('Cache-Control', 'no-cache').send(json);
   });
+  // Donau als Hindernis für Fußwege (Baukasten rechnet wie die Auswertung)
+  app.get('/api/barrier', (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=86400').json(barrierData() ?? { lines: [], bridges: [] });
+  });
   // Gewässer für „Ab ins Wasser“ (Karte, Fußweg zum nächsten Wasser)
   app.get('/api/water', (_req, res) => {
     const json = waterJson();
@@ -140,7 +145,7 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
   });
   // Plan der Tages-Challenges (einmal berechnet, als Datei abgelegt – server/challengeSchedule.ts)
   app.get('/api/challenges/schedule', (_req, res) => {
-    res.set('Cache-Control', 'no-cache').json(challengeSchedule(net.hasAddresses, !!waterData()));
+    res.set('Cache-Control', 'no-cache').json(challengeSchedule(net.hasAddresses, !!waterData(), !!bridgeData()));
   });
   app.post('/api/ping', (req, res) => {
     const id = String(req.body?.v ?? '');

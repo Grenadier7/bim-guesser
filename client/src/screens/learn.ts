@@ -154,11 +154,16 @@ export function learnScreen(panel: HTMLElement, onBack: () => void): Screen {
   }
 
   // „Diese üben“ aus dem Quiz-Endstand: gleich mit der Fehlerliste anfangen
-  if (app.learnStart === 'mistakes') {
-    app.learnStart = null;
-    home();
-    practiceMistakes();
-  } else home();
+  const start = app.learnStart;
+  app.learnStart = null;
+  const course = start && start !== 'mistakes' ? COURSES.find((c) => c.id === start.course) : undefined;
+  home();
+  if (start === 'mistakes') practiceMistakes();
+  // Kurs-Tipp nach der Routenjagd: gleich in den Kurs
+  else if (course) {
+    setMobileMap(true);
+    courseView(panel, course, home);
+  }
   return {
     destroy: () => {
       setMapBig(false);

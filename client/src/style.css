@@ -4089,6 +4089,48 @@ details.host-bar {
 
 /* ---------------------------------------------------------------- Fußwege im Routen-Baukasten (abgestuft) */
 
+/* Fußweg mitten in der Route durch eine Linie ersetzen */
+.walk-swap {
+  font-size: 12px;
+  white-space: nowrap;
+}
+/* im Fußweg-Block rechts in der Zeile (wie das ✕ bei Fahrten) – der Block bleibt so hoch wie eine Fahrt */
+.walk-leg .walk-swap,
+.walk-leg .walk-swap-on {
+  margin-left: auto;
+  flex-shrink: 0;
+  max-width: 45%;
+  white-space: normal;
+  text-align: right;
+}
+/* Einfügemodus: der Fußweg, an dessen Stelle die nächste Linie kommt */
+.walk-swap-on {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.walk-leg .walk-swap-on {
+  justify-content: flex-end;
+}
+.inserting {
+  outline: 2px dashed var(--accent);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+.form-title.inserting {
+  outline: 0;
+  color: var(--accent);
+}
+.form-title.inserting small {
+  color: var(--muted);
+  font-weight: 400;
+}
+
 .leg-walk {
   font-size: 13px;
   color: var(--muted);
@@ -4098,6 +4140,11 @@ details.host-bar {
 .walk-leg {
   border-style: dashed;
   background: #f7f8fa;
+}
+
+.walk-leg .leg-text b {
+  /* so hoch wie die Ausstiegs-Auswahl einer Fahrt – Fußweg-Block und Fahrten sind gleich hoch */
+  padding: 5px 0;
 }
 
 .walk-leg .walk-icon {
@@ -6756,7 +6803,8 @@ details.adm-linechg li {
 
 /* ---------------------------------------------------------------- Lobby: Tages-Challenges */
 
-.settings-head {
+.settings-head,
+.events-head {
   margin-top: 22px;
 }
 .challenge-bar {
@@ -7414,3 +7462,122 @@ details.adm-linechg li {
   vertical-align: middle;
 }
 
+
+/* ---------------------------------------------------------------- Challenges: Bezirke auf der Karte */
+/* gesperrt: rot schraffiert (Muster in map.ts) – auf einen Blick „hier nicht“ */
+.leaflet-interactive.blocked-area,
+path.blocked-area {
+  fill: url(#hatch-blocked);
+  fill-opacity: 1;
+}
+.area-label {
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
+}
+.area-label.blocked {
+  background: #c81e1e;
+  color: #fff;
+}
+.area-label.visit {
+  background: #13804a;
+  color: #fff;
+}
+.area-label.visit.done {
+  background: #fff;
+  color: #13804a;
+  border: 2px solid #13804a;
+}
+
+/* ---------------------------------------------------------------- Lernen: Linien zuordnen (Ziehen oder Tippen) */
+.assign-pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 10px;
+  min-height: 34px;
+}
+.assign-label {
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  padding: 2px;
+  cursor: grab;
+}
+.assign-label.held {
+  border-color: var(--accent);
+}
+.assign-group {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #1d6fc4;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+}
+.assign-slots {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.assign-slot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.assign-slot.over {
+  border-color: var(--accent);
+  background: var(--panel);
+}
+.assign-slot.right {
+  border-style: solid;
+  border-color: #2f9e44;
+}
+.assign-slot.wrong {
+  border-style: solid;
+  border-color: #e03131;
+}
+.assign-key {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--c);
+  color: #fff;
+  font-weight: 800;
+}
+.assign-drop {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+}
+.assign-right {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+/* Lernen: Richtungspfeil bei „In welcher Reihenfolge …“ */
+.learn-arrow span {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #1b1e23;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+  box-shadow: 0 0 0 3px #fff;
+}

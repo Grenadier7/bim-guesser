@@ -2,6 +2,10 @@
 // XP & Level, Serie (mit Joker-Tag), Wochenziel, Sammelkarte „Mein Wien“ und Medaillen in Stufen.
 import type { LevelInfo, MedalPublic } from './types.ts';
 
+/** Kurse im Lernpfad (Reihenfolge wie client/src/learn/courses/list.ts) – für Level, Medaille und „alle Kurse“ */
+export const COURSE_IDS = ['ubahn', 'sbahn', 'radial', 'ring', 'danube', 'south', 'busnr', 'night'];
+export const COURSE_COUNT = COURSE_IDS.length;
+
 // ---------------------------------------------------------------- Gespeicherter Stand (Browser, mit Account synchronisiert)
 
 export const CAREER_KEY = 'oeffi-career-v1';
@@ -212,7 +216,7 @@ export const MEDALS: MedalDef[] = [
   { id: 'wins', icon: '🏆', title: 'Sieger', text: (x) => `${n(x, 'Spiel', 'Spiele')} gegen andere gewonnen`, tiers: () => [1, 10, 50], value: (s) => s.wins },
   { id: 'quiz-ace', icon: '🥇', title: 'Quiz-Ass', text: (x) => `${n(x, 'Quiz', 'Quiz-Spiele')} ohne Fehler`, tiers: () => [1, 5, 20], value: (s) => s.quizAce },
   { id: 'trainer', icon: '🏋', title: 'Trainingsfleißig', text: (x) => `${n(x, 'Trainingsstrecke', 'Trainingsstrecken')}`, tiers: () => [10, 50, 200], value: (s) => s.trainings },
-  { id: 'courses', icon: '📚', title: 'Netzkenner', text: (x) => (x <= 9 ? `${n(x, 'Kurs', 'Kurse')} im Lernpfad geschafft` : `alle Kurse geschafft und ${x - 9} gemeistert`), tiers: () => [3, 9, 18], value: (s) => s.courses },
+  { id: 'courses', icon: '📚', title: 'Netzkenner', text: (x) => (x <= COURSE_COUNT ? `${n(x, 'Kurs', 'Kurse')} im Lernpfad geschafft` : `alle Kurse geschafft und ${x - COURSE_COUNT} gemeistert`), tiers: () => [3, COURSE_COUNT, 2 * COURSE_COUNT], value: (s) => s.courses },
   { id: 'streak', icon: '🔥', title: 'Dranbleiber', text: (x) => `${x} Tage in Folge gespielt`, tiers: () => [3, 7, 30], value: (s) => s.streak },
   { id: 'daily', icon: '📅', title: 'Strecke des Tages', text: (x) => `an ${n(x, 'Tag', 'Tagen')} die Strecke des Tages gefahren`, tiers: () => [1, 7, 30], value: (s) => s.daily },
   { id: 'explorer', icon: '🗺️', title: 'Entdecker', text: (x) => `${n(x, 'Station', 'Stationen')} auf eigenen Routen benutzt`, tiers: () => [25, 100, 300], value: (s) => s.stations },

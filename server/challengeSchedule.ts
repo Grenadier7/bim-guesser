@@ -9,8 +9,8 @@ import { STATE_DIR } from './paths.ts';
 const FILE = path.join(STATE_DIR, 'challenge-schedule.json');
 let cache: Schedule | null = null;
 
-export function challengeSchedule(addresses: boolean, water: boolean): Schedule {
-  const ctx = challengeContext(addresses, water);
+export function challengeSchedule(addresses: boolean, water: boolean, bridges: boolean): Schedule {
+  const ctx = challengeContext(addresses, water, bridges);
   const key = scheduleKey(ctx);
   if (cache?.key === key) return cache;
   try {

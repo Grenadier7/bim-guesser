@@ -22,6 +22,24 @@ export interface PlayerRoute {
   isMe: boolean;
 }
 
+/** Mitte eines Bezirks für die Beschriftung: Flächenschwerpunkt des größten Rings */
+function areaLabelAt(d: District): [number, number] {
+  const ring = d.rings.reduce((m, r) => (r.length > m.length ? r : m), d.rings[0] ?? []);
+  let a = 0;
+  let x = 0;
+  let y = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [la1, lo1] = ring[i];
+    const [la2, lo2] = ring[(i + 1) % ring.length];
+    const f = lo1 * la2 - lo2 * la1;
+    a += f;
+    x += (lo1 + lo2) * f;
+    y += (la1 + la2) * f;
+  }
+  if (!a) return ring[0] ?? [48.2, 16.37];
+  return [y / (3 * a), x / (3 * a)];
+}
+
 function pin(cls: string, letter: string, size = 28) {
   return L.divIcon({ className: `pin ${cls}`, html: `<span>${letter}</span>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
 }
@@ -60,6 +78,12 @@ export class GameMap {
       base = tiles(isDark()).addTo(this.map);
       base.bringToBack();
     });
+    // Schraffur für gesperrte Bezirke (style.css: .blocked-area) – einmal im Dokument
+    if (!document.getElementById('hatch-blocked'))
+      document.body.insertAdjacentHTML(
+        'beforeend',
+        `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><pattern id="hatch-blocked" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="10" height="10" fill="rgba(200,30,30,0.12)"/><rect width="4" height="10" fill="rgba(200,30,30,0.45)"/></pattern></defs></svg>`,
+      );
     // Quellenangabe: am Handy nur ein (i) (style.css) – antippen klappt auf bzw. zu, Links bleiben klickbar
     const attr = this.map.attributionControl?.getContainer();
     if (attr) {
@@ -214,8 +238,35 @@ export class GameMap {
   }
 
   /** Karte auf ein paar Punkte einpassen */
-  fitPoints(points: LatLon[], maxZoom = 14) {
-    if (points.length) this.fit(L.latLngBounds(points).pad(0.25), maxZoom);
+  fitPoints(points: LatLon[], maxZoom = 14, pad = 0.25) {
+    if (points.length) this.fit(L.latLngBounds(points).pad(pad), maxZoom);
+  }
+
+  /** Lernaufgaben: bekannte Anfangsstation als A mit Namen */
+  showLearnStart(s: { lat: number; lon: number; name: string }) {
+    this.learnMarks.addLayer(
+      L.marker([s.lat, s.lon], { icon: pin('pin-start', 'A'), zIndexOffset: 1000 }).bindTooltip(esc(s.name), { permanent: true, direction: 'top', offset: [0, -14], className: 'pin-label' }),
+    );
+  }
+
+  /** Richtungspfeil von a Richtung b (ein Stück entlang der Strecke) */
+  showLearnArrow(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
+    const at: LatLon = [a.lat + (b.lat - a.lat) * 0.55, a.lon + (b.lon - a.lon) * 0.55];
+    const deg = (Math.atan2(-(b.lat - a.lat), (b.lon - a.lon) * Math.cos((a.lat * Math.PI) / 180)) * 180) / Math.PI;
+    this.learnMarks.addLayer(
+      L.marker(at, { interactive: false, keyboard: false, zIndexOffset: 900, icon: L.divIcon({ className: 'learn-arrow', html: `<span style="transform:rotate(${deg.toFixed(0)}deg)">➜</span>`, iconSize: [30, 30], iconAnchor: [15, 15] }) }),
+    );
+  }
+
+  /** Lernaufgaben „von A nach B“: beide Endstationen als A und B mit Namen */
+  showLearnEnds(a: { lat: number; lon: number; name: string }, b: { lat: number; lon: number; name: string }) {
+    for (const [s, cls, letter] of [
+      [a, 'pin-start', 'A'],
+      [b, 'pin-end', 'B'],
+    ] as const)
+      this.learnMarks.addLayer(
+        L.marker([s.lat, s.lon], { icon: pin(cls, letter), zIndexOffset: 1000 }).bindTooltip(esc(s.name), { permanent: true, direction: 'top', offset: [0, -14], className: 'pin-label' }),
+      );
   }
 
   /** Stationen hervorheben (z.B. beim Nachzeichnen verfehlt) */
@@ -237,6 +288,11 @@ export class GameMap {
   clearLearn() {
     for (const fn of this.clearHooks) fn();
     this.draft.clearLayers();
+    this.learnMarks.clearLayers();
+  }
+
+  /** nur die Markierungen (Tipp, Ziel) entfernen – eingezeichnete Linien bleiben */
+  clearLearnMarks() {
     this.learnMarks.clearLayers();
   }
 
@@ -284,6 +340,8 @@ export class GameMap {
     waypoints?: { s: StationRef; done: boolean }[];
     water?: WaterData | null;
     inner?: District[];
+    /** Bezirkstour: Bezirke, durch die die Route führen muss (done = schon befahren) */
+    visit?: { d: District; done: boolean }[];
     /** Sonnenschein: unterirdische Abschnitte */
     underground?: { line: string; path: [number, number][] }[];
     /** Umland: Wien umrahmen (Start liegt außerhalb) */
@@ -313,8 +371,17 @@ export class GameMap {
       this.endpoints.addLayer(label(L.marker([s.lat, s.lon], { icon: pin(done ? 'pin-way done' : 'pin-way', done ? '✓' : String(i + 1)), zIndexOffset: 900 }), s.name));
       pts.push([s.lat, s.lon]);
     });
-    for (const d of o.inner ?? [])
-      this.challenge.addLayer(L.polygon(d.rings, { color: '#c81e1e', weight: 1.5, fillColor: '#c81e1e', fillOpacity: 0.16, interactive: false }).bindTooltip(`🚫 ${esc(d.name)}`, { sticky: true }));
+    // gesperrte Bezirke: rot schraffiert mit kräftigem Rand und „⛔ gesperrt“ in der Mitte – unübersehbar tabu
+    for (const d of o.inner ?? []) {
+      const poly = L.polygon(d.rings, { color: '#c81e1e', weight: 3, dashArray: '8 5', fillColor: '#c81e1e', fillOpacity: 0.3, className: 'blocked-area', interactive: false });
+      this.challenge.addLayer(poly);
+      this.challenge.addLayer(L.marker(areaLabelAt(d), { icon: L.divIcon({ className: 'area-label blocked', html: `⛔ ${d.id}.`, iconSize: [46, 22] }), interactive: false, keyboard: false }));
+    }
+    // Bezirkstour: grün (befahren: mit Haken)
+    for (const { d, done } of o.visit ?? []) {
+      this.challenge.addLayer(L.polygon(d.rings, { color: '#13804a', weight: 3, fillColor: '#1aa35f', fillOpacity: done ? 0.12 : 0.28, interactive: false }));
+      this.challenge.addLayer(L.marker(areaLabelAt(d), { icon: L.divIcon({ className: `area-label visit${done ? ' done' : ''}`, html: `${done ? '✓' : '🎯'} ${d.id}.`, iconSize: [46, 22] }), interactive: false, keyboard: false }));
+    }
     for (const d of o.outline ?? []) this.challenge.addLayer(L.polygon(d.rings, { color: '#5a6b7d', weight: 1, fillColor: '#5a6b7d', fillOpacity: 0.05, interactive: false }));
     if (o.future) {
       for (const l of o.future.lines) {

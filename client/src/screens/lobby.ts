@@ -327,8 +327,13 @@ export function lobbyScreen(panel: HTMLElement): Screen {
         <h3>Spieler <small>(${s.players.length})</small></h3>
         <ul class="players">${players}</ul>
 
+        ${(() => {
+          // eigene Überschrift – nur wenn es etwas zu zeigen gibt (Gäste sehen die Auswahl nicht)
+          const bar = challengeBanner(st, host);
+          return bar ? `<h3 class="events-head">Daily Events</h3>${bar}` : '';
+        })()}
+
         <h3 class="settings-head">Einstellungen ${!host ? '<small>– nur der Host kann sie ändern</small>' : ''}</h3>
-        ${challengeBanner(st, host)}
         <div class="setting"><span>Schwierigkeit</span>
           ${seg('difficulty', [...DIFFICULTY_PRESETS.map((d) => ({ value: d.id, label: d.label })), ...(st.difficulty === 'custom' ? [{ value: 'custom', label: 'Eigene' }] : [])], st.difficulty, ro)}
           <small class="hint">${st.endpoints === 'addresses' ? `${(app.net.data.addressCount ?? 0).toLocaleString('de-AT')} Adressen` : `${poolCount(st.stations)} Haltestellen`}${st.distance !== 'medium' ? ` · ${DISTANCES.find((d) => d.id === st.distance)!.label}` : ''}${st.minTransfers ? ` · mind. ${st.minTransfers} Umstieg${st.minTransfers > 1 ? 'e' : ''}` : ''} · <b>Punkte ×${mult.toLocaleString('de-AT')}</b> ${st.endpoints === 'addresses' ? '' : infoTip(esc(stationsText(st.stations)))}</small></div>

@@ -9,7 +9,7 @@ import { app, setMapBig } from '../../store.ts';
 import { esc, h, lineChip } from '../../ui.ts';
 import { lineHtml, stationHtml } from '../atlas.ts';
 import { DAY_SCOPE, addMine, departuresFrom, isMine, isSpecialLine, lineProfile, linesAt, patternsOf, setMine } from '../model.ts';
-import { L, type Course, type Step } from './common.ts';
+import { L, linesInText, type Course, type Quiz, type Step } from './common.ts';
 import { defaultExam, ExamRun, practiceTasks } from './tasks.ts';
 import { mountTask } from './taskview.ts';
 import { COURSES } from './list.ts';
@@ -47,7 +47,16 @@ function drawStep(step: Step) {
   const focus = new Set((step.lines ?? []).filter(known));
   const context = new Set((step.context ?? []).filter((id) => known(id) && !focus.has(id)));
   const marks = step.marks ?? [];
-  const view = netView({ focus, context, colors: step.colors, pieces: step.pieces, marks, bands: { ...NO_BANDS, ...step.bands }, allLabels: step.allLabels });
+  const view = netView({
+    focus,
+    context,
+    colors: step.colors,
+    pieces: step.pieces,
+    marks,
+    bands: { ...NO_BANDS, ...step.bands },
+    allLabels: step.allLabels,
+    bothEndsFor: step.bothEnds ? new Set(step.bothEnds) : undefined,
+  });
   if (step.quiz || (!focus.size && !context.size && !step.pieces?.length && !marks.length)) {
     // Fragen: leere Karte – die Netzkarte (Namen beim Drüberfahren) würde die Antwort verraten
     layer.clear();
@@ -55,8 +64,23 @@ function drawStep(step: Step) {
     return;
   }
   const pts = layer.render(view);
-  const fit = step.fitMarks && marks.length ? marks.map((s) => [s.lat, s.lon] as [number, number]) : pts;
-  if (fit.length) app.map.fitPoints(fit, 14);
+  const fit = step.fit?.length ? step.fit.map((s) => [s.lat, s.lon] as [number, number]) : step.fitMarks && marks.length ? marks.map((s) => [s.lat, s.lon] as [number, number]) : pts;
+  // knapper Rand: die Linien füllen den Ausschnitt (Handy wie großer Bildschirm)
+  if (fit.length) app.map.fitPoints(fit, step.fitMarks ? 15 : 14, 0.12);
+}
+
+/** Linien, um die es in einer Frage geht */
+export function quizLines(qz: Quiz): string[] {
+  if (qz.lines) return qz.lines.filter((id) => L(id));
+  return linesInText(`${qz.q} ${qz.explain}`, qz.correct);
+}
+
+/** Auflösung einer Frage: die Linie(n) der Frage, die richtige Station markiert */
+function drawQuizReveal(qz: Quiz) {
+  const lines = quizLines(qz);
+  const right = app.net.data.stations.find((s) => s.name === qz.correct);
+  if (!lines.length && !right) return;
+  drawStep({ title: '', html: '', lines, marks: right ? [right] : [] });
 }
 
 /** Einen Kurs durchgehen: Schritt für Schritt, Fragen beantworten, am Ende Ergebnis */
@@ -90,8 +114,9 @@ export function courseView(panel: HTMLElement, course: Course, onBack: () => voi
     if (i >= total) return renderDone(quizCount);
     const st = steps[i];
     if (st.task) return renderTaskStep(st, total);
-    drawStep(st);
     const answered = answers.has(i);
+    if (st.quiz && answered) drawQuizReveal(st.quiz);
+    else drawStep(st);
     const el = h(
       'div',
       { class: 'learn course' },

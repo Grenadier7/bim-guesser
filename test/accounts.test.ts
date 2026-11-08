@@ -8,6 +8,7 @@ import type { AddressInfo } from 'node:net';
 import { after, before, describe, test } from 'node:test';
 import type { Evaluation, RoundReveal } from '../shared/types.ts';
 import { Accounts, COURSE_COUNT, hashPassword, levelOf, verifyPassword } from '../server/accounts.ts';
+import { COURSE_IDS } from '../shared/career.ts';
 import { MEDALS } from '../shared/career.ts';
 import { createApp } from '../server/app.ts';
 import type { Lobby } from '../server/lobby.ts';
@@ -84,7 +85,10 @@ describe('Passwörter und Level', () => {
     assert.deepEqual(levelOf(260), { level: 3, xp: 260, levelXp: 250, nextXp: 450 });
   });
 
-  test('Kursanzahl passt zum Lernpfad', () => assert.equal(COURSE_COUNT, COURSES.length));
+  test('Kursanzahl passt zum Lernpfad', () => {
+    assert.equal(COURSE_COUNT, COURSES.length);
+    assert.deepEqual(COURSE_IDS, COURSES.map((c) => c.id));
+  });
 });
 
 describe('Registrieren, Anmelden, Sitzung', () => {
@@ -538,18 +542,20 @@ describe('Statistik aus echten Spielabläufen', () => {
 
   test('Level: Kurse aus dem Spielstand zählen, Netzkenner-Medaille in Stufen (Gold erst, wenn alle gemeistert)', async () => {
     const a = await newUser('Lerner');
-    const courses: Record<string, unknown> = Object.fromEntries(COURSES.slice(0, 8).map((c) => [c.id, { done: true, best: 1, total: 1, mastered: true }]));
+    const courses: Record<string, unknown> = Object.fromEntries(COURSES.slice(0, 7).map((c) => [c.id, { done: true, best: 1, total: 1, mastered: true }]));
+    // ein entfernter Kurs zählt nicht mehr
+    courses.tangential = { done: true, best: 1, total: 1, mastered: true };
     await a.b.call('PUT', '/api/me/data', { data: { 'oeffi-courses-v1': courses } });
     let me = (await a.b.call('GET', '/api/me')).body.user;
-    assert.equal(me.level.xp, 8 * 100);
-    // 8 geschafft + 8 gemeistert = 16 → Silber (9), noch nicht Gold (18)
+    assert.equal(me.level.xp, 7 * 100);
+    // 7 geschafft + 7 gemeistert = 14 → Silber (8), noch nicht Gold (16)
     assert.equal(me.medals.find((m: { id: string }) => m.id === 'courses').tier, 2);
-    courses[COURSES[8].id] = { done: true, best: 1, total: 1 };
+    courses[COURSES[7].id] = { done: true, best: 1, total: 1 };
     await a.b.call('PUT', '/api/me/data', { data: { 'oeffi-courses-v1': courses } });
     me = (await a.b.call('GET', '/api/me')).body.user;
     assert.equal(me.medals.find((m: { id: string }) => m.id === 'courses').tier, 2, 'einer noch nicht gemeistert → noch kein Gold');
     assert.ok(me.medals.find((m: { id: string }) => m.id === 'courses').at);
-    assert.equal((await a.b.call('GET', `/api/users/${a.name}`)).body.stats.coursesDone, 9);
+    assert.equal((await a.b.call('GET', `/api/users/${a.name}`)).body.stats.coursesDone, 8);
   });
 });
 
