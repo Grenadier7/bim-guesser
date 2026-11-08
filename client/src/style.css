@@ -6803,7 +6803,8 @@ details.adm-linechg li {
 
 /* ---------------------------------------------------------------- Lobby: Tages-Challenges */
 
-.settings-head {
+.settings-head,
+.events-head {
   margin-top: 22px;
 }
 .challenge-bar {
