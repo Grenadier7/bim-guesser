@@ -181,7 +181,7 @@ export class RouteBuilder {
 
   get position(): Station {
     // Einfügemodus: die nächste Linie startet dort, wo der Fußweg beginnt
-    if (this.swapAt != null) return this.net.station(this.legs[this.swapAt - 1].to);
+    if (this.swapAt != null) return this.swapAt === 0 ? this.start : this.net.station(this.legs[this.swapAt - 1].to);
     return this.legs.length ? this.net.station(this.legs[this.legs.length - 1].to) : this.start;
   }
 
@@ -204,7 +204,7 @@ export class RouteBuilder {
     const along = (from: string, to: string) => this.net.patterns(leg.line).some((p) => p.indexOf(from) >= 0 && p.indexOf(to, p.indexOf(from) + 1) > p.indexOf(from));
     const prev = this.legs[i - 1];
     const next = this.legs[i];
-    if (prev.line.id === leg.line.id && prev.to === leg.from && along(prev.from, leg.to)) {
+    if (prev && prev.line.id === leg.line.id && prev.to === leg.from && along(prev.from, leg.to)) {
       prev.to = leg.to;
       this.reflow(i - 1);
     } else if (next && next.line.id === leg.line.id && along(leg.from, next.to)) {
@@ -262,8 +262,8 @@ export class RouteBuilder {
    */
   private swapControls(i: number): string {
     if (this.opts.typed || this.locked) return '';
-    if (this.swapAt !== i) return `<button class="walk-swap link" data-swap="${i}" title="Die nächste Linie hier statt am Ende einfügen">➕ Linie hier einfügen</button>`;
-    return `<span class="walk-swap-on">⤵ Die nächste Linie kommt hierher <button class="link" data-swap-cancel>Beenden</button></span>`;
+    if (this.swapAt !== i) return `<button class="walk-swap link" data-swap="${i}" title="Die nächste Linie hier statt am Ende einfügen">➕ Linie einfügen</button>`;
+    return `<span class="walk-swap-on">⤵ nächste Linie kommt hierher <button class="link" data-swap-cancel>Beenden</button></span>`;
   }
   /** Linie per Tastatur gewählt → Fokus beim Ausstieg bzw. (hält woanders) beim Einstieg */
   private openPicker = false;
@@ -286,12 +286,12 @@ export class RouteBuilder {
       else if (from.id !== pos.id) {
         const d = distM(pos, from);
         const level = d > loud() ? 'walk-loud' : d > quiet() ? 'walk-mid' : 'walk-quiet';
-        // mitten in der Route: Fußweg durch eine Linie ersetzen
-        const swap = i > 0 ? this.swapControls(i) : '';
+        // Fußweg durch eine Linie ersetzen – mittendrin und am Anfang (dort bleibt der Weg eine leise Zeile)
+        const swap = this.swapControls(i);
         if (i > 0 && d > quiet() && !hideD)
           list.append(
             h('li', { class: `leg walk-leg ${level}${this.swapAt === i ? ' inserting' : ''}` }, `<div class="leg-main"><span class="walk-icon">${walkIcon()}</span>
-              <span class="leg-text">${esc(pos.name)} → <b>${esc(from.name)}</b><small>${walkText(d)}</small></span></div>${swap}`),
+              <span class="leg-text">${esc(pos.name)} → <b>${esc(from.name)}</b><small>${walkText(d)}</small></span>${swap}</div>`),
           );
         else list.append(h('li', { class: `leg-walk ${level}${this.swapAt === i ? ' inserting' : ''}` }, `${walkIcon()} ${hideD ? '' : `${fmtDist(d)} `}${scooterMode ? 'mit dem Scooter' : 'zu Fuß'} nach ${esc(from.name)}${hideD ? '' : ` ${walkMin(d)}`} ${swap}`));
       }
@@ -315,7 +315,7 @@ export class RouteBuilder {
         { class: 'leg' },
         `<div class="leg-main">${lineChip(l.line.mode, l.line.id, l.line.color)}
           <span class="leg-text">${esc(fromName)} →${typed ? ` <b>${esc(to.name)}</b>` : ''}${typed ? '<small></small>' : `<small>${stops} Station${stops === 1 ? '' : 'en'}</small>`}</span>
-          ${last ? '<button class="icon-btn" data-act="remove" title="Teilstrecke entfernen">✕</button>' : ''}</div>
+          <button class="icon-btn" data-act="remove" title="${last ? 'Teilstrecke entfernen' : 'Teilstrecke entfernen – dazwischen wird gegangen'}">✕</button></div>
           ${oneWay ? `<div class="one-way">↩ Die ${esc(l.line.id)} hält in diese Richtung nicht bei ${esc(pos.name)} (Einbahn/Schleife) – Einstieg ${esc(from.name)}.</div>` : ''}`,
       );
       if (!typed) {
@@ -336,7 +336,8 @@ export class RouteBuilder {
         li.querySelector('.leg-text small')!.before(sel);
       }
       li.querySelector('[data-act=remove]')?.addEventListener('click', () => {
-        this.legs.pop();
+        // auch mittendrin: die Fahrten danach bleiben, dazwischen wird gegangen (Lücke lässt sich wieder füllen)
+        this.legs.splice(i, 1);
         this.swapAt = null;
         this.notice = '';
         this.resetForm();

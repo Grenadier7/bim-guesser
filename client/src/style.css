@@ -4094,9 +4094,14 @@ details.host-bar {
   font-size: 12px;
   white-space: nowrap;
 }
-.walk-leg .walk-swap {
-  display: block;
-  margin: 4px 0 0 40px;
+/* im Fußweg-Block rechts in der Zeile (wie das ✕ bei Fahrten) – der Block bleibt so hoch wie eine Fahrt */
+.walk-leg .walk-swap,
+.walk-leg .walk-swap-on {
+  margin-left: auto;
+  flex-shrink: 0;
+  max-width: 45%;
+  white-space: normal;
+  text-align: right;
 }
 /* Einfügemodus: der Fußweg, an dessen Stelle die nächste Linie kommt */
 .walk-swap-on {
@@ -4110,8 +4115,7 @@ details.host-bar {
   color: var(--accent);
 }
 .walk-leg .walk-swap-on {
-  display: flex;
-  margin: 4px 0 0 40px;
+  justify-content: flex-end;
 }
 .inserting {
   outline: 2px dashed var(--accent);
@@ -4136,6 +4140,11 @@ details.host-bar {
 .walk-leg {
   border-style: dashed;
   background: #f7f8fa;
+}
+
+.walk-leg .leg-text b {
+  /* so hoch wie die Ausstiegs-Auswahl einer Fahrt – Fußweg-Block und Fahrten sind gleich hoch */
+  padding: 5px 0;
 }
 
 .walk-leg .walk-icon {
@@ -7556,4 +7565,18 @@ path.blocked-area {
 .assign-right {
   margin-left: auto;
   color: var(--muted);
+}
+
+/* Lernen: Richtungspfeil bei „In welcher Reihenfolge …“ */
+.learn-arrow span {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #1b1e23;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+  box-shadow: 0 0 0 3px #fff;
 }
