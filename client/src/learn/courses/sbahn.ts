@@ -1,17 +1,17 @@
-// Kurs – Die S-Bahn: Stammstrecke, Äste und die übrigen S-Bahnen
+// Kurs – Die S-Bahn: Stammstrecke, Äste, S45, S80 und die Pendler-S-Bahnen (S40/S50/S60)
 import type { Station } from '../../../../shared/types.ts';
 import { esc } from '../../ui.ts';
 import { shuffle } from '../model.ts';
 import { distM } from '../../net.ts';
 import type { Piece } from '../../netmap.ts';
-import { ask, chip, chips, type Course, crossings, ends, farEnd, have, L, lineQuiz, pick, quiz, route, S_BRANCH, segment, stationByName, stationsOf, type Step, table, taskStep, TRANSDANUBIEN, U_LINES } from './common.ts';
+import { ask, chip, chips, type Course, crossings, ends, farEnd, have, L, lineQuiz, mainOf, pick, quiz, S_BRANCH, segment, stationByName, stationsOf, type Step, table, taskStep, TRANSDANUBIEN, U_LINES } from './common.ts';
 import { crossingTask, identifyTask, orderTask, servesTask, terminalTask } from './tasks.ts';
 
 export const sbahnCourse: Course = {
   id: 'sbahn',
   icon: '🚆',
   title: 'Die S-Bahn',
-  short: 'Stammstrecke, ihre Äste und die übrigen S-Bahnen',
+  short: 'Stammstrecke und Äste, S45, S80 und die Pendlerzüge nach Niederösterreich',
   build() {
     const core = have(['S1', 'S2', 'S3', 'S4']);
     if (!core.length) return [];
@@ -84,29 +84,47 @@ export const sbahnCourse: Course = {
         context: core,
         marks: ['Rennweg'].map(stationByName).filter((s): s is Station => !!s),
       });
-    steps.push(
-      {
-        title: 'Im Westen: S40, S45, S50',
-        html: table(
-          [
-            ['S45', 'Vorortelinie im Bogen durch die Vororte'],
-            ['S50', 'Westbahn ab Westbahnhof Richtung Wienerwald'],
-            ['S40', 'Franz-Josefs-Bahn ab Franz-Josefs-Bahnhof Richtung Tulln'],
-          ]
-            .filter(([id]) => L(id))
-            .map(([id, txt]) => [chip(id), `${route(id)}<br><small>${txt}</small>`]),
-        ),
-        lines: have(['S40', 'S45', 'S50']),
-        context: have(['U4', 'U6']),
-      },
-      {
-        title: 'Im Süden und Osten: S60, S80',
-        html: `${table(have(['S60', 'S80']).map((id) => [chip(id), route(id)]))}
-          <p>Die ${chip('S80')} ist die lange Querverbindung im Süden: Hütteldorf – Meidling – Hauptbahnhof – Simmering – über die Donau nach Stadlau und Aspern Nord.</p>`,
-        lines: have(['S60', 'S80']),
+    /** Umstiege einer Linie zur U-Bahn (je Station einmal, in Fahrtrichtung) */
+    const uStops = (id: string) => mainOf(id).filter((s) => uAt(s).length);
+    const transferTable = (id: string) => table(uStops(id).map((s) => [`<b>${esc(s.name)}</b>`, chips(uAt(s))]));
+    const commuter = (
+      [
+        ['S40', 'Franz-Josefs-Bahn – weiter über Klosterneuburg nach Tulln'],
+        ['S50', 'Westbahn – weiter durch den Wienerwald Richtung Neulengbach'],
+        ['S60', 'weiter Richtung Wiener Neustadt und Bruck an der Leitha'],
+      ] as const
+    ).filter(([id]) => L(id));
+    if (commuter.length)
+      steps.push({
+        title: 'S40, S50, S60 – hinaus nach Niederösterreich',
+        html: `<p>Diese S-Bahnen sind vor allem Pendlerzüge: In Wien halten sie nur an <b>wenigen Stationen</b>, dann geht es weiter ins Umland. In der Stadt brauchst du sie selten – am ehesten, um schnell an den Stadtrand zu kommen.</p>
+          ${table(commuter.map(([id, txt]) => [chip(id), `${mainOf(id).map((s) => esc(s.name)).join(' – ')}<br><small>${txt}</small>`]))}`,
+        lines: commuter.map(([id]) => id),
         context: core,
-      },
-    );
+        marks: commuter.map(([id]) => farEnd(id)),
+      });
+    if (L('S45')) {
+      steps.push({
+        title: 'Die S45 – die Vorortelinie',
+        html: `<p>Die ${chip('S45')} fährt im Bogen durch die westlichen Bezirke: <b>Handelskai – Heiligenstadt – Gersthof – Hernals – Ottakring – Hütteldorf</b>. Sie meidet das Zentrum und verbindet die Außenbezirke direkt miteinander – ohne Umweg über die Innenstadt.</p>
+          <p><b>Umsteigen in die U-Bahn:</b></p>${transferTable('S45')}`,
+        lines: ['S45'],
+        context: us,
+        marks: uStops('S45'),
+      });
+      steps.push(...taskStep(crossingTask('S45', 'U3')));
+    }
+    if (L('S80')) {
+      steps.push({
+        title: 'Die S80 – quer durch den Süden',
+        html: `<p>Die ${chip('S80')} ist die lange Querverbindung: von <b>Liesing</b> (oder über Speising von <b>Hütteldorf</b>) über Meidling, Hauptbahnhof und Simmering, dann über die Donau nach Stadlau und <b>Aspern Nord</b>. Wer vom Süden in die Donaustadt will, spart sich damit die Fahrt durchs Zentrum.</p>
+          <p><b>Umsteigen in die U-Bahn:</b></p>${transferTable('S80')}`,
+        lines: ['S80'],
+        context: core,
+        marks: uStops('S80'),
+      });
+      steps.push(...taskStep(terminalTask('S80')));
+    }
     const unique = us
       .map((u) => [u, withU.filter((s) => uAt(s).includes(u))] as const)
       .filter(([, at]) => at.length === 1)
@@ -118,6 +136,8 @@ export const sbahnCourse: Course = {
     steps.push(
       ...ask(lineQuiz('Welche S-Bahn fährt Richtung Flughafen?', 'S7', have(['S1', 'S2', 'S45', 'S50', 'S80']), 'Die S7 biegt nach Rennweg Richtung Flughafen ab.')),
       ...ask(quiz('Wo beginnt die S50?', 'Westbahnhof', ['Franz-Josefs-Bahnhof', 'Hauptbahnhof', 'Praterstern', 'Handelskai'], 'Die S50 ist die Westbahn – sie startet am Westbahnhof.')),
+      ...ask(quiz('Wo beginnt die S40?', 'Franz-Josefs-Bahnhof', ['Westbahnhof', 'Hauptbahnhof', 'Praterstern', 'Handelskai'], 'Die S40 ist die Franz-Josefs-Bahn – sie startet am Franz-Josefs-Bahnhof.')),
+      ...ask(lineQuiz('Welche S-Bahn verbindet Heiligenstadt, Hernals und Ottakring?', 'S45', have(['S40', 'S50', 'S80', 'S7', 'S60']), 'Die S45 fährt im Bogen durch die Vororte.')),
       ...ask(lineQuiz('Welche S-Bahn verbindet Hütteldorf mit Aspern Nord?', 'S80', have(['S45', 'S50', 'S7', 'S2']), 'Die S80 fährt quer durch den Süden bis Aspern Nord.')),
       ...ask(lineQuiz('Welche S-Bahn fährt NICHT über die Stammstrecke?', pick(others), core, `${core.join(', ')} fahren die Stammstrecke.`)),
     );
