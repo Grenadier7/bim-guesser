@@ -22,7 +22,7 @@ const SIX_EIGHTEEN = { both: NET_COLOR.Tfocus, '18': NET_COLOR.Tfocus, '6': '#70
 const GUERTEL_PIECES: Piece[] = [
   { line: 'U6', from: 'Dresdner Straße', to: 'Längenfeldgasse', labelFrac: 0.3 },
   { line: '6', from: 'Burggasse-Stadthalle', to: 'Matzleinsdorfer Platz', color: SIX_EIGHTEEN.both, label: '6 + 18', labelFrac: 0.45 },
-  { line: '18', from: 'Matzleinsdorfer Platz', to: 'Quartier Belvedere', color: SIX_EIGHTEEN['18'], label: '18', labelFrac: 0.6 },
+  { line: '18', from: 'Matzleinsdorfer Platz', to: 'Stadion', color: SIX_EIGHTEEN['18'], label: '18', labelFrac: 0.35 },
   { line: '6', from: 'Matzleinsdorfer Platz', to: 'Reumannplatz', color: SIX_EIGHTEEN['6'], label: '6', labelFrac: 0.7 },
 ];
 
@@ -84,7 +84,7 @@ export const ringCourse: Course = {
         html: `<p>Die ${chip('U6')} fährt den West- und Nordgürtel entlang (Meidling – Spittelau). Im Süden übernehmen ${chips(have(['18', '6']))}:</p>
           ${table([
             [`<span class="swatch" style="background:${SIX_EIGHTEEN.both}"></span> ${chips(have(['6', '18']))}`, 'gemeinsam: Burggasse-Stadthalle – Westbahnhof – <b>Matzleinsdorfer Platz</b>'],
-            [chip('18'), 'nur die 18: weiter den Gürtel entlang über Hauptbahnhof zum <b>Quartier Belvedere</b> (und weiter nach St. Marx)'],
+            [chip('18'), 'nur die 18: weiter den Gürtel entlang über Hauptbahnhof und Quartier Belvedere, dann über St. Marx zum <b>Stadion</b>'],
             [`<span class="swatch" style="background:${SIX_EIGHTEEN['6']}"></span> ${chip('6', SIX_EIGHTEEN)}`, 'nur die 6: biegt ab nach Favoriten (Reumannplatz) und weiter nach Simmering'],
           ])}`,
         pieces: GUERTEL_PIECES,
@@ -92,7 +92,7 @@ export const ringCourse: Course = {
         bands: { guertel: true },
         marks: [
           ...hubs.filter((s) => ['Westbahnhof', 'Spittelau', 'Längenfeldgasse', 'Meidling'].includes(s.name)),
-          ...['Matzleinsdorfer Platz', 'Quartier Belvedere'].map(stationByName).filter((s): s is Station => !!s),
+          ...['Matzleinsdorfer Platz', 'Stadion'].map(stationByName).filter((s): s is Station => !!s),
         ],
       },
       {
