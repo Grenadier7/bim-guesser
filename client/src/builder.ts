@@ -176,11 +176,43 @@ export class RouteBuilder {
   /** Warum diese Linie jetzt nicht geht (Challenge-Regeln, fährt gerade nicht) – null = ok */
   lineBlocked(lineId: string): string | null {
     if (this.opts.idle?.includes(lineId)) return `🌙 Die ${lineId} fährt um diese Uhrzeit nicht.`;
-    return this.opts.rules ? lineProblem(this.opts.rules, this.plain(), lineId, this.rn) : null;
+    return this.opts.rules ? lineProblem(this.opts.rules, this.before(), lineId, this.rn) : null;
   }
 
   get position(): Station {
+    // Einfügemodus: die nächste Linie startet dort, wo der Fußweg beginnt
+    if (this.swapAt != null) return this.net.station(this.legs[this.swapAt - 1].to);
     return this.legs.length ? this.net.station(this.legs[this.legs.length - 1].to) : this.start;
+  }
+
+  /** Teilstrecken vor der nächsten Linie (im Einfügemodus nur die vor dem Fußweg) – für die Regeln */
+  private before() {
+    return this.plain(this.swapAt != null ? this.legs.slice(0, this.swapAt) : this.legs);
+  }
+
+  /**
+   * Neue Teilstrecke: normal ans Ende, im Einfügemodus an die Stelle des Fußwegs. Die Fahrt danach steigt dann am neuen
+   * Ausstieg ein (oder fällt weg, wenn sie von dort nicht mehr passt). Dieselbe Linie direkt davor/danach → eine Fahrt.
+   */
+  private addLeg(leg: DraftLeg) {
+    const i = this.swapAt;
+    this.swapAt = null;
+    if (i == null) {
+      this.legs.push(leg);
+      return;
+    }
+    const along = (from: string, to: string) => this.net.patterns(leg.line).some((p) => p.indexOf(from) >= 0 && p.indexOf(to, p.indexOf(from) + 1) > p.indexOf(from));
+    const prev = this.legs[i - 1];
+    const next = this.legs[i];
+    if (prev.line.id === leg.line.id && prev.to === leg.from && along(prev.from, leg.to)) {
+      prev.to = leg.to;
+      this.reflow(i - 1);
+    } else if (next && next.line.id === leg.line.id && along(leg.from, next.to)) {
+      next.from = leg.from;
+    } else {
+      this.legs.splice(i, 0, leg);
+      this.reflow(i);
+    }
   }
 
   userLegs(): UserLeg[] {
@@ -202,8 +234,9 @@ export class RouteBuilder {
       const g = this.goalNear(pos);
       segs.push({ path: [ll(pos), [g.lat, g.lon]], color: '#666', walk: true });
     }
-    if (this.pickedLine && this.board && this.board !== pos.id)
-      segs.push({ path: [ll(pos), ll(this.net.station(this.board))], color: '#666', walk: true });
+    const at = this.position;
+    if (this.pickedLine && this.board && this.board !== at.id)
+      segs.push({ path: [ll(at), ll(this.net.station(this.board))], color: '#666', walk: true });
     return segs;
   }
 
@@ -224,32 +257,13 @@ export class RouteBuilder {
   private swapAt: number | null = null;
 
   /**
-   * Linien, die direkt von a nach b fahren (statt dort zu gehen) – mit den Regeln der Runde, geprüft mit den
-   * Teilstrecken davor
+   * Fußweg mitten in der Route: ein reines Werkzeug – antippen, dann kommt die nächste eingegebene Linie an diese
+   * Stelle statt ans Ende (ohne Vorschläge, die würden die Lösung verraten). „Beenden“ verlässt den Modus.
    */
-  private swapLines(a: string, b: string, before: number): Line[] {
-    const prev = this.plain(this.legs.slice(0, before));
-    return this.net
-      .station(a)
-      .lines.map((id) => this.net.lines.get(id))
-      .filter((l): l is Line => !!l)
-      .filter((l) => this.net.patterns(l).some((p) => p.indexOf(a) >= 0 && p.indexOf(b, p.indexOf(a) + 1) > p.indexOf(a)))
-      .filter((l) => restrictionAllowsLine(this.restriction, this.banned, l) && !this.opts.idle?.includes(l.id))
-      .filter((l) => !this.opts.rules || !legProblem(this.opts.rules, prev, { line: l.id, from: a, to: b }, this.rn));
-  }
-
-  /** Knopf „Linie statt Fußweg“ und – wenn offen – die Auswahl der passenden Linien */
-  private swapControls(i: number, a: Station, b: Station): string {
+  private swapControls(i: number): string {
     if (this.opts.typed || this.locked) return '';
-    if (this.swapAt !== i) return `<button class="walk-swap link" data-swap="${i}" title="Diesen Fußweg mit einer Linie fahren">🔁 Linie statt Fußweg</button>`;
-    if (this.legs.length >= restrictionMaxLegs(this.restriction))
-      return `<div class="walk-swap-box"><span class="muted">Keine weitere Linie möglich (${esc(restrictionLabel(this.restriction!, this.banned))}).</span> <button class="link" data-swap-cancel>Abbrechen</button></div>`;
-    const lines = this.swapLines(a.id, b.id, i);
-    return `<div class="walk-swap-box">${
-      lines.length
-        ? `<span>Fahren von ${esc(a.name)} nach ${esc(b.name)} mit:</span> ${lines.map((l) => `<button class="line-opt" data-swap-line="${esc(l.id)}" title="${esc(l.id)} statt zu Fuß">${lineChip(l.mode, l.id, l.color)}</button>`).join('')}`
-        : `<span class="muted">Keine Linie fährt direkt von ${esc(a.name)} nach ${esc(b.name)}.</span>`
-    } <button class="link" data-swap-cancel>Abbrechen</button></div>`;
+    if (this.swapAt !== i) return `<button class="walk-swap link" data-swap="${i}" title="Die nächste Linie hier statt am Ende einfügen">➕ Linie hier einfügen</button>`;
+    return `<span class="walk-swap-on">⤵ Die nächste Linie kommt hierher <button class="link" data-swap-cancel>Beenden</button></span>`;
   }
   /** Linie per Tastatur gewählt → Fokus beim Ausstieg bzw. (hält woanders) beim Einstieg */
   private openPicker = false;
@@ -273,13 +287,13 @@ export class RouteBuilder {
         const d = distM(pos, from);
         const level = d > loud() ? 'walk-loud' : d > quiet() ? 'walk-mid' : 'walk-quiet';
         // mitten in der Route: Fußweg durch eine Linie ersetzen
-        const swap = i > 0 ? this.swapControls(i, pos, from) : '';
+        const swap = i > 0 ? this.swapControls(i) : '';
         if (i > 0 && d > quiet() && !hideD)
           list.append(
-            h('li', { class: `leg walk-leg ${level}` }, `<div class="leg-main"><span class="walk-icon">${walkIcon()}</span>
+            h('li', { class: `leg walk-leg ${level}${this.swapAt === i ? ' inserting' : ''}` }, `<div class="leg-main"><span class="walk-icon">${walkIcon()}</span>
               <span class="leg-text">${esc(pos.name)} → <b>${esc(from.name)}</b><small>${walkText(d)}</small></span></div>${swap}`),
           );
-        else list.append(h('li', { class: `leg-walk ${level}` }, `${walkIcon()} ${hideD ? '' : `${fmtDist(d)} `}${scooterMode ? 'mit dem Scooter' : 'zu Fuß'} nach ${esc(from.name)}${hideD ? '' : ` ${walkMin(d)}`} ${swap}`));
+        else list.append(h('li', { class: `leg-walk ${level}${this.swapAt === i ? ' inserting' : ''}` }, `${walkIcon()} ${hideD ? '' : `${fmtDist(d)} `}${scooterMode ? 'mit dem Scooter' : 'zu Fuß'} nach ${esc(from.name)}${hideD ? '' : ` ${walkMin(d)}`} ${swap}`));
       }
       const stops = this.net.stopsBetween(l.line, l.from, l.to);
       const last = i === this.legs.length - 1;
@@ -315,6 +329,7 @@ export class RouteBuilder {
           const [nf, nt] = parseAlight(sel.value, l.from);
           l.from = nf;
           l.to = nt;
+          this.swapAt = null;
           this.reflow(i);
           this.resetForm();
         });
@@ -322,6 +337,7 @@ export class RouteBuilder {
       }
       li.querySelector('[data-act=remove]')?.addEventListener('click', () => {
         this.legs.pop();
+        this.swapAt = null;
         this.notice = '';
         this.resetForm();
       });
@@ -329,42 +345,27 @@ export class RouteBuilder {
       pos = to;
     });
     if (this.legs.length) this.el.append(list);
-    // Fußweg ersetzen: öffnen, Linie wählen (wird als Teilstrecke davor eingefügt), abbrechen
+    // Einfügemodus an/aus
     list.querySelectorAll<HTMLElement>('[data-swap]').forEach((b) =>
       b.addEventListener('click', () => {
         this.swapAt = Number(b.dataset.swap);
-        this.render();
+        this.notice = '';
+        this.resetForm();
       }),
     );
     list.querySelectorAll<HTMLElement>('[data-swap-cancel]').forEach((b) =>
       b.addEventListener('click', () => {
         this.swapAt = null;
-        this.render();
-      }),
-    );
-    list.querySelectorAll<HTMLElement>('[data-swap-line]').forEach((b) =>
-      b.addEventListener('click', () => {
-        const i = this.swapAt;
-        const line = this.net.lines.get(b.dataset.swapLine!);
-        if (i == null || !line || this.locked) return;
-        const prev = this.legs[i - 1];
-        const next = this.legs[i];
-        // dieselbe Linie fährt einfach weiter → eine Fahrt statt zwei (U6 bis Gumpendorfer Straße + U6 bis Westbahnhof)
-        const along = (from: string, to: string) => this.net.patterns(line).some((p) => p.indexOf(from) >= 0 && p.indexOf(to, p.indexOf(from) + 1) > p.indexOf(from));
-        if (prev.line.id === line.id && along(prev.from, next.from)) prev.to = next.from;
-        else if (next.line.id === line.id && along(prev.to, next.to)) next.from = prev.to;
-        else this.legs.splice(i, 0, { line, from: prev.to, to: next.from });
-        this.swapAt = null;
-        this.notice = '';
-        this.render();
+        this.resetForm();
       }),
     );
     if (this.notice) this.el.append(h('div', { class: 'warn' }, esc(this.notice)));
 
     const arrived = this.isGoal(pos.id);
     const full = this.legs.length >= restrictionMaxLegs(this.restriction);
-    if (!arrived && !full) this.el.append(this.renderForm());
-    if (!arrived && full)
+    if (this.swapAt != null && !full) this.el.append(this.renderForm());
+    else if (!arrived && !full) this.el.append(this.renderForm());
+    if ((!arrived || this.swapAt != null) && full)
       this.el.append(h('div', { class: 'warn' }, `${esc(restrictionLabel(this.restriction!, this.banned))}: keine weitere Linie möglich.`));
 
     // E-Scooter: noch keine Linie – ganz mit dem Scooter abgeben geht auch
@@ -441,7 +442,15 @@ export class RouteBuilder {
     const pos = this.position;
     const form = h('div', { class: 'leg-form' });
     const posName = this.opts.hideStart && pos.id === this.start.id ? 'dem Start' : pos.name;
-    form.append(h('div', { class: 'form-title' }, this.legs.length ? `Weiter ab <b>${esc(posName)}</b>` : `Los geht's ab <b>${esc(posName)}</b>`));
+    if (this.swapAt != null) {
+      const to = this.net.station(this.legs[this.swapAt].from);
+      const title = h('div', { class: 'form-title inserting' }, `Einfügen ab <b>${esc(posName)}</b> <small>statt zu Fuß nach ${esc(to.name)}</small> <button class="link" data-act="insert-off">Beenden</button>`);
+      title.querySelector('button')!.addEventListener('click', () => {
+        this.swapAt = null;
+        this.resetForm();
+      });
+      form.append(title);
+    } else form.append(h('div', { class: 'form-title' }, this.legs.length ? `Weiter ab <b>${esc(posName)}</b>` : `Los geht's ab <b>${esc(posName)}</b>`));
 
     if (!this.pickedLine) {
       const input = h('input', { type: 'text', class: 'line-input', placeholder: 'Linie eingeben, z.B. U2, 5B, 43, S45 …', autocomplete: 'off', spellcheck: 'false' });
@@ -557,19 +566,20 @@ export class RouteBuilder {
         h(
           'div',
           { class: 'walk-alert walk-mid' },
+          // hält die Linie hier, ist ein anderer Einstieg selbst gewählt – dann nur den Weg nennen
           servesHere
-            ? `↩ In diese Richtung hält die ${esc(line.id)} nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`
-            : `${walkIcon()} Die ${esc(line.id)} hält nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`,
+            ? `${walkIcon()} Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`
+            :`${walkIcon()} Die ${esc(line.id)} hält nicht hier – Einstieg ${esc(boardName)}, ${walkText(boardDist)}.`,
         ),
       );
     else if (boardDist > 0 && !this.opts.hideDistances) form.append(h('div', { class: 'walk-note' }, `${walkIcon()} ${fmtDist(boardDist)} zum Einstieg ${esc(boardName)} ${walkMin(boardDist)}`));
 
     // Ausstieg nach Richtung gruppiert
-    const alightSel = this.alightSelect(line, this.board!, null, this.plain(), !!train);
+    const alightSel = this.alightSelect(line, this.board!, null, this.before(), !!train);
     const commit = () => {
       if (!alightSel.value) return;
       const [from, to] = parseAlight(alightSel.value, this.board!);
-      this.legs.push({ line, from, to });
+      this.addLeg({ line, from, to });
       this.resetForm();
     };
     alightSel.addEventListener('change', commit);
@@ -677,7 +687,7 @@ export class RouteBuilder {
         err.textContent = `Station „${bad}“ gibt es nicht – bitte aus den Vorschlägen wählen.`;
         return;
       }
-      this.legs.push({ line, from: from!, to: to! });
+      this.addLeg({ line, from: from!, to: to! });
       this.resetForm();
     };
     fields.querySelector('[data-act=add]')!.addEventListener('click', add);
