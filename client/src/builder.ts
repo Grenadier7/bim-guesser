@@ -198,21 +198,25 @@ export class RouteBuilder {
     const i = this.swapAt;
     this.swapAt = null;
     if (i == null) {
-      this.legs.push(leg);
+      // dieselbe Linie direkt weiter (U1 bis Kagran, dann U1 ab Kagran) → eine Fahrt
+      const last = this.legs[this.legs.length - 1];
+      if (last && last.line.id === leg.line.id && last.to === leg.from && this.along(leg.line, last.from, leg.to)) last.to = leg.to;
+      else this.legs.push(leg);
       return;
     }
-    const along = (from: string, to: string) => this.net.patterns(leg.line).some((p) => p.indexOf(from) >= 0 && p.indexOf(to, p.indexOf(from) + 1) > p.indexOf(from));
     const prev = this.legs[i - 1];
-    const next = this.legs[i];
-    if (prev && prev.line.id === leg.line.id && prev.to === leg.from && along(prev.from, leg.to)) {
+    if (prev && prev.line.id === leg.line.id && prev.to === leg.from && this.along(leg.line, prev.from, leg.to)) {
       prev.to = leg.to;
       this.reflow(i - 1);
-    } else if (next && next.line.id === leg.line.id && along(leg.from, next.to)) {
-      next.from = leg.from;
     } else {
       this.legs.splice(i, 0, leg);
       this.reflow(i);
     }
+  }
+
+  /** fährt die Linie (in einer Haltefolge) von `from` weiter nach `to`? */
+  private along(line: Line, from: string, to: string): boolean {
+    return this.net.patterns(line).some((p) => p.indexOf(from) >= 0 && p.indexOf(to, p.indexOf(from) + 1) > p.indexOf(from));
   }
 
   userLegs(): UserLeg[] {
@@ -417,11 +421,22 @@ export class RouteBuilder {
    * nächstgelegenen Haltestelle (wie beim Neu-Hinzufügen). Kommt sie von dort nicht mehr in ihre Richtung zum alten
    * Ausstieg, fallen sie und alle späteren weg.
    */
-  private reflow(i: number) {
+  private reflow(i: number): void {
     this.notice = '';
+    const cur = this.legs[i];
     const next = this.legs[i + 1];
     if (!next) return;
-    const at = this.legs[i].to;
+    // dieselbe Linie fährt weiter (oder deckt die nächste Fahrt schon ab) → eine Fahrt, ohne Meldung
+    if (next.line.id === cur.line.id && this.along(cur.line, cur.from, next.to)) {
+      if (this.along(cur.line, cur.to, next.to)) cur.to = next.to;
+      this.legs.splice(i + 1, 1);
+      return this.reflow(i);
+    }
+    if (next.line.id === cur.line.id && next.to === cur.to) {
+      this.legs.splice(i + 1, 1);
+      return this.reflow(i);
+    }
+    const at = cur.to;
     const reach = (from: string) => this.net.patterns(next.line).some((p) => p.indexOf(from) >= 0 && p.indexOf(next.to, p.indexOf(from) + 1) > p.indexOf(from));
     const here = this.net.patterns(next.line).some((p) => p.includes(at));
     const board = here && reach(at) ? at : this.net.boardOptions(next.line, this.net.station(at), 1)[0]?.station.id;

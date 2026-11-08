@@ -126,7 +126,7 @@ Erfüllt nach 60 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strec
 - **Endstand** (Routenjagd und Quiz gleich): Punkte mit Balken und Urteil bzw. Siegertreppchen, 🔁 **Revanche** (gleiche
   Einstellungen, sofort los), allein: Vorschlag der nächsten Stufe (≥ 70 %) bzw. einer leichteren (< 25 %).
   „Spiel beenden“ mitten im Spiel zeigt den Endstand der gespielten Runden.
-- **Tages-Challenges** in der Routenjagd-Lobby – kurze Abwechslung für etwa 5 Minuten (`shared/challenges.ts`,
+- **Tages-Challenges** in der Routenjagd-Lobby (eigene Überschrift „Daily Events“ über den Einstellungen) – kurze Abwechslung für etwa 5 Minuten (`shared/challenges.ts`,
   Regeln in `shared/challengeRules.ts`, Server `server/challengeRound.ts`): ein niedriges Banner unter
   „Einstellungen“, mit ‹ › blätterbar (Titel eine Zeile, Beschreibung höchstens zwei) – jeden Tag **3 aus dem Plan
   + 🏘️ Bezirk des Tages** (für alle gleich, zufällig gemischt, die erste ist der Vorschlag).
@@ -406,7 +406,8 @@ als Zusatzfahrt anlegt, bleibt.
      auch mittendrin (dazwischen wird dann gegangen). Ein Fußweg **mitten in der Route oder am Anfang** (dort bleibt er
      eine leise Zeile) lässt sich mit „➕ Linie einfügen“ füllen: ein reiner Einfügemodus ohne Vorschläge – die nächste eingegebene Linie
      kommt an die Stelle des Fußwegs statt ans Ende (Fahrt danach steigt am neuen Ausstieg ein); „Beenden“ verlässt
-     den Modus. Fährt dieselbe Linie davor oder danach weiter, wird daraus eine Fahrt.
+     den Modus. Fährt dieselbe Linie davor oder danach weiter, wird daraus eine Fahrt – ebenso, wenn man nach einer Fahrt
+     dieselbe Linie ab dem Ausstieg weiter eingibt (U1 bis Kagran, dann U1 ab Kagran → eine U1-Fahrt).
    - **📍 Start & Ziel** (Erweitert → Schwierigkeit): *Haltestellen* oder *Adressen* – zufällige echte Adressen
      (Stadt Wien, OGD), gleichmäßig über die bebaute Fläche verteilt (400-m-Raster, höchstens 3 je Zelle, nur bis
      1,5 km von einer Haltestelle; `node scripts/build-addresses.ts` → `data/addresses.json`). Die Auskunft rechnet
