@@ -39,7 +39,7 @@ async function launch(): Promise<Browser> {
   throw new Error('Weder Edge noch Chrome gefunden');
 }
 
-/** Kurs-Schritt beantworten: Auswahl, Mehrfachauswahl, Ordnen, Karte antippen bzw. zeichnen */
+/** Kurs-Schritt beantworten: Auswahl, Mehrfachauswahl, Ordnen, Zuordnen, Karte antippen bzw. zeichnen */
 async function answerStep(page: Page) {
   if (await page.locator('.course-quiz button[data-o]:not([disabled])').count()) return page.locator('.course-quiz button[data-o]:not([disabled])').first().click();
   if (await page.locator('[data-m]:not([disabled])').count()) {
@@ -47,6 +47,11 @@ async function answerStep(page: Page) {
     return page.locator('#t-ok').click();
   }
   while (await page.locator('[data-ord]').count()) await page.locator('[data-ord]').first().click();
+  // Zuordnen: Beschriftung antippen, dann einen freien Abschnitt
+  while (await page.locator('[data-lab]').count()) {
+    await page.locator('[data-lab]').first().click();
+    await page.locator('.assign-slot:not(:has([data-back]))').first().click();
+  }
   if (await page.locator('.course-task #t-ok').count()) {
     await page.waitForTimeout(300);
     const b = (await page.locator('#map').boundingBox())!;
