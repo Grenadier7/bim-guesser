@@ -1,9 +1,18 @@
 // Netz-Hilfen im Browser: Linien suchen, Einstiege und Ausstiege ermitteln.
 import type { Line, NetMode, NetworkPublic, Restriction, Station } from '../../shared/types.ts';
 import { distM } from '../../shared/geo.ts';
+import { makeBarrier, walkRoute, type Barrier, type BarrierJson } from '../../shared/barrier.ts';
 import { linePatterns, restrictionAllowsLine } from '../../shared/rules.ts';
 
 export { distM };
+
+/** Donau als Hindernis für Fußwege (wie die Auswertung am Server) – ohne Daten Luftlinie */
+let barrier: Barrier | null = null;
+export const setWalkBarrier = (j: BarrierJson | null) => (barrier = j?.lines.length ? makeBarrier(j) : null);
+/** Fußweg in Metern – über die Donau nur über eine Brücke */
+export const walkM = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) => walkRoute(barrier, a, b).m;
+/** dieselbe Rechnung samt Brücke (für Text und Karte) */
+export const walkVia = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) => walkRoute(barrier, a, b);
 
 
 export function fmtDist(m: number): string {
@@ -84,7 +93,7 @@ export class NetIndex {
   boardOptions(line: Line, near: Station, limit = 6): { station: Station; dist: number }[] {
     const ids = new Set(this.patterns(line).flat());
     return [...ids]
-      .map((id) => ({ station: this.station(id), dist: id === near.id ? 0 : distM(this.station(id), near) }))
+      .map((id) => ({ station: this.station(id), dist: id === near.id ? 0 : walkM(this.station(id), near) }))
       .sort((a, b) => a.dist - b.dist)
       .slice(0, limit);
   }
@@ -142,7 +151,7 @@ export class NetIndex {
       if (p.includes(board)) continue;
       for (let i = 0; i < p.length - 1; i++) {
         const st = this.station(p[i]);
-        const d = distM(here, st);
+        const d = walkM(here, st);
         if (d > ALT_BOARD_MAX_M || (best && d >= best.walkM!)) continue;
         const rest = p.slice(i + 1).filter((id) => !known.has(id));
         // nur echte Gegenrichtungen – nicht die letzte Station vor einer Endstelle

@@ -21,6 +21,7 @@ import { TrainingService } from './training.ts';
 import { waterData, waterJson } from './water.ts';
 import { challengeSchedule } from './challengeSchedule.ts';
 import { bridgeData, bridgeJson } from './bridges.ts';
+import { barrierData } from './barrier.ts';
 
 const DIST = path.resolve(import.meta.dirname, '../dist');
 
@@ -125,6 +126,10 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
     const json = /^[a-z0-9-]{1,24}$/.test(plan) ? runtime.networkJson(plan) : null;
     if (!json) return void res.status(404).json({ error: 'Diesen Netzplan gibt es nicht.' });
     res.type('json').set('Cache-Control', 'no-cache').send(json);
+  });
+  // Donau als Hindernis für Fußwege (Baukasten rechnet wie die Auswertung)
+  app.get('/api/barrier', (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=86400').json(barrierData() ?? { lines: [], bridges: [] });
   });
   // Gewässer für „Ab ins Wasser“ (Karte, Fußweg zum nächsten Wasser)
   app.get('/api/water', (_req, res) => {

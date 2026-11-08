@@ -14,6 +14,7 @@ import type { EfaLeg, EfaPoint, EfaTrip, TripQuery } from './efa.ts';
 import { DEFAULT_PARAMS } from './plans.ts';
 import { currentPlan } from './plancontext.ts';
 import { moveMinutes } from '../shared/rules.ts';
+import { walkDistM } from './barrier.ts';
 
 const FILE = process.env.TIMETABLE_FILE ?? path.resolve(import.meta.dirname, '../data/timetable.json');
 // Umsteigezeit, Fußwege und höchstens so viele Fahrten: params (server/overrides.ts, Admin-Seite) –
@@ -266,7 +267,7 @@ function load(plan: string): Data | null {
       for (let y = -1; y <= 1; y++)
         for (const j of grid.get(`${a + x}:${b + y}`) ?? []) {
           if (j === i) continue;
-          const d = distM(n, nodes[j]);
+          const d = walkDistM(n, nodes[j]);
           if (d <= p.transferWalkM) out.push([j, walkMin(d) + p.changeMin]);
         }
     return out;
@@ -1024,7 +1025,7 @@ function access(d: Data, id: string): { list: Access[]; point: EfaPoint; address
     const [, lon, lat] = id.split(':').map(Number);
     const p: EfaPoint = { id, name: 'Adresse', place: 'Wien', lat, lon };
     const list = d.nodes
-      .map((n, i) => ({ node: i, m: distM(n, p) }))
+      .map((n, i) => ({ node: i, m: walkDistM(n, p) }))
       .filter((x) => x.m <= d.params.accessWalkM)
       .sort((a, b) => a.m - b.m)
       .slice(0, 40)
@@ -1131,7 +1132,7 @@ export function localTrip(q: TripQuery): EfaTrip[] | null {
   // ganz zu Fuß, wenn es nah ist (die Auskunft bietet das auch an)
   const fp = from.point;
   const tp = to.point;
-  const dist = distM(fp, tp);
+  const dist = walkDistM(fp, tp);
   if ((dist <= d.params.walkOnlyM || q.scooter) && q.via == null) {
     const m = q.scooter ? moveMinutes(dist, true) : walkMin(dist);
     out.push({ legs: [{ mode: 'W', line: null, from: fp, to: tp, dep: q.time, arr: q.time + m, path: [[fp.lat, fp.lon], [tp.lat, tp.lon]], stops: [] }], dep: q.time, arr: q.time + m });

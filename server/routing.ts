@@ -16,9 +16,10 @@ import { lineColor, lineGroupLabel, moveMinutes, regionalTrains, lineKey, restri
 import * as efa from './efa.ts';
 import { routeProblem } from '../shared/challengeRules.ts';
 import { ruleNetOf } from './challengeRound.ts';
-import { distM, type Network } from './network.ts';
+import type { Network } from './network.ts';
 import { currentPlan, isCancelled, withPlan } from './plancontext.ts';
 import { DEFAULT_PARAMS, paramsFor } from './plans.ts';
+import { walkDistM } from './barrier.ts';
 
 /** Abfahrtszeiten relativ zum Zeitfenster, an denen gesampelt wird (Minuten) */
 export const SAMPLE_OFFSETS = [0, 10, 20, 30, 40, 50];
@@ -38,7 +39,8 @@ const median = (xs: number[]) => {
 /** Wegzeit a → b: zu Fuß oder (q.scooter) mit dem E-Scooter – Treppen an U-/S-Bahn-Stationen, nicht an Start/Ziel */
 function walkMin(net: Network, a: string, b: string, q?: Pick<RouteQuery, 'scooter'>, stairsA = false, stairsB = false): number {
   if (a === b) return 0;
-  const m = distM(net.station(a), net.station(b));
+  // über die Donau nur über eine Brücke (sonst Luftlinie)
+  const m = walkDistM(net.station(a), net.station(b));
   if (!q?.scooter) return Math.max(1, Math.round((m * 1.3) / 80));
   const rail = (id: string) => net.station(id).modes.some((x) => x === 'U' || x === 'S');
   return moveMinutes(m, true, (stairsA && rail(a) ? 1 : 0) + (stairsB && rail(b) ? 1 : 0));

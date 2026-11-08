@@ -3,7 +3,8 @@ import type { Line, Restriction, Station, UmlandStart, UserLeg } from '../../sha
 import { RESTRICTIONS, moveMinutes, restrictionAllowsLine, restrictionAllowsRoute, restrictionLabel, restrictionMaxLegs } from '../../shared/rules.ts';
 import { legProblem, lineProblem, missingDistricts, problemBadge, routeProblem, stationProblem, type RuleRound } from '../../shared/challengeRules.ts';
 import { clientRuleNet } from './challenges.ts';
-import { distM, fmtDist, type NetIndex } from './net.ts';
+import { fmtDist, walkM, walkVia, type NetIndex } from './net.ts';
+import { bridgeLabel } from '../../shared/barrier.ts';
 import { smoothPath } from './netmap.ts';
 import { esc, h, lineChip, toast } from './ui.ts';
 
@@ -58,6 +59,12 @@ export interface BuilderOptions {
 }
 
 const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** Fußweg für die Karte – über die Donau mit Knick an der Brücke */
+function walkPath(a: { lat: number; lon: number }, b: { lat: number; lon: number }): [number, number][] {
+  const via = walkVia(a, b).via;
+  return via ? [[a.lat, a.lon], [via.lat, via.lon], [b.lat, b.lon]] : [[a.lat, a.lon], [b.lat, b.lon]];
+}
 
 /** Ausstiegs-Wert: "ausstieg" oder "einstieg>ausstieg" (Gegenrichtung hält woanders) */
 function parseAlight(v: string, board: string): [string, string] {
@@ -141,8 +148,8 @@ export class RouteBuilder {
     if (this.opts.water) return this.opts.water(p);
     const list = this.opts.targets ?? (this.opts.waypoints ? this.missingWaypoints() : null) ?? [this.dest];
     const pool = list.length ? list : (this.opts.waypoints ?? [this.dest]);
-    const best = pool.reduce((m, s) => (distM(s, p) < distM(m, p) ? s : m));
-    return { name: best.name, dist: distM(best, p), lat: best.lat, lon: best.lon };
+    const best = pool.reduce((m, s) => (walkM(s, p) < walkM(m, p) ? s : m));
+    return { name: best.name, dist: walkM(best, p), lat: best.lat, lon: best.lon };
   }
 
   /**
@@ -227,20 +234,19 @@ export class RouteBuilder {
   segments() {
     const segs: { path: [number, number][]; color: string; walk: boolean }[] = [];
     let pos = this.start;
-    const ll = (s: Station): [number, number] => [s.lat, s.lon];
     for (const l of this.legs) {
       const from = this.net.station(l.from);
-      if (from.id !== pos.id) segs.push({ path: [ll(pos), ll(from)], color: '#666', walk: true });
+      if (from.id !== pos.id) segs.push({ path: walkPath(pos, from), color: '#666', walk: true });
       segs.push({ path: smoothPath(l.line.id, l.from, l.to, this.net.legPath(l.line, l.from, l.to)), color: l.line.color, walk: false });
       pos = this.net.station(l.to);
     }
     if (this.legs.length && !this.isGoal(pos.id)) {
       const g = this.goalNear(pos);
-      segs.push({ path: [ll(pos), [g.lat, g.lon]], color: '#666', walk: true });
+      segs.push({ path: walkPath(pos, g), color: '#666', walk: true });
     }
     const at = this.position;
     if (this.pickedLine && this.board && this.board !== at.id)
-      segs.push({ path: [ll(at), ll(this.net.station(this.board))], color: '#666', walk: true });
+      segs.push({ path: walkPath(at, this.net.station(this.board)), color: '#666', walk: true });
     return segs;
   }
 
@@ -288,16 +294,18 @@ export class RouteBuilder {
       if (train) list.append(h('li', { class: 'leg-walk walk-quiet' }, `🚆 Im Zug aus ${esc(this.opts.umland!.town)} – ca. ${train.min} min bis ${esc(from.name)}`));
       // Fußweg vor dieser Teilstrecke: zwischendurch und über 250 m als eigener Block (wie eine Fahrt)
       else if (from.id !== pos.id) {
-        const d = distM(pos, from);
+        const d = walkM(pos, from);
+        // über die Donau: nur über eine Brücke – im Text dazusagen
+        const bridge = walkVia(pos, from).via;
         const level = d > loud() ? 'walk-loud' : d > quiet() ? 'walk-mid' : 'walk-quiet';
         // Fußweg durch eine Linie ersetzen – mittendrin und am Anfang (dort bleibt der Weg eine leise Zeile)
         const swap = this.swapControls(i);
         if (i > 0 && d > quiet() && !hideD)
           list.append(
             h('li', { class: `leg walk-leg ${level}${this.swapAt === i ? ' inserting' : ''}` }, `<div class="leg-main"><span class="walk-icon">${walkIcon()}</span>
-              <span class="leg-text">${esc(pos.name)} → <b>${esc(from.name)}</b><small>${walkText(d)}</small></span>${swap}</div>`),
+              <span class="leg-text">${esc(pos.name)} → <b>${esc(from.name)}</b><small>${walkText(d)}${bridge && !hideD ? ` · über die ${esc(bridgeLabel(bridge.name))}` : ''}</small></span>${swap}</div>`),
           );
-        else list.append(h('li', { class: `leg-walk ${level}${this.swapAt === i ? ' inserting' : ''}` }, `${walkIcon()} ${hideD ? '' : `${fmtDist(d)} `}${scooterMode ? 'mit dem Scooter' : 'zu Fuß'} nach ${esc(from.name)}${hideD ? '' : ` ${walkMin(d)}`} ${swap}`));
+        else list.append(h('li', { class: `leg-walk ${level}${this.swapAt === i ? ' inserting' : ''}` }, `${walkIcon()} ${hideD ? '' : `${fmtDist(d)} `}${scooterMode ? 'mit dem Scooter' : 'zu Fuß'} nach ${esc(from.name)}${hideD ? '' : ` ${walkMin(d)}`}${bridge && !hideD ? ` über die ${esc(bridgeLabel(bridge.name))}` : ''} ${swap}`));
       }
       const stops = this.net.stopsBetween(l.line, l.from, l.to);
       const last = i === this.legs.length - 1;
@@ -638,7 +646,7 @@ export class RouteBuilder {
     let best: { station: Station; dist: number } | null = null;
     for (const st of this.net.stations.values()) {
       if (!st.lines.length) continue;
-      const d = distM(st, p);
+      const d = walkM(st, p);
       if (!best || d < best.dist) best = { station: st, dist: d };
     }
     return best;

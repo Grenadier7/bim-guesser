@@ -402,7 +402,10 @@ als Zusatzfahrt anlegt, bleibt.
      Oberlaa), die Einstiegs-Station steht markiert und nicht wählbar mittendrin.
      Hält die Linie an der Station nur in eine Richtung (Schleifen/Einbahnen, z.B. 40 bei Schöffelgasse), wird die
      Gegenrichtung ab der nächsten Haltestelle (bis 700 m) angeboten – inkl. Fußweg dorthin.
-     Jeder Fußweg zeigt seine Dauer in Klammern („560 m zu Fuß (≈ 9 min)“). Jede Fahrt lässt sich mit ✕ entfernen,
+     Jeder Fußweg zeigt seine Dauer in Klammern („560 m zu Fuß (≈ 9 min)“). **Über die Donau** (Donau, Neue Donau)
+     geht man nur über eine Brücke: schneidet der gerade Weg den Fluss, zählt der Umweg über die nächste Donaubrücke
+     („· über die Reichsbrücke“, auf der Karte mit Knick) – in Auswertung, Referenzroute und Baukasten gleich
+     (`shared/barrier.ts`, Daten aus `data/water.json` und `data/bridges.json`, `/api/barrier`; ohne Daten Luftlinie). Jede Fahrt lässt sich mit ✕ entfernen,
      auch mittendrin (dazwischen wird dann gegangen). Ein Fußweg **mitten in der Route oder am Anfang** (dort bleibt er
      eine leise Zeile) lässt sich mit „➕ Linie einfügen“ füllen: ein reiner Einfügemodus ohne Vorschläge – die nächste eingegebene Linie
      kommt an die Stelle des Fußwegs statt ans Ende (Fahrt danach steigt am neuen Ausstieg ein); „Beenden“ verlässt

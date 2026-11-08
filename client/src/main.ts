@@ -11,7 +11,7 @@ import { account, startPolling } from './account.ts';
 import { accountButton, announceMedals, openAccount, renderInvites, takeResetLink } from './accountui.ts';
 import { isMine, setMine } from './learn/model.ts';
 import { GameMap } from './map.ts';
-import { NetIndex } from './net.ts';
+import { NetIndex, setWalkBarrier } from './net.ts';
 import { resetNetLayer } from './netmap.ts';
 import { openLegalFromHash } from './legal.ts';
 import { applyGameConfig } from '../../shared/config.ts';
@@ -359,7 +359,9 @@ async function init() {
   panel.innerHTML = loadingHtml('Wird geladen …');
   try {
     // erst die Spiel-Konfiguration (Uhrzeiten, Wertungen, Standard-Einstellungen …), dann das Netz
-    const [config, network] = await Promise.all([api.config(), api.network()]);
+    // Donau-Hindernis für Fußwege: fehlt es, rechnet der Baukasten Luftlinie (wie früher)
+    const [config, network, barrier] = await Promise.all([api.config(), api.network(), api.barrier().catch(() => null)]);
+    setWalkBarrier(barrier);
     app.config = config;
     applyGameConfig(config);
     renderNotice();

@@ -1,5 +1,6 @@
 import type { QuizSettings } from '../../shared/quiz.ts';
 import type { PublicConfig } from '../../shared/config.ts';
+import type { BarrierJson } from '../../shared/barrier.ts';
 import type { ChatMessage, DailyBoard, DailyResult, DailyRound, GameMode, GameSettings, Guesses, JoinResponse, LatLon, LobbyState, NetworkPublic, RoundReveal, SubmitResponse, TipKind, TipResult, TrainingResult, TrainingRound, UserLeg } from '../../shared/types.ts';
 
 export class ApiError extends Error {
@@ -42,6 +43,8 @@ const q = (a: Auth) => `token=${encodeURIComponent(a.token)}`;
 export const api = {
   network: (plan?: string) => call<NetworkPublic>('GET', plan && plan !== 'regular' ? `/api/network?plan=${encodeURIComponent(plan)}` : '/api/network'),
   config: () => call<PublicConfig>('GET', '/api/config'),
+  /** Donau als Hindernis für Fußwege */
+  barrier: () => call<BarrierJson>('GET', '/api/barrier'),
   create: (playerName: string, mode: GameMode, settings: Partial<GameSettings> | Partial<QuizSettings>) =>
     call<JoinResponse>('POST', '/api/games', { playerName, mode, settings }),
   exists: (code: string) => call<{ exists: boolean; mode?: GameMode; phase?: 'lobby' | 'playing' | 'finished' }>('GET', `${g(code)}/exists`),
