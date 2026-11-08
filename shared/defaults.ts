@@ -46,8 +46,8 @@ export const DEFAULT_SETTINGS: GameSettings = {
   challenge: null,
   task: 'normal',
   start: null,
-  /** beim Eintippen nur Linien vorschlagen, die zu dieser Uhrzeit fahren */
-  onlyRunning: false,
+  /** beim Eintippen nur Linien vorschlagen, die zu dieser Uhrzeit fahren (Standard: an) */
+  onlyRunning: true,
   /** Start und Ziel nur in diesen Bezirken (null = ganz Wien) – Bezirk des Tages */
   districts: null,
   /** E-Scooter statt zu Fuß (Tages-Challenge) */

@@ -101,7 +101,7 @@ export const CHALLENGE_BASE: Partial<GameSettings> = {
   variant: 'none',
   task: 'normal',
   start: null,
-  onlyRunning: false,
+  onlyRunning: true,
   scooter: false,
 };
 
