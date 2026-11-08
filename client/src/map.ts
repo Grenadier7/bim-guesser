@@ -242,6 +242,22 @@ export class GameMap {
     if (points.length) this.fit(L.latLngBounds(points).pad(pad), maxZoom);
   }
 
+  /** Lernaufgaben: bekannte Anfangsstation als A mit Namen */
+  showLearnStart(s: { lat: number; lon: number; name: string }) {
+    this.learnMarks.addLayer(
+      L.marker([s.lat, s.lon], { icon: pin('pin-start', 'A'), zIndexOffset: 1000 }).bindTooltip(esc(s.name), { permanent: true, direction: 'top', offset: [0, -14], className: 'pin-label' }),
+    );
+  }
+
+  /** Richtungspfeil von a Richtung b (ein Stück entlang der Strecke) */
+  showLearnArrow(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
+    const at: LatLon = [a.lat + (b.lat - a.lat) * 0.55, a.lon + (b.lon - a.lon) * 0.55];
+    const deg = (Math.atan2(-(b.lat - a.lat), (b.lon - a.lon) * Math.cos((a.lat * Math.PI) / 180)) * 180) / Math.PI;
+    this.learnMarks.addLayer(
+      L.marker(at, { interactive: false, keyboard: false, zIndexOffset: 900, icon: L.divIcon({ className: 'learn-arrow', html: `<span style="transform:rotate(${deg.toFixed(0)}deg)">➜</span>`, iconSize: [30, 30], iconAnchor: [15, 15] }) }),
+    );
+  }
+
   /** Lernaufgaben „von A nach B“: beide Endstationen als A und B mit Namen */
   showLearnEnds(a: { lat: number; lon: number; name: string }, b: { lat: number; lon: number; name: string }) {
     for (const [s, cls, letter] of [

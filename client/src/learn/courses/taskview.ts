@@ -5,7 +5,7 @@ import { netLayer, netView } from '../../netmap.ts';
 import { app, setMapBig } from '../../store.ts';
 import { esc, lineChip } from '../../ui.ts';
 import { evaluateSketch, lineProfile } from '../model.ts';
-import { L } from './common.ts';
+import { L, linesInText } from './common.ts';
 import { areaHull, gradeAssign, gradeMulti, gradeOrder, gradeSketch, gradeTapArea, gradeTapStation, type Grade, type Task, TASK_ICON } from './tasks.ts';
 
 const NEUTRAL = '#3a3f47';
@@ -32,6 +32,11 @@ function prepareMap(task: Task) {
       netView({ focus: new Set(lines), only: new Set(lines), quiet: true, colors: neutral ? Object.fromEntries(lines.map((id) => [id, NEUTRAL])) : undefined }),
     );
     if (pts.length) app.map.fitPoints(pts, 13);
+  }
+  if (task.kind === 'tapStation' && task.start) app.map.showLearnStart(task.start);
+  if (task.kind === 'order' && task.start) {
+    app.map.showLearnStart(task.start);
+    if (task.toward) app.map.showLearnArrow(task.start, task.toward);
   }
   if (task.kind === 'draw') {
     app.map.showLearnEnds(task.from, task.to);
@@ -61,14 +66,23 @@ function revealMap(task: Task, tap: LatLon | null) {
       : task.kind === 'draw'
         ? [task.line]
         : task.kind === 'choice'
-          ? (task.show?.lines ?? [])
+          ? (task.reveal ?? task.show?.lines ?? [])
+          : task.kind === 'multi'
+            ? (task.reveal ?? [])
           : task.kind === 'tapStation'
             ? (task.reveal ?? task.show ?? [])
             : task.kind === 'order'
               ? (task.show ?? [])
               : [];
   const colors = task.kind === 'tapArea' ? Object.fromEntries(task.lines.map((id) => [id, task.color])) : undefined;
-  const marks = task.kind === 'tapStation' ? task.targets : task.kind === 'draw' ? [task.from, task.to] : [];
+  const marks =
+    task.kind === 'tapStation'
+      ? [...task.targets, ...(task.start ? [task.start] : [])]
+      : task.kind === 'draw'
+        ? [task.from, task.to]
+        : task.kind === 'multi' || task.kind === 'choice'
+          ? (task.marks ?? [])
+          : [];
   if (task.kind === 'assign') {
     // Auflösung: dieselben Abschnitte, jetzt mit der richtigen Beschriftung
     const only = new Set((task.show ?? []).filter((id) => L(id)));
@@ -76,7 +90,14 @@ function revealMap(task: Task, tap: LatLon | null) {
     if (pts.length) app.map.fitPoints(pts, 13, 0.06);
     return;
   }
-  const pts = layer.render(netView({ focus: new Set(lineIds.filter((id) => L(id))), colors, marks, allLabels: lineIds.length <= 12 }));
+  // nie das ganze Netz als Auflösung: ohne eigene Linien die aus Frage und Erklärung, sonst nur die Markierungen
+  const shownIds = lineIds.length ? lineIds : task.kind === 'tapArea' ? [] : linesInText(`${task.q} ${task.explain}`);
+  if (!shownIds.length && !marks.length && task.kind !== 'tapArea') {
+    layer.clear();
+    if (tap) app.map.showTarget(tap[0], tap[1], 'dein Tipp');
+    return;
+  }
+  const pts = layer.render(netView({ focus: new Set(shownIds.filter((id) => L(id))), colors, marks, allLabels: shownIds.length <= 12, only: shownIds.length ? undefined : new Set() }));
   if (task.kind === 'tapArea') app.map.showLearnArea({ rings: [areaHull(task)] }, false, true);
   if (tap) app.map.showTarget(tap[0], tap[1], 'dein Tipp');
   const fit: LatLon[] = [...pts, ...marks.map((s) => [s.lat, s.lon] as LatLon), ...(tap ? [tap] : [])];
@@ -274,6 +295,7 @@ export function mountTask(box: HTMLElement, task: Task, done: (r: TaskResult) =>
       tap = p;
       // nur den alten Tipp weg – die eingezeichnete Linie bleibt stehen
       app.map.clearLearnMarks();
+      if (task.kind === 'tapStation' && task.start) app.map.showLearnStart(task.start);
       app.map.showTarget(p[0], p[1], 'dein Tipp');
       render();
     });

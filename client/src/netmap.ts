@@ -26,6 +26,8 @@ export interface Piece {
   label?: string;
   /** wo entlang des Abschnitts das Schild sitzt (0 = Anfang, 1 = Ende) */
   labelFrac?: number;
+  /** kräftig zeichnen, aber die Knoten darauf nicht hervorheben (keine Namen) – z.B. der Anlauf einer Linie */
+  quiet?: boolean;
 }
 
 export interface NetView {
@@ -233,7 +235,7 @@ export class NetMapLayer {
       const graph = g.has(p.line) ? g : this.extra;
       const path = graph.along(p.line, p.from, p.to);
       if (path.length < 2) continue;
-      for (const id of graph.stationsAlong(p.line, p.from, p.to)) pieceNodes.add(id);
+      if (!p.quiet) for (const id of graph.stationsAlong(p.line, p.from, p.to)) pieceNodes.add(id);
       const l = graph.net.lines.get(p.line)!;
       const s = STYLE[kindOf(l)!];
       const w = Math.max(s.w, 4) + 1;

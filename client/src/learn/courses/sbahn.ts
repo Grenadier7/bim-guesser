@@ -5,7 +5,7 @@ import { shuffle } from '../model.ts';
 import { distM } from '../../net.ts';
 import type { Piece } from '../../netmap.ts';
 import { ask, chip, chips, type Course, crossings, ends, farEnd, have, L, lineQuiz, mainOf, pick, quiz, S_BRANCH, segment, stationByName, stationsOf, type Step, table, taskStep, TRANSDANUBIEN, U_LINES } from './common.ts';
-import { type AssignTask, crossingTask, identifyTask, orderTask, servesTask, terminalTask } from './tasks.ts';
+import { type AssignTask, crossingTask, identifyTask, orderTask, quizTask, servesTask, terminalTask } from './tasks.ts';
 import { NET_COLOR } from '../../netcolors.ts';
 
 /** Pendler-S-Bahnen gut unterscheidbar (keine U-Bahn-Farbe) */
@@ -59,7 +59,6 @@ export const sbahnCourse: Course = {
     const branchColors = { S1: S_BRANCH.S1, S2: S_BRANCH.S2, S3: S_BRANCH.S34, S4: S_BRANCH.S34, S7: S_BRANCH.S7 };
     /** Nord-Ende eines Asts = die Endstation nördlich der Donau */
     const north = (id: string) => ends(id).find((s) => TRANSDANUBIEN.has(s.district)) ?? farEnd(id);
-    const others = have(['S40', 'S45', 'S50', 'S60', 'S80']);
     const steps: Step[] = [
       {
         title: 'Die Stammstrecke',
@@ -109,10 +108,10 @@ export const sbahnCourse: Course = {
           .slice(1)
           .map((s) => esc(s.name))
           .join(' – ')} – weiter Richtung <b>Flughafen Wien</b>.</p>`,
-        pieces: [seg('S7', 'Rennweg', south7.name, S_BRANCH.S7, 'S7', 0.6)],
-        // der Weg bis Rennweg nur blass (Stammstrecke und Nord-Äste)
-        context: have(['S1', 'S2', 'S7']),
-        marks: own,
+        // ab Leopoldau kräftig im S-Bahn-Blau bis Rennweg (ohne Stationsnamen), danach der eigene Teil in Orange
+        pieces: [{ ...seg('S7', north('S7').name, 'Rennweg', S_BRANCH.common, ''), quiet: true }, seg('S7', 'Rennweg', south7.name, S_BRANCH.S7, 'S7', 0.6)],
+        context: have(['S1', 'S2']),
+        marks: [north('S7'), ...own],
       });
     }
     /** Umstiege einer Linie zur U-Bahn (je Station einmal, in Fahrtrichtung) */
@@ -143,11 +142,10 @@ export const sbahnCourse: Course = {
           <p><b>Umsteigen in die U-Bahn:</b></p>${transferTable('S45')}`,
         lines: ['S45'],
         context: us,
-        // gleich so nah, dass alle Stationen zu sehen sind
-        marks: mainOf('S45'),
-        fitMarks: true,
+        // die vier Umsteige-Stationen mit Namen; Ausschnitt so nah, dass alle Stationen zu sehen sind
+        marks: uStops('S45'),
+        fit: mainOf('S45'),
       });
-      steps.push(...taskStep(crossingTask('S45', 'U3')));
     }
     if (L('S80')) {
       steps.push({
@@ -158,25 +156,14 @@ export const sbahnCourse: Course = {
         context: core,
         marks: uStops('S80'),
       });
-      steps.push(...taskStep(terminalTask('S80')));
     }
     // alle S-Bahnen auf einen Blick: welche Farbe ist welche Linie?
     steps.push(...taskStep(assignTask()));
-    const unique = us
-      .map((u) => [u, withU.filter((s) => uAt(s).includes(u))] as const)
-      .filter(([, at]) => at.length === 1)
-      .map(([u, at]) => [u, at[0]] as const);
-    // auf der Karte: wo kreuzt die Stammstrecke diese U-Bahn?
-    if (unique.length) steps.push(...taskStep(crossingTask('S1', pick(unique)[0])));
-    for (const [u, s] of shuffle([...unique]).slice(0, 2))
-      steps.push(...ask(quiz(`Wo steigst du von der Stammstrecke in die ${u} um?`, s.name, stamm.filter((x) => !uAt(x).includes(u)).map((x) => x.name), `Bei ${s.name} hält die ${u}.`)));
+    // Kurs kurz halten: drei Fragen hier, der Rest kommt in der Prüfung
     steps.push(
       ...ask(lineQuiz('Welche S-Bahn fährt Richtung Flughafen?', 'S7', have(['S1', 'S2', 'S45', 'S50', 'S80']), 'Die S7 biegt nach Rennweg Richtung Flughafen ab.')),
       ...ask(quiz('Wo beginnt die S50?', 'Westbahnhof', ['Franz-Josefs-Bahnhof', 'Hauptbahnhof', 'Praterstern', 'Handelskai'], 'Die S50 ist die Westbahn – sie startet am Westbahnhof.')),
-      ...ask(quiz('Wo beginnt die S40?', 'Franz-Josefs-Bahnhof', ['Westbahnhof', 'Hauptbahnhof', 'Praterstern', 'Handelskai'], 'Die S40 ist die Franz-Josefs-Bahn – sie startet am Franz-Josefs-Bahnhof.')),
-      ...ask(lineQuiz('Welche S-Bahn verbindet Heiligenstadt, Hernals und Ottakring?', 'S45', have(['S40', 'S50', 'S80', 'S7', 'S60']), 'Die S45 fährt im Bogen durch die Vororte.')),
       ...ask(lineQuiz('Welche S-Bahn verbindet Hütteldorf mit Aspern Nord?', 'S80', have(['S45', 'S50', 'S7', 'S2']), 'Die S80 fährt quer durch den Süden bis Aspern Nord.')),
-      ...ask(lineQuiz('Welche S-Bahn fährt NICHT über die Stammstrecke?', pick(others), core, `${core.join(', ')} fahren die Stammstrecke.`)),
     );
     return steps;
   },
@@ -186,13 +173,27 @@ export const sbahnCourse: Course = {
     const all = have(['S1', 'S2', 'S3', 'S4', 'S7', 'S40', 'S45', 'S50', 'S60', 'S80']);
     const us = U_LINES.filter((u) => L(u));
     const sCross = all.flatMap((s) => us.filter((u) => crossings(s, u).length === 1).map((u) => [s, u] as const));
+    // aus dem Kurs hierher verschoben: Umstieg Stammstrecke → U-Bahn, S40, S45, „nicht über die Stammstrecke“
+    const us2 = have(U_LINES);
+    const stamm = segment('S1', 'Floridsdorf', 'Meidling');
+    const uAt = (s: Station) => us2.filter((u) => stationsOf(u).some((x) => x.id === s.id || distM(x, s) < 250));
+    const unique = us2.map((u) => [u, stamm.filter((s) => uAt(s).includes(u))] as const).filter(([, at]) => at.length === 1);
+    const others = have(['S40', 'S45', 'S50', 'S60', 'S80']);
     return [
       () => (sCross.length ? crossingTask(...(pick(sCross) as [string, string])) : null),
       () => terminalTask(pick(all)),
       () => orderTask(pick(all)),
       () => identifyTask(pick(all), all),
-      () => (sCross.length ? crossingTask(...(pick(sCross) as [string, string])) : null),
+      () => (L('S45') ? crossingTask('S45', 'U3') : null),
       () => servesTask(pick(core.flatMap((id) => stationsOf(id))), all),
+      () => {
+        if (!unique.length) return null;
+        const [u, [s]] = pick(unique);
+        return quizTask(quiz(`Wo steigst du von der Stammstrecke in die ${u} um?`, s.name, stamm.filter((x) => !uAt(x).includes(u)).map((x) => x.name), `Bei ${s.name} hält die ${u}.`), [s]);
+      },
+      () => quizTask(quiz('Wo beginnt die S40?', 'Franz-Josefs-Bahnhof', ['Westbahnhof', 'Hauptbahnhof', 'Praterstern', 'Handelskai'], 'Die S40 ist die Franz-Josefs-Bahn – sie startet am Franz-Josefs-Bahnhof.'), have(['S40']).length ? [stationByName('Franz-Josefs-Bahnhof')!].filter(Boolean) : []),
+      () => quizTask(lineQuiz('Welche S-Bahn verbindet Heiligenstadt, Hernals und Ottakring?', 'S45', have(['S40', 'S50', 'S80', 'S7', 'S60']), 'Die S45 fährt im Bogen durch die Vororte.')),
+      () => quizTask(lineQuiz('Welche S-Bahn fährt NICHT über die Stammstrecke?', pick(others), core, `${core.join(', ')} fahren die Stammstrecke.`)),
     ];
   },
 };

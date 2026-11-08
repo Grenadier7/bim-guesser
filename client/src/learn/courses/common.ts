@@ -37,6 +37,8 @@ export interface Step {
   bothEnds?: string[];
   /** Ausschnitt nur auf die markierten Stationen (statt auf die ganzen Linien) */
   fitMarks?: boolean;
+  /** Ausschnitt genau auf diese Stationen */
+  fit?: Station[];
   /** markierte Stationen (Name beim Drüberfahren, bei wenigen dauerhaft) */
   marks?: Station[];
   quiz?: Quiz;
@@ -151,6 +153,15 @@ export const lineQuiz = (q: string, right: string, wrong: string[], explain: str
   return qz && { ...qz, lines: [right] };
 };
 export { pick };
+/** Linien, die ein Text nennt – U/S/N-Nummern überall, sonst nach „die/der/Linie …“; `also` zählt, wenn es eine Linie ist */
+export function linesInText(text: string, also?: string): string[] {
+  const ids = new Set<string>();
+  for (const m of text.matchAll(/\b([US]\d{1,2}|N\d{1,2})\b/g)) ids.add(m[1]);
+  for (const m of text.matchAll(/\b(?:die|der|den|Linie|Bim|Bus)\s+(\d{1,3}[A-Z]?|[A-Z]{1,2})\b/g)) ids.add(m[1]);
+  if (/Stammstrecke/.test(text)) ids.add('S1');
+  if (also && L(also)) ids.add(also);
+  return [...ids].filter((id) => L(id));
+}
 export const ask = (qz: Quiz | null): Step[] => (qz ? [{ title: 'Frage', html: '', quiz: qz }] : []);
 /** interaktive Aufgabe als Kursschritt (null = mit diesen Daten nicht möglich → kein Schritt) */
 export const taskStep = (t: Task | null): Step[] => (t ? [{ title: 'Aufgabe', html: '', task: t }] : []);

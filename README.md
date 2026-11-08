@@ -402,8 +402,9 @@ als Zusatzfahrt anlegt, bleibt.
      Oberlaa), die Einstiegs-Station steht markiert und nicht wählbar mittendrin.
      Hält die Linie an der Station nur in eine Richtung (Schleifen/Einbahnen, z.B. 40 bei Schöffelgasse), wird die
      Gegenrichtung ab der nächsten Haltestelle (bis 700 m) angeboten – inkl. Fußweg dorthin.
-     Jeder Fußweg zeigt seine Dauer in Klammern („560 m zu Fuß (≈ 9 min)“). Ein Fußweg **mitten in der Route** lässt
-     sich mit „➕ Linie hier einfügen“ füllen: ein reiner Einfügemodus ohne Vorschläge – die nächste eingegebene Linie
+     Jeder Fußweg zeigt seine Dauer in Klammern („560 m zu Fuß (≈ 9 min)“). Jede Fahrt lässt sich mit ✕ entfernen,
+     auch mittendrin (dazwischen wird dann gegangen). Ein Fußweg **mitten in der Route oder am Anfang** (dort bleibt er
+     eine leise Zeile) lässt sich mit „➕ Linie einfügen“ füllen: ein reiner Einfügemodus ohne Vorschläge – die nächste eingegebene Linie
      kommt an die Stelle des Fußwegs statt ans Ende (Fahrt danach steigt am neuen Ausstieg ein); „Beenden“ verlässt
      den Modus. Fährt dieselbe Linie davor oder danach weiter, wird daraus eine Fahrt.
    - **📍 Start & Ziel** (Erweitert → Schwierigkeit): *Haltestellen* oder *Adressen* – zufällige echte Adressen
@@ -469,7 +470,9 @@ verlässt das Spiel und öffnet den Kurs, „Später“ legt ihn eine Woche weg.
   → Nachts in Transdanubien. Inhalte und Fragen werden aus den Netzdaten berechnet (`client/src/learn/courses/`),
   jede Frage hat genau eine richtige Antwort. Alle Schritte zeigen dieselbe Netzkarte und blenden nur hervor
   oder aus, mit knappem Rand eingepasst; bei Fragen bleibt die Karte leer, in der Auflösung erscheinen die Linien der
-  Frage (`quizLines`). „Zeichne die X von A nach B“ zeigt A und B mit Namen; eigene Tipps und Zeichnungen
+  Frage (`quizLines`), bei Aufgaben nie das ganze Netz (sonst die Linien aus Frage/Erklärung oder nur die Station).
+  „Wohin fährt …“ zeigt die bekannte Endstation als A, „In welcher Reihenfolge …“ A und einen Richtungspfeil.
+  „Zeichne die X von A nach B“ zeigt A und B mit Namen; eigene Tipps und Zeichnungen
   verschwinden beim nächsten Schritt. Kurse mit eigenen, machbaren Aufgaben (Kreuzungen mit der U-Bahn) – sonst
   kämen zufällige Aufgaben aus den Kurslinien (z.B. „Wohin fährt der 84A?“). Ein entfernter Kurs (Querverbindungen)
   zählt nicht mehr für Level und Medaille (`COURSE_IDS` in `shared/career.ts`). Liniennummern im Kurstext sind antippbar (Steckbrief, „← zurück zum

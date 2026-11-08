@@ -9,7 +9,7 @@ import { app, setMapBig } from '../../store.ts';
 import { esc, h, lineChip } from '../../ui.ts';
 import { lineHtml, stationHtml } from '../atlas.ts';
 import { DAY_SCOPE, addMine, departuresFrom, isMine, isSpecialLine, lineProfile, linesAt, patternsOf, setMine } from '../model.ts';
-import { L, type Course, type Quiz, type Step } from './common.ts';
+import { L, linesInText, type Course, type Quiz, type Step } from './common.ts';
 import { defaultExam, ExamRun, practiceTasks } from './tasks.ts';
 import { mountTask } from './taskview.ts';
 import { COURSES } from './list.ts';
@@ -64,21 +64,15 @@ function drawStep(step: Step) {
     return;
   }
   const pts = layer.render(view);
-  const fit = step.fitMarks && marks.length ? marks.map((s) => [s.lat, s.lon] as [number, number]) : pts;
+  const fit = step.fit?.length ? step.fit.map((s) => [s.lat, s.lon] as [number, number]) : step.fitMarks && marks.length ? marks.map((s) => [s.lat, s.lon] as [number, number]) : pts;
   // knapper Rand: die Linien füllen den Ausschnitt (Handy wie großer Bildschirm)
   if (fit.length) app.map.fitPoints(fit, step.fitMarks ? 15 : 14, 0.12);
 }
 
-/** Linien, um die es in einer Frage geht – U/S/N-Nummern überall, sonst nach „die/der/Linie …“ */
+/** Linien, um die es in einer Frage geht */
 export function quizLines(qz: Quiz): string[] {
   if (qz.lines) return qz.lines.filter((id) => L(id));
-  const text = `${qz.q} ${qz.explain}`;
-  const ids = new Set<string>();
-  for (const m of text.matchAll(/\b([US]\d{1,2}|N\d{1,2})\b/g)) ids.add(m[1]);
-  for (const m of text.matchAll(/\b(?:die|der|den|Linie|Bim|Bus)\s+(\d{1,3}[A-Z]?|[A-Z]{1,2})\b/g)) ids.add(m[1]);
-  if (/Stammstrecke/.test(text)) ids.add('S1');
-  if (L(qz.correct)) ids.add(qz.correct);
-  return [...ids].filter((id) => L(id));
+  return linesInText(`${qz.q} ${qz.explain}`, qz.correct);
 }
 
 /** Auflösung einer Frage: die Linie(n) der Frage, die richtige Station markiert */

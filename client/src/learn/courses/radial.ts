@@ -85,6 +85,8 @@ export const radialCourse: Course = {
         lines: radials,
         context: ['U2', 'U6'],
         marks: u6x.map(([, s]) => s),
+        // ausnahmsweise näher: es geht ums Prinzip am Gürtel, nicht um die Endstationen
+        fitMarks: true,
       },
     ];
     const [qLine, qStation] = pick(u6x);

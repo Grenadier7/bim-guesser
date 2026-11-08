@@ -3,7 +3,8 @@ import type { Station } from '../../../../shared/types.ts';
 import { esc } from '../../ui.ts';
 import { distM } from '../../net.ts';
 import type { Piece } from '../../netmap.ts';
-import { ask, chip, chips, type Course, GUERTEL, have, L, lineQuiz, net, pick, RADIAL_FAMILY, RING_LINES, route, stationByName, stationsOf, type Step, table, taskStep } from './common.ts';
+import { NET_COLOR } from '../../netcolors.ts';
+import { ask, chip, chips, type Course, GUERTEL, have, L, lineQuiz, mainOf, net, pick, RADIAL_FAMILY, RING_LINES, route, stationByName, stationsOf, type Step, table, taskStep } from './common.ts';
 import { crossingTask, identifyTask } from './tasks.ts';
 
 /** Nur die Ring-Stücke der Linien – der Rest der Linie lenkt ab. Die Stücke der Ringstraße liegen übereinander,
@@ -14,13 +15,32 @@ const RING_PIECES: Piece[] = [
   { line: '71', from: 'Schottenring', to: 'Schwarzenbergplatz', labelFrac: 0.15 },
   { line: 'D', from: 'Börse', to: 'Schwarzenbergplatz', labelFrac: 0.5 },
 ];
+/** Gürtel im Süden: 6 und 18 fahren gemeinsam bis Matzleinsdorfer Platz – die 18 bleibt durchgehend in Bim-Rot,
+ *  nur die 6 bekommt ab dort, wo sie abbiegt, eine eigene Farbe */
+const SIX_EIGHTEEN = { both: NET_COLOR.Tfocus, '18': NET_COLOR.Tfocus, '6': '#7048e8' };
+// die U6 bis Dresdner Straße: auch dort (Jägerstraße, Dresdner Straße) kreuzt sie noch Bims (31, 2)
 const GUERTEL_PIECES: Piece[] = [
-  { line: 'U6', from: 'Spittelau', to: 'Längenfeldgasse', labelFrac: 0.3 },
-  { line: '18', from: 'Burggasse-Stadthalle', to: 'Quartier Belvedere' },
-  { line: '6', from: 'Burggasse-Stadthalle', to: 'Matzleinsdorfer Platz', labelFrac: 0.6 },
+  { line: 'U6', from: 'Dresdner Straße', to: 'Längenfeldgasse', labelFrac: 0.3 },
+  { line: '6', from: 'Burggasse-Stadthalle', to: 'Matzleinsdorfer Platz', color: SIX_EIGHTEEN.both, label: '6 + 18', labelFrac: 0.45 },
+  { line: '18', from: 'Matzleinsdorfer Platz', to: 'Quartier Belvedere', color: SIX_EIGHTEEN['18'], label: '18', labelFrac: 0.6 },
+  { line: '6', from: 'Matzleinsdorfer Platz', to: 'Reumannplatz', color: SIX_EIGHTEEN['6'], label: '6', labelFrac: 0.7 },
 ];
-/** wo die 6 den Gürtel verlässt: ab Matzleinsdorfer Platz nach Favoriten und Simmering */
-const SIX_OFF: Piece = { line: '6', from: 'Matzleinsdorfer Platz', to: 'Geiereckstraße', color: '#8a8f98', label: '6', labelFrac: 0.85 };
+
+/** je Ring-Stück ein kurzes Stück hinaus (2 Stationen), blass – dort biegt die Linie als Strahl ab */
+function ringStubs(): Piece[] {
+  const out: Piece[] = [];
+  for (const p of RING_PIECES) {
+    if (!L(p.line)) continue;
+    const m = mainOf(p.line).map((s) => s.name);
+    const a = m.indexOf(p.from);
+    const b = m.indexOf(p.to);
+    if (a < 0 || b < 0) continue;
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    if (lo > 0) out.push({ line: p.line, from: m[Math.max(0, lo - 2)], to: m[lo], color: '#c4697a', label: '', quiet: true });
+    if (hi < m.length - 1) out.push({ line: p.line, from: m[hi], to: m[Math.min(m.length - 1, hi + 2)], color: '#c4697a', label: '', quiet: true });
+  }
+  return out;
+}
 const OUTER_PIECES: Piece[] = [{ line: 'S45', from: 'Handelskai', to: 'Hütteldorf', labelFrac: 0.5 }];
 
 export const ringCourse: Course = {
@@ -54,22 +74,25 @@ export const ringCourse: Course = {
         title: '1. Ring: die Ringstraße',
         html: `<p>Keine Linie fährt den ganzen Ring rundherum – ${chips(ring)} teilen ihn sich und biegen dann als Strahlen hinaus:</p>
           ${table(ring.map((id) => [chip(id), route(id)]))}
-          <p class="muted">Unter der „Zweierlinie“, parallel zum Ring, fährt die ${chip('U2')}.</p>`,
-        pieces: RING_PIECES,
+          <p class="muted">Blass auf der Karte: wo die Linien den Ring wieder verlassen. Unter der „Zweierlinie“, parallel zum Ring, fährt die ${chip('U2')}.</p>`,
+        pieces: [...ringStubs(), ...RING_PIECES],
         context: ['U2'],
         bands: { ring: true },
       },
       {
         title: '2. Ring: der Gürtel',
         html: `<p>Die ${chip('U6')} fährt den West- und Nordgürtel entlang (Meidling – Spittelau). Im Süden übernehmen ${chips(have(['18', '6']))}:</p>
-          ${table(guertel.map((id) => [chip(id), route(id)]))}
-          ${L('6') ? `<p>Die ${chip('6')} verlässt den Gürtel am <b>Matzleinsdorfer Platz</b> und fährt über Quellenplatz und Reumannplatz weiter nach Simmering (grau auf der Karte).</p>` : ''}`,
-        pieces: [...GUERTEL_PIECES, ...(L('6') ? [SIX_OFF] : [])],
+          ${table([
+            [`<span class="swatch" style="background:${SIX_EIGHTEEN.both}"></span> ${chips(have(['6', '18']))}`, 'gemeinsam: Burggasse-Stadthalle – Westbahnhof – <b>Matzleinsdorfer Platz</b>'],
+            [chip('18'), 'nur die 18: weiter den Gürtel entlang über Hauptbahnhof zum <b>Quartier Belvedere</b> (und weiter nach St. Marx)'],
+            [`<span class="swatch" style="background:${SIX_EIGHTEEN['6']}"></span> ${chip('6', SIX_EIGHTEEN)}`, 'nur die 6: biegt ab nach Favoriten (Reumannplatz) und weiter nach Simmering'],
+          ])}`,
+        pieces: GUERTEL_PIECES,
         context: guertel,
         bands: { guertel: true },
         marks: [
           ...hubs.filter((s) => ['Westbahnhof', 'Spittelau', 'Längenfeldgasse', 'Meidling'].includes(s.name)),
-          ...['Matzleinsdorfer Platz'].map(stationByName).filter((s): s is Station => !!s),
+          ...['Matzleinsdorfer Platz', 'Quartier Belvedere'].map(stationByName).filter((s): s is Station => !!s),
         ],
       },
       {
