@@ -351,8 +351,8 @@ als Zusatzfahrt anlegt, bleibt.
    - **Netz**: *Regulär* = Referenztag ohne Baustellen, aus dem **eigenen Referenzfahrplan** (siehe unten) – mit
      Regionalzügen (R, REX, CJX), ganz ohne Abfrage bei der Auskunft · *Aktuell* = nächster echter Tag inkl. Sperren
      (Wiener-Linien-Auskunft). Bei *Regulär*: **Nur fahrende Linien** – beim Eintippen nur Linien vorschlagen, die in
-     der Stunde ab der gewählten Uhrzeit unterwegs sind (`runningLines` in `server/timetable.ts`; Nachtschicht und
-     Dickmacks Donnerstag haben es immer an).
+     der Stunde ab der gewählten Uhrzeit unterwegs sind (`runningLines` in `server/timetable.ts`; Nachtschicht und Dickmacks Donnerstag haben es immer an). Standard: an
+     (alte gespeicherte Einstellungen „aus“ werden einmalig verworfen, `runningDefault` in `client/src/store.ts`).
      Referenztage derzeit **Di 30.6., Sa 27.6., So 28.6.2026** (`PREFERRED_DAYS` in `scripts/build-network.ts`):
      nur Ende Juni fährt die S-Bahn-Stammstrecke (ab ca. 8.7. bis mindestens Dezember gesperrt) und Bim/Bus sind
      fast im Normalbetrieb. Ohne passende Wunschtage sucht das Build-Skript selbst (Tag ohne Ersatzverkehr, mit
@@ -403,8 +403,9 @@ als Zusatzfahrt anlegt, bleibt.
      Hält die Linie an der Station nur in eine Richtung (Schleifen/Einbahnen, z.B. 40 bei Schöffelgasse), wird die
      Gegenrichtung ab der nächsten Haltestelle (bis 700 m) angeboten – inkl. Fußweg dorthin.
      Jeder Fußweg zeigt seine Dauer in Klammern („560 m zu Fuß (≈ 9 min)“). Ein Fußweg **mitten in der Route** lässt
-     sich mit „🔁 Linie statt Fußweg“ durch eine Linie ersetzen, die direkt zwischen den beiden Stationen fährt (mit
-     den Regeln der Runde); fährt dieselbe Linie davor oder danach weiter, wird daraus eine Fahrt.
+     sich mit „➕ Linie hier einfügen“ füllen: ein reiner Einfügemodus ohne Vorschläge – die nächste eingegebene Linie
+     kommt an die Stelle des Fußwegs statt ans Ende (Fahrt danach steigt am neuen Ausstieg ein); „Beenden“ verlässt
+     den Modus. Fährt dieselbe Linie davor oder danach weiter, wird daraus eine Fahrt.
    - **📍 Start & Ziel** (Erweitert → Schwierigkeit): *Haltestellen* oder *Adressen* – zufällige echte Adressen
      (Stadt Wien, OGD), gleichmäßig über die bebaute Fläche verteilt (400-m-Raster, höchstens 3 je Zelle, nur bis
      1,5 km von einer Haltestelle; `node scripts/build-addresses.ts` → `data/addresses.json`). Die Auskunft rechnet
@@ -449,6 +450,14 @@ als Zusatzfahrt anlegt, bleibt.
   beim Coach und in der Wertung gleich.
 - Einstellungen: Uhrzeit, Schwierigkeit, Gebiet (Ganz Wien oder Schwerpunkt-Bezirk, wird eingefärbt), Coach an/aus. Endpunkte: `POST /api/training/round`,
   `POST /api/training/:id/evaluate`.
+
+**Kurs-Tipp** nach der Routenjagd (`client/src/coach.ts`, Fenster in `screens/coachTip.ts`): Jedes Spiel wird
+gemerkt (letzte 8, mit Account synchronisiert) – Ø Routenpunkte und in schwachen Runden (< 700) die Linien der
+schnellsten Verbindung, die man nicht nahm, je Kurs (U-Bahn, S-Bahn, Busse, Bims ins Zentrum/rundherum, Donau, Süden,
+Nacht). Frühestens nach 2 Spielen, dann höchstens alle 3 Spiele und einmal in 20 h: Wer insgesamt schwach ist (Ø unter
+45 %) und noch keinen Kurs gemacht hat, wird gefragt, ob er mit dem Lernpfad anfangen will; sonst kommt der Kurs, dessen
+Linien zuletzt am öftesten fehlten (gemachte Kurse erst bei deutlich mehr Fehlern, gemeisterte nie). „Kurs starten“
+verlässt das Spiel und öffnet den Kurs, „Später“ legt ihn eine Woche weg. Nicht bei Tages-Challenges.
 
 **Lernmodus** (Startseite, ohne Lobby) – drei Einstiege, keine Einstellungen vorab:
 - *🎓 Lernpfad*: die geführten Kurse in fester Reihenfolge („Weiter mit …“): U-Bahn-Kreuzungen → S-Bahn

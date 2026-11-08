@@ -20,6 +20,7 @@ const SYNC: Record<string, 'merge' | 'account'> = {
   'oeffi-progress-v1': 'merge',
   'oeffi-training-memory-v1': 'merge',
   'oeffi-mistakes-v1': 'account',
+  'oeffi-coach-v1': 'account',
   'oeffi-career-v1': 'merge',
   'oeffi-training-config-v1': 'account',
   'oeffi-guesser-prefs-v2': 'account',
