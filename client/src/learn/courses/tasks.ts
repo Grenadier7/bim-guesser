@@ -2,6 +2,7 @@
 // Stationen ordnen, mehrere Linien wählen, Linie auf der Karte erkennen. Hier nur Logik (ohne Browser testbar):
 // Aufgaben erzeugen, bewerten, Prüfungsablauf mit Wiederholung. Die Ansicht steckt in index.ts.
 import type { LatLon, Station } from '../../../../shared/types.ts';
+import type { Piece } from '../../netmap.ts';
 import { distM } from '../../../../shared/geo.ts';
 import { lineProfile, shuffle } from '../model.ts';
 import { app } from '../../store.ts';
@@ -62,12 +63,22 @@ export interface MultiTask {
   correct: string[];
   explain: string;
 }
-export type Task = ChoiceTask | TapStationTask | TapAreaTask | DrawTask | OrderTask | MultiTask;
+/** Beschriftungen zuordnen: farbige, mit Buchstaben markierte Abschnitte auf der Karte – welche Linie ist welche? */
+export interface AssignTask {
+  kind: 'assign';
+  q: string;
+  /** je Abschnitt: Buchstabe, Farbe, richtige Beschriftung (Linie oder Gruppe wie „S1–S4“) */
+  slots: { key: string; color: string; answer: string; piece: Piece }[];
+  /** Linien, die blass zur Orientierung bleiben */
+  show?: string[];
+  explain: string;
+}
+export type Task = ChoiceTask | TapStationTask | TapAreaTask | DrawTask | OrderTask | MultiTask | AssignTask;
 
 /** Aufgabe neu erzeugen (für Wiederholungen eine andere Variante); null = geht mit diesen Daten nicht */
 export type TaskGen = () => Task | null;
 
-export const TASK_ICON: Record<Task['kind'], string> = { choice: '❓', tapStation: '📍', tapArea: '🗺', draw: '✏️', order: '🔢', multi: '☑️' };
+export const TASK_ICON: Record<Task['kind'], string> = { choice: '❓', tapStation: '📍', tapArea: '🗺', draw: '✏️', order: '🔢', multi: '☑️', assign: '🏷️' };
 
 // ---------------------------------------------------------------- Geometrie
 
@@ -143,6 +154,11 @@ export function gradeMulti(t: MultiTask, picked: string[]): Grade {
   // bei 3 richtigen darf eine fehlen – aber nichts Falsches gewählt sein
   const enough = want.size >= 3 ? hits >= want.size - 1 : hits === want.size;
   return { ok: enough && wrong === 0, note: `${hits} von ${want.size} richtig${wrong ? `, ${wrong} falsch gewählt` : ''}` };
+}
+
+export function gradeAssign(t: AssignTask, answer: Record<string, string>): Grade {
+  const right = t.slots.filter((s) => answer[s.key] === s.answer).length;
+  return { ok: right === t.slots.length, note: `${right} von ${t.slots.length} richtig zugeordnet` };
 }
 
 /** Zeichnen: grob richtig reicht – die Hälfte der Stationen in der Nähe, nicht zu viel daneben */
@@ -239,6 +255,8 @@ export function terminalTask(id: string): TapStationTask | null {
     q: `Die ${id} startet in ${known.name}. Wohin fährt sie? Tippe ungefähr auf ihr anderes Ende.`,
     targets: [target],
     tolM: 2000,
+    // in der Auflösung nur die gefragte Linie
+    reveal: [id],
     explain: `Die ${id} fährt ${known.name} ↔ ${target.name}.`,
   };
 }
@@ -298,8 +316,10 @@ export function identifyTask(id: string, pool: string[]): ChoiceTask | null {
 
 /** „Welche dieser Linien halten bei …?“ – höchstens 3 richtige unter 5 */
 export function servesTask(station: Station, pool: string[]): MultiTask | null {
-  const at = shuffle(have(pool).filter((id) => stationsOf(id).some((s) => s.name === station.name))).slice(0, 3);
-  const others = shuffle(have(pool).filter((id) => !at.includes(id))).slice(0, 5 - at.length);
+  const serving = have(pool).filter((id) => stationsOf(id).some((s) => s.name === station.name));
+  // höchstens 3 richtige zur Auswahl – die übrigen, die auch hier halten, dürfen nicht als „falsch“ dastehen
+  const at = shuffle([...serving]).slice(0, 3);
+  const others = shuffle(have(pool).filter((id) => !serving.includes(id))).slice(0, 5 - at.length);
   if (!at.length || others.length < 2) return null;
   return {
     kind: 'multi',

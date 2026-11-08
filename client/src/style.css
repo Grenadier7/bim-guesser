@@ -7483,3 +7483,77 @@ path.blocked-area {
   color: #13804a;
   border: 2px solid #13804a;
 }
+
+/* ---------------------------------------------------------------- Lernen: Linien zuordnen (Ziehen oder Tippen) */
+.assign-pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 10px;
+  min-height: 34px;
+}
+.assign-label {
+  border: 2px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  padding: 2px;
+  cursor: grab;
+}
+.assign-label.held {
+  border-color: var(--accent);
+}
+.assign-group {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #1d6fc4;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+}
+.assign-slots {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.assign-slot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.assign-slot.over {
+  border-color: var(--accent);
+  background: var(--panel);
+}
+.assign-slot.right {
+  border-style: solid;
+  border-color: #2f9e44;
+}
+.assign-slot.wrong {
+  border-style: solid;
+  border-color: #e03131;
+}
+.assign-key {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--c);
+  color: #fff;
+  font-weight: 800;
+}
+.assign-drop {
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+}
+.assign-right {
+  margin-left: auto;
+  color: var(--muted);
+}

@@ -47,6 +47,8 @@ export interface NetView {
   allLabels?: boolean;
   /** angetippte Linien: Name an beiden Endstationen (z.B. „S2“ bei Liesing und bei Leopoldau) */
   bothEnds?: boolean;
+  /** nur diese Linien an beiden Endstationen beschriften (z.B. Durchmesser, aber Strahlen nur außen) */
+  bothEndsFor?: Set<string>;
   /** nur diese Linien der Grundkarte zeichnen (z.B. leise Orientierung beim Nachzeichnen) */
   only?: Set<string>;
   /** zusätzliche Haltestellen als kleine, anklickbare Punkte */
@@ -275,7 +277,7 @@ export class NetMapLayer {
         // hervorgehobene Strahlen nur am äußeren Ende beschriften – sonst ballen sich die Schilder am Ring
         const central = (id: string) => distM(graph.station(id), CENTER) < 2000;
         const far = (a: [string, string], b: [string, string]) => distM(graph.station(b[0]), CENTER) - distM(graph.station(a[0]), CENTER);
-        const outer = v.bothEnds
+        const outer = v.bothEnds || v.bothEndsFor?.has(l.id)
           ? ends
           : v.allLabels
           ? ends.sort(far).slice(0, 1)

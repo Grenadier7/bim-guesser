@@ -238,8 +238,19 @@ export class GameMap {
   }
 
   /** Karte auf ein paar Punkte einpassen */
-  fitPoints(points: LatLon[], maxZoom = 14) {
-    if (points.length) this.fit(L.latLngBounds(points).pad(0.25), maxZoom);
+  fitPoints(points: LatLon[], maxZoom = 14, pad = 0.25) {
+    if (points.length) this.fit(L.latLngBounds(points).pad(pad), maxZoom);
+  }
+
+  /** Lernaufgaben „von A nach B“: beide Endstationen als A und B mit Namen */
+  showLearnEnds(a: { lat: number; lon: number; name: string }, b: { lat: number; lon: number; name: string }) {
+    for (const [s, cls, letter] of [
+      [a, 'pin-start', 'A'],
+      [b, 'pin-end', 'B'],
+    ] as const)
+      this.learnMarks.addLayer(
+        L.marker([s.lat, s.lon], { icon: pin(cls, letter), zIndexOffset: 1000 }).bindTooltip(esc(s.name), { permanent: true, direction: 'top', offset: [0, -14], className: 'pin-label' }),
+      );
   }
 
   /** Stationen hervorheben (z.B. beim Nachzeichnen verfehlt) */

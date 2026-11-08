@@ -461,13 +461,18 @@ verlässt das Spiel und öffnet den Kurs, „Später“ legt ihn eine Woche weg.
 
 **Lernmodus** (Startseite, ohne Lobby) – drei Einstiege, keine Einstellungen vorab:
 - *🎓 Lernpfad*: die geführten Kurse in fester Reihenfolge („Weiter mit …“): U-Bahn-Kreuzungen → S-Bahn
-  (Stammstrecke, Äste S1/S2/S3+S4, S7, S40/S50/S60 als Pendlerzüge ins Umland, S45 und S80 einzeln mit Umstiegen) → Radiallinien → die Ringe → Querverbindungen →
+  (Stammstrecke, Äste S1/S2/S3+S4, S7, S40/S50/S60 als Pendlerzüge ins Umland, S45 und S80 einzeln mit Umstiegen; Aufgabe „Welche S-Bahn ist welche?“: farbige Strecken mit Buchstaben, Linien
+  per Ziehen oder Antippen zuordnen) → Radiallinien → die Ringe →
   über die Donau & Transdanubien (Brücken; U6/U1/U2 als „Finger“, Bims 25/26/27 quer, Busse von der U1 zur U2,
   Zubringer je U-Bahn-Knoten) → der Süden (Meidling, Liesing, Favoriten, Simmering: U6/U1/U3, S-Bahn, Knoten,
   Bims 6/11/71/62/BB/1, 60er/70er-Busse) → Busnummern (Zehnerstelle läuft gegen den Uhrzeigersinn um die Stadt)
   → Nachts in Transdanubien. Inhalte und Fragen werden aus den Netzdaten berechnet (`client/src/learn/courses/`),
   jede Frage hat genau eine richtige Antwort. Alle Schritte zeigen dieselbe Netzkarte und blenden nur hervor
-  oder aus; bei Fragen bleibt die Karte leer. Liniennummern im Kurstext sind antippbar (Steckbrief, „← zurück zum
+  oder aus, mit knappem Rand eingepasst; bei Fragen bleibt die Karte leer, in der Auflösung erscheinen die Linien der
+  Frage (`quizLines`). „Zeichne die X von A nach B“ zeigt A und B mit Namen; eigene Tipps und Zeichnungen
+  verschwinden beim nächsten Schritt. Kurse mit eigenen, machbaren Aufgaben (Kreuzungen mit der U-Bahn) – sonst
+  kämen zufällige Aufgaben aus den Kurslinien (z.B. „Wohin fährt der 84A?“). Ein entfernter Kurs (Querverbindungen)
+  zählt nicht mehr für Level und Medaille (`COURSE_IDS` in `shared/career.ts`). Liniennummern im Kurstext sind antippbar (Steckbrief, „← zurück zum
   Kurs“); am Kursende lassen sich die Linien des Kurses mit einem Tipp zum Üben merken (bis 25 Linien).
 - *🗺 Netzkarte* (`client/src/learn/atlas.ts`): Linie oder Station suchen bzw. auf der Karte antippen. Linie →
   **Steckbrief** (Merksatz mit den wichtigsten Umstiegen, Bezirke, U-/S-Bahn-Umstiege, alle Stationen); Station →

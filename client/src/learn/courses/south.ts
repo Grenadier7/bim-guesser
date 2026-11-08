@@ -1,7 +1,8 @@
 // Kurs – Der Süden: Meidling, Liesing, Favoriten, Simmering
 import type { Station } from '../../../../shared/types.ts';
 import { esc } from '../../ui.ts';
-import { ask, chip, chips, type Course, crossings, DECADE, ends, farEnd, have, L, lineQuiz, net, pick, quiz, S_BRANCH, stationByName, stationsOf, type Step, table } from './common.ts';
+import { ask, chip, chips, type Course, crossings, DECADE, ends, farEnd, have, L, lineQuiz, net, pick, quiz, S_BRANCH, stationByName, stationsOf, type Step, table, taskStep } from './common.ts';
+import { crossingTask } from './tasks.ts';
 
 /** Der Süden: Meidling (12), Liesing (23), Favoriten (10) und Simmering (11) */
 const SOUTH = new Set([10, 11, 12, 23]);
@@ -25,7 +26,7 @@ export const southCourse: Course = {
       .filter((x): x is Station => !!x && rapid(x).length > 0);
     const tramRole: Record<string, string> = {
       '6': 'vom Gürtel über Matzleinsdorfer Platz und Reumannplatz nach Simmering',
-      '11': 'quer: Favoriten (Reumannplatz) – Simmering – Kaiserebersdorf',
+      '11': 'quer von Favoriten (Reumannplatz) über Simmering nach Kaiserebersdorf',
       '71': 'vom Ring über Simmering zum Zentralfriedhof',
       '62': 'von der Oper über Matzleinsdorfer Platz und Meidling nach Lainz',
       BB: 'Badner Bahn: von der Oper über Meidling nach Baden',
@@ -90,25 +91,39 @@ export const southCourse: Course = {
         marks: ['Liesing', 'Reumannplatz', 'Simmering'].map(stationByName).filter((x): x is Station => !!x),
       });
 
-    // Fragen – nur mit eindeutiger Antwort
-    const ubahnEnds = have(['U6', 'U1', 'U3']).map((u) => [u, southEnd(u).name] as const);
+    // eigene Aufgaben zu dem, was der Kurs zeigt (sonst kämen zufällige zu einzelnen Bussen – zu schwer)
+    steps.push(...taskStep(crossingTask('U6', 'S1')));
+    if (L('S80')) steps.push(...taskStep(crossingTask('S80', 'U3')));
+
+    // Fragen – nur mit eindeutiger Antwort und nur zu dem, was oben in den Tabellen steht
+    const ubahnEnds = have(['U6', 'U1', 'U3']).map((u) => [u, southEnd(u)] as const);
     const [qu, qend] = pick(ubahnEnds);
-    steps.push(...ask(lineQuiz(`Welche U-Bahn fährt nach ${qend}?`, qu, have(['U1', 'U2', 'U3', 'U4', 'U6']).filter((u) => u !== qu), `Die ${qu} endet im Süden in ${qend}.`)));
+    steps.push(
+      ...ask(
+        lineQuiz(
+          `Welche U-Bahn fährt in den Süden nach ${qend.name}?`,
+          qu,
+          have(['U1', 'U3', 'U4', 'U6']).filter((u) => u !== qu),
+          `Die ${qu} endet im Süden in ${qend.name} (${qend.district}. Bezirk) – siehe „Drei U-Bahnen fächern nach Süden“.`,
+        ),
+      ),
+    );
     const meet = crossings('U6', 'S1').filter(inSouth);
     if (meet.length === 1)
       steps.push(
         ...ask(quiz('Wo steigst du im Süden zwischen U6 und S-Bahn um?', meet[0].name, hubs.map((h) => h.name).filter((n) => !crossings('U6', 'S1').some((c) => c.name === n)), `Bei ${meet[0].name} treffen sich U6 und Stammstrecke.`)),
       );
-    const taught = trams.filter((id) => ['62', '71', '6'].includes(id));
+    // nach der Rolle aus der Tabelle fragen – nicht nach Endstationen, die man nicht kennen muss
+    const taught = trams.filter((id) => ['62', '71', '6', '11'].includes(id));
     const tq = pick(taught.length ? taught : trams.filter((id) => id !== 'BB'));
     const [ta, tb] = ends(tq);
     steps.push(
       ...ask(
         lineQuiz(
-          `Welche Bim fährt von ${ta.name} nach ${tb.name}?`,
+          `Welche Bim fährt ${tramRole[tq]}?`,
           tq,
-          trams.filter((id) => !(stationsOf(id).some((x) => x.name === ta.name) && stationsOf(id).some((x) => x.name === tb.name))),
-          `Die ${tq} fährt ${tramRole[tq]}.`,
+          trams.filter((id) => id !== tq && id !== 'BB'),
+          `Die ${tq} fährt ${ta.name} ↔ ${tb.name}.`,
         ),
       ),
     );

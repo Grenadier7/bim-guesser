@@ -3,10 +3,10 @@
 import type { LatLon } from '../../../../shared/types.ts';
 import { netLayer, netView } from '../../netmap.ts';
 import { app, setMapBig } from '../../store.ts';
-import { esc } from '../../ui.ts';
+import { esc, lineChip } from '../../ui.ts';
 import { evaluateSketch, lineProfile } from '../model.ts';
 import { L } from './common.ts';
-import { areaHull, gradeMulti, gradeOrder, gradeSketch, gradeTapArea, gradeTapStation, type Grade, type Task, TASK_ICON } from './tasks.ts';
+import { areaHull, gradeAssign, gradeMulti, gradeOrder, gradeSketch, gradeTapArea, gradeTapStation, type Grade, type Task, TASK_ICON } from './tasks.ts';
 
 const NEUTRAL = '#3a3f47';
 const MAX_SKETCH = 80;
@@ -18,7 +18,12 @@ function prepareMap(task: Task) {
   const layer = netLayer();
   const show = task.kind === 'tapStation' || task.kind === 'order' ? task.show : task.kind === 'choice' ? task.show?.lines : undefined;
   const lines = (show ?? []).filter((id) => L(id));
-  if (!lines.length) {
+  if (task.kind === 'assign') {
+    // farbige Abschnitte mit Buchstaben, sonst nur blass das Netz dieser Art
+    const only = new Set((task.show ?? []).filter((id) => L(id)));
+    const pts = layer.render(netView({ focus: new Set(), only, quiet: true, pieces: task.slots.map((s) => ({ ...s.piece, color: s.color, label: s.key, labelFrac: s.piece.labelFrac ?? 0.6 })) }));
+    if (pts.length) app.map.fitPoints(pts, 13, 0.06);
+  } else if (!lines.length) {
     layer.clear();
     app.map.overview();
   } else {
@@ -29,6 +34,7 @@ function prepareMap(task: Task) {
     if (pts.length) app.map.fitPoints(pts, 13);
   }
   if (task.kind === 'draw') {
+    app.map.showLearnEnds(task.from, task.to);
     app.map.showSketch([], [
       [task.from.lat, task.from.lon],
       [task.to.lat, task.to.lon],
@@ -63,6 +69,13 @@ function revealMap(task: Task, tap: LatLon | null) {
               : [];
   const colors = task.kind === 'tapArea' ? Object.fromEntries(task.lines.map((id) => [id, task.color])) : undefined;
   const marks = task.kind === 'tapStation' ? task.targets : task.kind === 'draw' ? [task.from, task.to] : [];
+  if (task.kind === 'assign') {
+    // Auflösung: dieselben Abschnitte, jetzt mit der richtigen Beschriftung
+    const only = new Set((task.show ?? []).filter((id) => L(id)));
+    const pts = layer.render(netView({ focus: new Set(), only, quiet: true, pieces: task.slots.map((s) => ({ ...s.piece, color: s.color, label: s.answer, labelFrac: s.piece.labelFrac ?? 0.6 })) }));
+    if (pts.length) app.map.fitPoints(pts, 13, 0.06);
+    return;
+  }
   const pts = layer.render(netView({ focus: new Set(lineIds.filter((id) => L(id))), colors, marks, allLabels: lineIds.length <= 12 }));
   if (task.kind === 'tapArea') app.map.showLearnArea({ rings: [areaHull(task)] }, false, true);
   if (tap) app.map.showTarget(tap[0], tap[1], 'dein Tipp');
@@ -89,6 +102,14 @@ export function mountTask(box: HTMLElement, task: Task, done: (r: TaskResult) =>
   const picked = new Set<string>();
   const items = task.kind === 'order' ? [...task.items].sort(() => Math.random() - 0.5) : [];
   const orderLabel = (id: string) => (task.kind === 'order' ? task.items.find((x) => x.id === id)!.label : '');
+  // Zuordnen: Buchstabe → gewählte Beschriftung; angetippte Beschriftung wartet auf ihren Abschnitt
+  const assigned: Record<string, string> = {};
+  let held: string | null = null;
+  const labels = task.kind === 'assign' ? [...task.slots.map((s) => s.answer)].sort(() => Math.random() - 0.5) : [];
+  const labelHtml = (x: string) => {
+    const l = app.net.lines.get(x);
+    return l ? lineChip(l.mode, l.id, l.color) : `<span class="line-chip assign-group">${esc(x)}</span>`;
+  };
 
   const finish = (g: Grade) => {
     answered = g;
@@ -122,6 +143,26 @@ export function mountTask(box: HTMLElement, task: Task, done: (r: TaskResult) =>
                   .map((x) => `<button data-ord="${esc(x.id)}">${esc(x.label)}</button>`)
                   .join('')}</div>${order.length > 1 ? '<button class="link" id="t-undo">↶ letzte zurücknehmen</button>' : ''}`
           }`;
+      case 'assign': {
+        const free = labels.filter((x) => !Object.values(assigned).includes(x));
+        const done = Object.keys(assigned).length === task.slots.length;
+        return `${
+          a
+            ? ''
+            : `<p class="hint">👆 Ziehe jede Linie auf ihren Buchstaben – oder tippe erst die Linie, dann den Buchstaben.</p>
+               <div class="assign-pool">${free.map((x) => `<button class="assign-label ${held === x ? 'held' : ''}" draggable="true" data-lab="${esc(x)}">${labelHtml(x)}</button>`).join('') || '<small class="muted">Alle verteilt.</small>'}</div>`
+        }
+          <div class="assign-slots">${task.slots
+            .map((s) => {
+              const got = assigned[s.key];
+              const cls = !a ? '' : got === s.answer ? 'right' : 'wrong';
+              return `<div class="assign-slot ${cls}" data-slot="${esc(s.key)}"><span class="assign-key" style="--c:${s.color}">${esc(s.key)}</span>
+                <span class="assign-drop">${got ? `<button class="assign-label" data-back="${esc(s.key)}" ${a ? 'disabled' : ''}>${labelHtml(got)}</button>` : '<small class="muted">hierher ziehen</small>'}</span>
+                ${a && got !== s.answer ? `<small class="assign-right">richtig: ${labelHtml(s.answer)}</small>` : ''}</div>`;
+            })
+            .join('')}</div>
+          ${a ? '' : `<button class="btn btn-primary" id="t-ok" ${done ? '' : 'disabled'}>Antworten</button>`}`;
+      }
       case 'tapStation':
       case 'tapArea':
         return a
@@ -171,8 +212,44 @@ export function mountTask(box: HTMLElement, task: Task, done: (r: TaskResult) =>
       }
       render();
     });
+    if (task.kind === 'assign' && !answered) {
+      const place = (lab: string, key: string) => {
+        for (const k of Object.keys(assigned)) if (assigned[k] === lab) delete assigned[k];
+        assigned[key] = lab;
+        held = null;
+        render();
+      };
+      box.querySelectorAll<HTMLElement>('[data-lab]').forEach((b) => {
+        b.addEventListener('click', () => {
+          held = held === b.dataset.lab ? null : b.dataset.lab!;
+          render();
+        });
+        b.addEventListener('dragstart', (e) => e.dataTransfer?.setData('text/plain', b.dataset.lab!));
+      });
+      box.querySelectorAll<HTMLElement>('[data-back]').forEach((b) =>
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          delete assigned[b.dataset.back!];
+          render();
+        }),
+      );
+      box.querySelectorAll<HTMLElement>('[data-slot]').forEach((slot) => {
+        slot.addEventListener('click', () => held && place(held, slot.dataset.slot!));
+        slot.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          slot.classList.add('over');
+        });
+        slot.addEventListener('dragleave', () => slot.classList.remove('over'));
+        slot.addEventListener('drop', (e) => {
+          e.preventDefault();
+          const lab = e.dataTransfer?.getData('text/plain');
+          if (lab) place(lab, slot.dataset.slot!);
+        });
+      });
+    }
     box.querySelector('#t-ok')?.addEventListener('click', () => {
-      if (task.kind === 'multi') finish(gradeMulti(task, [...picked]));
+      if (task.kind === 'assign') finish(gradeAssign(task, assigned));
+      else if (task.kind === 'multi') finish(gradeMulti(task, [...picked]));
       else if (task.kind === 'tapStation' && tap) finish(gradeTapStation(task, tap));
       else if (task.kind === 'tapArea' && tap) finish(gradeTapArea(task, tap));
       else if (task.kind === 'draw') {
@@ -212,5 +289,9 @@ export function mountTask(box: HTMLElement, task: Task, done: (r: TaskResult) =>
   return () => {
     app.map.onTap(null);
     setMapBig(false);
+    // eigener Tipp, A/B und Zeichnung gehören zu dieser Aufgabe – im nächsten Schritt weg
+    app.map.clearLearnMarks();
+    app.map.showSketch([]);
+    if (task.kind === 'tapArea') app.map.showLearnArea(null, false);
   };
 }

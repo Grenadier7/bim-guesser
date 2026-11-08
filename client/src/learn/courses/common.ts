@@ -14,6 +14,8 @@ export interface Quiz {
   options: { id: string; html: string }[];
   correct: string;
   explain: string;
+  /** in der Auflösung auf der Karte zeigen (sonst aus Frage und Erklärung gelesen) */
+  lines?: string[];
 }
 
 export interface Step {
@@ -31,6 +33,8 @@ export interface Step {
   bands?: Partial<NetView['bands']>;
   /** jede Linie auch auf Stadt-Zoom beschriften (einmal, am äußeren Ende) */
   allLabels?: boolean;
+  /** diese Linien an beiden Endstationen beschriften */
+  bothEnds?: string[];
   /** Ausschnitt nur auf die markierten Stationen (statt auf die ganzen Linien) */
   fitMarks?: boolean;
   /** markierte Stationen (Name beim Drüberfahren, bei wenigen dauerhaft) */
@@ -65,7 +69,8 @@ export function colorOf(l: Line): string {
   return NET_COLOR.B;
 }
 /** S-Bahn-Äste unterscheidbar */
-export const S_BRANCH = { S1: NET_COLOR.S, S2: '#12b886', S34: '#7048e8', S7: '#f08c00', common: '#16325c' };
+/** Stammstrecke immer im S-Bahn-Blau wie überall; die Äste in eigenen Farben */
+export const S_BRANCH = { S1: '#0b7285', S2: '#12b886', S34: '#7048e8', S7: '#f08c00', common: NET_COLOR.S };
 /** Busse nach Zehnerstelle */
 export const DECADE = ['#495057', '#495057', '#1e6fbf', '#12b886', '#7048e8', '#f08c00', '#e03131', '#9c36b5', '#0c8599', '#5c940d'];
 
@@ -141,7 +146,10 @@ export function quiz(q: string, right: string, wrong: string[], explain: string,
   if (others.length < 2) return null;
   return { q, options: shuffle([right, ...others]).map((x) => ({ id: x, html: html(x) })), correct: right, explain };
 }
-export const lineQuiz = (q: string, right: string, wrong: string[], explain: string) => quiz(q, right, wrong, explain, (x) => chip(x));
+export const lineQuiz = (q: string, right: string, wrong: string[], explain: string) => {
+  const qz = quiz(q, right, wrong, explain, (x) => chip(x));
+  return qz && { ...qz, lines: [right] };
+};
 export { pick };
 export const ask = (qz: Quiz | null): Step[] => (qz ? [{ title: 'Frage', html: '', quiz: qz }] : []);
 /** interaktive Aufgabe als Kursschritt (null = mit diesen Daten nicht möglich → kein Schritt) */

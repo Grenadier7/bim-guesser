@@ -5,7 +5,42 @@ import { shuffle } from '../model.ts';
 import { distM } from '../../net.ts';
 import type { Piece } from '../../netmap.ts';
 import { ask, chip, chips, type Course, crossings, ends, farEnd, have, L, lineQuiz, mainOf, pick, quiz, S_BRANCH, segment, stationByName, stationsOf, type Step, table, taskStep, TRANSDANUBIEN, U_LINES } from './common.ts';
-import { crossingTask, identifyTask, orderTask, servesTask, terminalTask } from './tasks.ts';
+import { type AssignTask, crossingTask, identifyTask, orderTask, servesTask, terminalTask } from './tasks.ts';
+import { NET_COLOR } from '../../netcolors.ts';
+
+/** Pendler-S-Bahnen gut unterscheidbar (keine U-Bahn-Farbe) */
+const COMMUTER_COLOR: Record<string, string> = { S40: '#0c8599', S50: '#9c36b5', S60: '#e8590c' };
+
+/**
+ * „Welche Farbe ist welche S-Bahn?“ – jede S-Bahn mit eigenem Stück in eigener Farbe und Buchstaben; S1–S4 teilen
+ * sich die Stammstrecke (ein Stück), von der S7 zählt nur ihr eigener Teil ab Rennweg.
+ */
+function assignTask(): AssignTask | null {
+  const parts: [string, Piece, string][] = [];
+  const add = (answer: string, line: string, from: string, to: string, color: string, labelFrac = 0.5) => {
+    if (L(line) && segment(line, from, to).length > 1) parts.push([answer, { line, from, to, labelFrac }, color]);
+  };
+  add('S1–S4', 'S1', 'Floridsdorf', 'Meidling', NET_COLOR.S, 0.35);
+  if (L('S7')) add('S7', 'S7', 'Rennweg', ends('S7').find((s) => !TRANSDANUBIEN.has(s.district))?.name ?? '', '#f08c00', 0.7);
+  for (const [id, color, frac] of [
+    ['S40', '#0c8599', 0.3],
+    ['S45', '#2f9e44', 0.5],
+    ['S50', '#9c36b5', 0.4],
+    ['S60', '#e03131', 0.2],
+    ['S80', '#495057', 0.25],
+  ] as const)
+    if (L(id)) add(id, id, ends(id)[0].name, ends(id)[1].name, color, frac);
+  if (parts.length < 4) return null;
+  const keys = 'ABCDEFGH';
+  const slots = shuffle(parts).map(([answer, piece, color], k) => ({ key: keys[k], color, answer, piece }));
+  return {
+    kind: 'assign',
+    q: 'Welche S-Bahn ist welche? Ordne die Linien den farbigen Strecken zu.',
+    slots,
+    show: have(['S1', 'S2', 'S3', 'S4', 'S7', 'S40', 'S45', 'S50', 'S60', 'S80']),
+    explain: 'S1–S4 teilen sich die Stammstrecke, die S7 biegt bei Rennweg ab, S45 fährt im Bogen durch die Vororte, S80 quer durch den Süden.',
+  };
+}
 
 export const sbahnCourse: Course = {
   id: 'sbahn',
@@ -56,18 +91,6 @@ export const sbahnCourse: Course = {
           stationByName('Liesing'),
         ].filter((s): s is Station => !!s),
       },
-      ...taskStep(
-        stationByName('Floridsdorf')
-          ? {
-              kind: 'tapStation',
-              q: 'Tippe auf der Karte: Wo teilt sich die Stammstrecke im Norden in ihre Äste?',
-              targets: [stationByName('Floridsdorf')!],
-              tolM: 600,
-              show: core,
-              explain: 'In Floridsdorf: S1 über Leopoldau, S2 Richtung Mistelbach, S3/S4 über die Brünner Straße.',
-            }
-          : null,
-      ),
       {
         title: 'Umsteigen in die U-Bahn',
         html: table(withU.map((s) => [`<b>${esc(s.name)}</b>`, chips(uAt(s))])),
@@ -76,14 +99,22 @@ export const sbahnCourse: Course = {
         marks: withU,
       },
     ];
-    if (L('S7'))
+    if (L('S7')) {
+      const south7 = ends('S7').find((x) => x.id !== north('S7').id)!;
+      // eigener Teil ab Rennweg kräftig und mit Namen – das Stück auf der Stammstrecke nur in deren Blau
+      const own = segment('S7', 'Rennweg', south7.name);
       steps.push({
         title: 'Die S7 – zum Flughafen',
-        html: `<p>Die ${chip('S7', branchColors)} fährt von <b>${esc(north('S7').name)}</b> über Floridsdorf auf der Stammstrecke bis <b>Rennweg</b> und biegt dann ab: St. Marx – Geiselbergstraße – <b>${esc(ends('S7').find((x) => x.id !== north('S7').id)!.name)}</b> – weiter Richtung <b>Flughafen Wien</b>.</p>`,
-        pieces: [seg('S7', ends('S7')[0].name, ends('S7')[1].name, S_BRANCH.S7, 'S7')],
-        context: core,
-        marks: ['Rennweg'].map(stationByName).filter((s): s is Station => !!s),
+        html: `<p>Die ${chip('S7', branchColors)} fährt von <b>${esc(north('S7').name)}</b> über Floridsdorf auf der Stammstrecke bis <b>Rennweg</b> und biegt dann ab: ${own
+          .slice(1)
+          .map((s) => esc(s.name))
+          .join(' – ')} – weiter Richtung <b>Flughafen Wien</b>.</p>`,
+        pieces: [seg('S7', 'Rennweg', south7.name, S_BRANCH.S7, 'S7', 0.6)],
+        // der Weg bis Rennweg nur blass (Stammstrecke und Nord-Äste)
+        context: have(['S1', 'S2', 'S7']),
+        marks: own,
       });
+    }
     /** Umstiege einer Linie zur U-Bahn (je Station einmal, in Fahrtrichtung) */
     const uStops = (id: string) => mainOf(id).filter((s) => uAt(s).length);
     const transferTable = (id: string) => table(uStops(id).map((s) => [`<b>${esc(s.name)}</b>`, chips(uAt(s))]));
@@ -98,10 +129,12 @@ export const sbahnCourse: Course = {
       steps.push({
         title: 'S40, S50, S60 – hinaus nach Niederösterreich',
         html: `<p>Diese S-Bahnen sind vor allem Pendlerzüge: In Wien halten sie nur an <b>wenigen Stationen</b>, dann geht es weiter ins Umland. In der Stadt brauchst du sie selten – am ehesten, um schnell an den Stadtrand zu kommen.</p>
-          ${table(commuter.map(([id, txt]) => [chip(id), `${mainOf(id).map((s) => esc(s.name)).join(' – ')}<br><small>${txt}</small>`]))}`,
+          ${table(commuter.map(([id, txt]) => [chip(id, COMMUTER_COLOR), `${mainOf(id).map((s) => esc(s.name)).join(' – ')}<br><small>${txt}</small>`]))}`,
         lines: commuter.map(([id]) => id),
+        colors: COMMUTER_COLOR,
         context: core,
-        marks: commuter.map(([id]) => farEnd(id)),
+        // wo man in Wien am ehesten einsteigt: Hauptbahnhof und Grillgasse (S60) – dazu die Stadtränder
+        marks: [...commuter.map(([id]) => farEnd(id)), ...['Hauptbahnhof', 'Grillgasse'].map(stationByName).filter((s): s is Station => !!s)],
       });
     if (L('S45')) {
       steps.push({
@@ -110,7 +143,9 @@ export const sbahnCourse: Course = {
           <p><b>Umsteigen in die U-Bahn:</b></p>${transferTable('S45')}`,
         lines: ['S45'],
         context: us,
-        marks: uStops('S45'),
+        // gleich so nah, dass alle Stationen zu sehen sind
+        marks: mainOf('S45'),
+        fitMarks: true,
       });
       steps.push(...taskStep(crossingTask('S45', 'U3')));
     }
@@ -125,6 +160,8 @@ export const sbahnCourse: Course = {
       });
       steps.push(...taskStep(terminalTask('S80')));
     }
+    // alle S-Bahnen auf einen Blick: welche Farbe ist welche Linie?
+    steps.push(...taskStep(assignTask()));
     const unique = us
       .map((u) => [u, withU.filter((s) => uAt(s).includes(u))] as const)
       .filter(([, at]) => at.length === 1)
