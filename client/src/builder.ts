@@ -285,7 +285,17 @@ export class RouteBuilder {
       const last = i === this.legs.length - 1;
       const fromName = this.opts.hideStart && from.id === this.start.id ? 'Start' : from.name;
       // Einbahn/Schleife: die Linie hält hier, aber nicht in diese Richtung → Einstieg woanders (Punkt 11)
-      const oneWay = !train && from.id !== pos.id && this.net.patterns(l.line).some((p) => p.includes(pos.id));
+      // nur wenn die Linie hier hält, das Ziel der Teilstrecke von hier aber in keiner Fahrtrichtung erreicht –
+      // wer bewusst ein Stück geht (U6 bis Burggasse, zu Fuß zur Josefstädter Straße), bekommt keinen Hinweis
+      const pats = this.net.patterns(l.line);
+      const oneWay =
+        !train &&
+        from.id !== pos.id &&
+        pats.some((p) => p.includes(pos.id)) &&
+        !pats.some((p) => {
+          const a = p.indexOf(pos.id);
+          return a >= 0 && p.indexOf(l.to, a + 1) > a;
+        });
       const li = h(
         'li',
         { class: 'leg' },
