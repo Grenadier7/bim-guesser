@@ -143,7 +143,7 @@ export const ZIEL2040_EDITS: LineEdit[] = [
   station('z40-wbg', 'Wienerberg', 48.1695, 16.3445, 10),
   station('z40-breitenlee', 'Breitenleer Straße', 48.244, 16.4625, 22),
   station('z40-brigittenau', 'Brigittenau', 48.248181, 16.379623, 20),
-  station('z40-reichsbr', 'Reichsbrücke', 48.225917, 16.405271, 2),
+  station('z40-reichsbr', 'Reichsbrücke S', 48.225917, 16.405271, 2),
   station('z40-nwb', 'Nordwestbahnsiedlung', 48.232328, 16.380645, 20),
   station('z40-pilot', 'Pilotengasse', 48.219203, 16.493274, 22),
   station('z40-enzian', 'Enzianweg', 48.222567, 16.494453, 22),
