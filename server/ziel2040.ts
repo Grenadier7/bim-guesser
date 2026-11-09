@@ -141,8 +141,13 @@ export const ZIEL2040_EDITS: LineEdit[] = [
   station('z40-frankh', 'Frankhplatz', 48.214, 16.3521, 9),
   station('z40-reinp', 'Reinprechtsdorfer Straße', 48.1857, 16.3555, 5),
   station('z40-wbg', 'Wienerberg', 48.1695, 16.3445, 10),
-  // am bestehenden Bahnhof Wien Breitenleer Straße (Strecke Stadlau–Süßenbrunn)
-  station('z40-breitenlee', 'Breitenleer Straße', 48.2521, 16.4636, 22),
+  // S70 auf der Strecke Stadlau–Süßenbrunn und der neue 21A
+  station('z40-ostbahnweg', 'Ostbahnweg', 48.237076, 16.45621, 22),
+  station('z40-gewerbepark', 'Gewerbepark Stadlau S', 48.246015, 16.460779, 22),
+  station('z40-perco', 'Percostraße', 48.260972, 16.467996, 22),
+  station('z40-rugier', 'Rugierstraße', 48.238286, 16.453985, 22),
+  station('z40-pogrelz', 'Pogrelzstraße', 48.239001, 16.451798, 22),
+  station('z40-duesseldorf', 'Düsseldorfstraße', 48.240035, 16.44404, 22),
   station('z40-brigittenau', 'Brigittenau', 48.248181, 16.379623, 20),
   station('z40-reichsbr', 'Reichsbrücke S', 48.225917, 16.405271, 2),
   station('z40-nwb', 'Nordwestbahnsiedlung', 48.232328, 16.380645, 20),
@@ -214,7 +219,7 @@ export const ZIEL2040_EDITS: LineEdit[] = [
   ...takt('S3', 15, 30),
   ...takt('S4', 15, 30),
   // S70 neu: Simmering – Stadlau – Erzherzog-Karl-Straße auf den Gleisen der S80, dann auf der bestehenden Strecke
-  // (Stadlau–Süßenbrunn, westlich der A23) über den Bahnhof Breitenleer Straße nach Süßenbrunn
+  // (Stadlau–Süßenbrunn, westlich der A23) über Ostbahnweg, Gewerbepark Stadlau und Percostraße nach Süßenbrunn
   {
     kind: 'addLine',
     line: 'S70',
@@ -226,10 +231,32 @@ export const ZIEL2040_EDITS: LineEdit[] = [
       { station: 's295', min: 3 },
       { station: 's292', min: 3 },
       { station: 's1008', min: 2 },
-      { station: 'z40-breitenlee', min: 4 },
-      { station: 's346', min: 4 },
+      { station: 'z40-ostbahnweg', min: 2 },
+      { station: 'z40-gewerbepark', min: 2 },
+      { station: 'z40-perco', min: 2 },
+      { station: 's346', min: 3 },
     ],
     service: every(15, 30, 30),
+  },
+  // 28A hält zusätzlich an der Percostraße (S70)
+  insert('28A', 's657', 's123', 'z40-perco', 1, 1),
+  // 21A neu: von der S70 (Ostbahnweg) über Kagraner Anger und Bernoullistraße nach Kagran
+  {
+    kind: 'addLine',
+    line: '21A',
+    mode: 'B',
+    color: '#0a295d',
+    stops: stops(
+      ['z40-ostbahnweg', 0],
+      ['z40-rugier', 1],
+      ['z40-pogrelz', 1],
+      ['s1360', 1],
+      ['z40-duesseldorf', 1],
+      [S.bernoullistr, 2],
+      [S.siebeckstr, 1],
+      [S.kagran, 2],
+    ),
+    service: every(10, 15, 15),
   },
   // VK neu: Lokalbahn auf der Kaltenleutgebner Bahn – Liesing, durch Perchtoldsdorf (3 Halte, nur als Fahrzeit), dann
   // in Wien über Hochstraße bis zur Waldmühle in Rodaun
