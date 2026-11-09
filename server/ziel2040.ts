@@ -141,7 +141,8 @@ export const ZIEL2040_EDITS: LineEdit[] = [
   station('z40-frankh', 'Frankhplatz', 48.214, 16.3521, 9),
   station('z40-reinp', 'Reinprechtsdorfer Straße', 48.1857, 16.3555, 5),
   station('z40-wbg', 'Wienerberg', 48.1695, 16.3445, 10),
-  station('z40-breitenlee', 'Breitenleer Straße', 48.244, 16.4625, 22),
+  // am bestehenden Bahnhof Wien Breitenleer Straße (Strecke Stadlau–Süßenbrunn)
+  station('z40-breitenlee', 'Breitenleer Straße', 48.2521, 16.4636, 22),
   station('z40-brigittenau', 'Brigittenau', 48.248181, 16.379623, 20),
   station('z40-reichsbr', 'Reichsbrücke S', 48.225917, 16.405271, 2),
   station('z40-nwb', 'Nordwestbahnsiedlung', 48.232328, 16.380645, 20),
@@ -212,8 +213,8 @@ export const ZIEL2040_EDITS: LineEdit[] = [
   ...takt('S2', 15, 30),
   ...takt('S3', 15, 30),
   ...takt('S4', 15, 30),
-  // S70 neu: Simmering – Stadlau auf den Gleisen der S80, dann auf der bestehenden Strecke über Breitenleer Straße
-  // und Hermann-Gebauer-Straße nach Süßenbrunn
+  // S70 neu: Simmering – Stadlau – Erzherzog-Karl-Straße auf den Gleisen der S80, dann auf der bestehenden Strecke
+  // (Stadlau–Süßenbrunn, westlich der A23) über den Bahnhof Breitenleer Straße nach Süßenbrunn
   {
     kind: 'addLine',
     line: 'S70',
@@ -224,9 +225,9 @@ export const ZIEL2040_EDITS: LineEdit[] = [
       { station: 's1189', min: 2 },
       { station: 's295', min: 3 },
       { station: 's292', min: 3 },
+      { station: 's1008', min: 2 },
       { station: 'z40-breitenlee', min: 4 },
-      { station: 's658', min: 3 },
-      { station: 's346', min: 3 },
+      { station: 's346', min: 4 },
     ],
     service: every(15, 30, 30),
   },
