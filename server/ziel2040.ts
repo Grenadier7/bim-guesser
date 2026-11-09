@@ -332,6 +332,8 @@ export const ZIEL2040_EDITS: LineEdit[] = [
   { kind: 'removeLine', line: '26A' },
   // 27: von Aspern Nord weiter durch die Seestadt bis Lannesstraße
   { kind: 'extend', line: '27', at: S.asperNord, stops: stops([S.dillenz, 2], [S.seestadt, 2], [S.touaillon, 2], [S.lannesstr, 2]) },
+  // … und tagsüber etwas dichter
+  ...taktTags('27', 7, 8),
   // 10: von Dornbach weiter nach Hernals (U5, S45)
   { kind: 'extend', line: '10', at: S.dornbach, stops: stops([S.hernals, 3]) },
   // 15 neu: Altes Landgut – Raxstraße – Stefan-Fadinger-Platz – Gesundheitszentrum Süd – Wienerbergbrücke – Meidling
@@ -354,8 +356,10 @@ export const ZIEL2040_EDITS: LineEdit[] = [
       [S.meidling, 2],
       [S.doerfelstr, 1],
     ),
-    service: every(7, 10, 10),
+    service: every(6, 8, 8),
   },
+  // 15A fährt viel seltener – die 15 übernimmt die Strecke Altes Landgut – Eibesbrunnergasse
+  ...takt('15A', 20, 30),
   // O: von Raxstraße weiter über Gußriegelstraße zum Stefan-Fadinger-Platz
   { kind: 'extend', line: 'O', at: S.raxstr, stops: stops([S.gussriegelstr, 2], [S.fadingerPl, 1]) },
   // 60: von Rodaun weiter zur Hochstraße (VK)
