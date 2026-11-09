@@ -47,7 +47,6 @@ const S = {
   rauscherstr: 's77',
   heiligenstadt: 's1215',
   handelskai: 's691',
-  vorgartenstr: 's423',
   donaumarina: 's1003',
   praterkai: 's295',
   praterstern: 's41',
@@ -144,6 +143,7 @@ export const ZIEL2040_EDITS: LineEdit[] = [
   station('z40-wbg', 'Wienerberg', 48.1695, 16.3445, 10),
   station('z40-breitenlee', 'Breitenleer Straße', 48.244, 16.4625, 22),
   station('z40-brigittenau', 'Brigittenau', 48.248181, 16.379623, 20),
+  station('z40-reichsbr', 'Reichsbrücke', 48.225917, 16.405271, 2),
   station('z40-nwb', 'Nordwestbahnsiedlung', 48.232328, 16.380645, 20),
   station('z40-pilot', 'Pilotengasse', 48.219203, 16.493274, 22),
   station('z40-enzian', 'Enzianweg', 48.222567, 16.494453, 22),
@@ -196,10 +196,10 @@ export const ZIEL2040_EDITS: LineEdit[] = [
   },
 
   // ---- S-Bahn
-  // S45: neuer Halt Brigittenau; über Handelskai hinaus über Vorgartenstraße und Donaumarina bis Praterkai – mit der S80
+  // S45: neuer Halt Brigittenau; über Handelskai hinaus über Reichsbrücke und Donaumarina bis Praterkai – mit der S80
   // ein Ring um die Stadt
   insert('S45', S.heiligenstadt, S.handelskai, 'z40-brigittenau', 2, 2),
-  { kind: 'extend', line: 'S45', at: S.handelskai, stops: stops([S.vorgartenstr, 3], [S.donaumarina, 3], [S.praterkai, 2]) },
+  { kind: 'extend', line: 'S45', at: S.handelskai, stops: stops(['z40-reichsbr', 3], [S.donaumarina, 3], [S.praterkai, 2]) },
   ...takt('S45', 5, 7),
   // S80: auf der Verbindungsbahn zusätzlich Atzgersdorfer Straße und Unter St. Veit
   insert('S80', S.meidling, S.speising, S.atzgersdorferStr, 2, 2),
@@ -369,7 +369,7 @@ export const ZIEL2040: NetworkPlan = {
   id: 'ziel2040',
   label: 'Zielnetz 2040',
   hint:
-    'Wien um 2040 (nicht genau): U5 und U2 zum Wienerberg; S45 mit Halt Brigittenau über Vorgartenstraße und Donaumarina bis Praterkai, ' +
+    'Wien um 2040 (nicht genau): U5 und U2 zum Wienerberg; S45 mit Halt Brigittenau über Reichsbrücke und Donaumarina bis Praterkai, ' +
     'S80 mit mehr Halten auf der Verbindungsbahn, S60 am Zentralfriedhof, Stammstrecke im dichten Takt, S70 Simmering–Stadlau–Süßenbrunn, ' +
     'Lokalbahn VK nach Rodaun; neue Bim 15, 29, 33 und GE (statt 26A), 12 über die Nordwestbahnsiedlung zum Stadion, 25 durch die Seestadt, ' +
     '10, 27, 60 und O verlängert.',
