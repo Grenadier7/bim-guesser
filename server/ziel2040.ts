@@ -325,7 +325,7 @@ export const ZIEL2040_EDITS: LineEdit[] = [
     kind: 'addLine',
     line: 'GE',
     mode: 'T',
-    color: '#9e1b32',
+    color: '#2b4c9b',
     stops: stops([S.kagran, 0], [S.kagranerBr, 2], [S.arminenstr, 1], [S.donaustadtstr, 2], [S.polgarstr, 1], [S.erzherzogKarl, 2], ...GE_EAST),
     service: every(8, 10, 10),
   },
