@@ -1,10 +1,10 @@
 // Grafiken der Admin-Seite (SVG, ohne Bibliothek): Verlauf als Linie mit Fadenkreuz, Tageswerte als gestapelte
-// Säulen, Ranglisten als waagrechte Balken. Farben aus der geprüften Palette (Plätze 1–3, auch bei Farbschwäche
-// unterscheidbar), dünne Linien, leises Raster, Werte im Tooltip; ab zwei Reihen mit Legende (mit aktuellem Wert),
+// Säulen, Ranglisten als waagrechte Balken. Farben aus der geprüften Palette (Plätze 1–5 in fester Reihenfolge, auch bei
+// Farbschwäche unterscheidbar; die helleren tragen immer Legende und Tabelle), dünne Linien, leises Raster, Werte im Tooltip; ab zwei Reihen mit Legende (mit aktuellem Wert),
 // darunter jeweils die Tabelle. Größe in SVG-Einheiten ≈ Bildschirmpixel, damit Schrift und Linien lesbar bleiben.
 import { esc } from '../ui.ts';
 
-export const SERIES = ['#2a78d6', '#eb6834', '#1baf7a'];
+export const SERIES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4'];
 
 interface Size {
   w: number;
@@ -33,8 +33,8 @@ function grid(max: number, z: Size): string {
     .join('');
 }
 
-const legend = (items: { name: string; value?: number }[]) =>
-  `<div class="ch-legend">${items.map((x, k) => `<span><i style="background:${SERIES[k]}"></i>${esc(x.name)}${x.value != null ? ` <b>${x.value}</b>` : ''}</span>`).join('')}</div>`;
+const legend = (items: { name: string; value?: number; color?: string }[]) =>
+  `<div class="ch-legend">${items.map((x, k) => `<span><i style="background:${x.color ?? SERIES[k]}"></i>${esc(x.name)}${x.value != null ? ` <b>${x.value}</b>` : ''}</span>`).join('')}</div>`;
 
 export interface LinePoint {
   t: number;
@@ -46,10 +46,11 @@ export interface LineSeries {
   points: LinePoint[];
 }
 
-/** Verlauf einer oder mehrerer Größen über die Zeit; Legende mit dem aktuellen Wert, Tooltip mit allen Werten */
 /**
- * Verlauf über die Zeit. `range` = gewählter Zeitraum: die Achse zeigt ihn ganz, auch wenn es erst später Messwerte gibt
- * (dann steht „Aufzeichnung seit …“ dabei); Lücken in den Messwerten (Server aus) unterbrechen die Linie.
+ * Verlauf über die Zeit; Legende mit dem letzten Wert, Tooltip mit allen Werten. `range` = gewählter Zeitraum: die
+ * Achse zeigt ihn ganz, auch wenn es erst später Messwerte gibt (dann steht „Aufzeichnung seit …“ dabei – außer
+ * `opts.late === false`, z.B. bei Tageswerten, die es nur an manchen Tagen gibt); Lücken in den Messwerten (Server aus)
+ * unterbrechen die Linie. `opts.last`: Wort hinter dem letzten Wert (eine Reihe), `opts.max`: feste Obergrenze.
  */
 export function lineChart(
   id: string,
@@ -59,11 +60,12 @@ export function lineChart(
   wide = false,
   fmtTip: (t: number) => string = fmtT,
   range?: [number, number],
+  opts: { last?: string; late?: boolean; max?: number } = {},
 ): string {
   const z = wide ? WIDE : NORMAL;
   const pts = series[0]?.points ?? [];
   if (!pts.length) return `<figure class="chart ${wide ? 'wide' : ''}"><figcaption>${esc(title)}</figcaption><p class="muted ch-empty">Noch keine Daten – die ersten Werte kommen nach ein paar Minuten.</p></figure>`;
-  const max = niceMax(Math.max(1, ...series.flatMap((x) => x.points.map((p) => p.v))));
+  const max = opts.max ?? niceMax(Math.max(1, ...series.flatMap((x) => x.points.map((p) => p.v))));
   const t0 = range ? Math.min(range[0], pts[0].t) : pts[0].t;
   const t1 = range ? Math.max(range[1], pts[pts.length - 1].t) : pts[pts.length - 1].t;
   // übliche Schrittweite der Messwerte – deutlich größere Abstände sind Lücken
@@ -72,7 +74,7 @@ export function lineChart(
     .map((p, i) => p.t - pts[i].t)
     .sort((a, b) => a - b);
   const gap = (steps[Math.floor(steps.length / 2)] ?? Infinity) * 3;
-  const late = range && pts[0].t - range[0] > (range[1] - range[0]) * 0.05;
+  const late = opts.late !== false && range && pts[0].t - range[0] > (range[1] - range[0]) * 0.05;
   const iw = z.w - PAD.l - PAD.r;
   const ih = z.h - PAD.t - PAD.b;
   const x = (t: number) => PAD.l + (t1 === t0 ? iw / 2 : ((t - t0) / (t1 - t0)) * iw);
@@ -82,7 +84,7 @@ export function lineChart(
     .join('');
   const ticks = (wide ? [0, 0.25, 0.5, 0.75, 1] : [0, 0.5, 1]).map((f) => t0 + (t1 - t0) * f);
   const last = (se: LineSeries) => se.points[se.points.length - 1].v;
-  return `<figure class="chart ${wide ? 'wide' : ''}" data-chart="${esc(id)}"><figcaption>${esc(title)}${series.length === 1 ? ` <b>${last(series[0])}</b> <small class="muted">jetzt</small>` : ''}${late ? ` <small class="muted">· Aufzeichnung seit ${esc(fmtTip(pts[0].t))}</small>` : ''}</figcaption>
+  return `<figure class="chart ${wide ? 'wide' : ''}" data-chart="${esc(id)}"><figcaption>${esc(title)}${series.length === 1 ? ` <b>${last(series[0])}</b> <small class="muted">${esc(opts.last ?? 'jetzt')}</small>` : ''}${late ? ` <small class="muted">· Aufzeichnung seit ${esc(fmtTip(pts[0].t))}</small>` : ''}</figcaption>
     ${series.length > 1 ? legend(series.map((se) => ({ name: se.name, value: last(se) }))) : ''}
     <div class="ch-wrap"><svg viewBox="0 0 ${z.w} ${z.h}" role="img" aria-label="${esc(title)}">
       ${grid(max, z)}
@@ -104,9 +106,13 @@ export interface BarDay {
   values: number[];
 }
 
-/** gestapelte Säulen je Tag (Reihen in fester Farb-Reihenfolge); Legende mit Summe je Reihe */
-export function barChart(id: string, title: string, series: string[], days: BarDay[], wide = false): string {
+/**
+ * gestapelte Säulen je Tag (Reihen in fester Farb-Reihenfolge); Legende mit Summe je Reihe. `foot`: HTML unter der
+ * Grafik (z.B. eine Zusammenfassung); `slots`: Farbplätze der Reihen, wenn dieselbe Größe anderswo schon eine Farbe hat
+ */
+export function barChart(id: string, title: string, series: string[], days: BarDay[], wide = false, foot = '', slots?: number[]): string {
   const z = wide ? WIDE : NORMAL;
+  const colors = series.map((_, k) => SERIES[slots?.[k] ?? k]);
   const total = (d: BarDay) => d.values.reduce((a, b) => a + b, 0);
   const max = niceMax(Math.max(1, ...days.map(total)));
   const iw = z.w - PAD.l - PAD.r;
@@ -119,44 +125,48 @@ export function barChart(id: string, title: string, series: string[], days: BarD
       let y0 = PAD.t + ih;
       const x0 = PAD.l + i * bw + gap / 2;
       const w = Math.max(1, bw - gap);
+      let below = false;
       const rects = d.values
         .map((v, k) => {
           if (!v) return '';
           const hh = (v / max) * ih;
           y0 -= hh;
-          // 2px Abstand zwischen gestapelten Teilen
-          return `<rect x="${x0.toFixed(1)}" y="${(y0 + (k ? 1 : 0)).toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(0, hh - (k ? 2 : 0)).toFixed(1)}" rx="2" style="fill:${SERIES[k]}"/>`;
+          // 2px Abstand zwischen gestapelten Teilen (nicht unter dem untersten)
+          const cut = below ? 1 : 0;
+          below = true;
+          return `<rect x="${x0.toFixed(1)}" y="${(y0 + cut).toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(0, hh - 2 * cut).toFixed(1)}" rx="2" style="fill:${colors[k]}"/>`;
         })
         .join('');
       return `<g class="ch-bar" data-i="${i}">${rects}<rect class="ch-hit" x="${PAD.l + i * bw}" y="${PAD.t}" width="${bw}" height="${ih}"/></g>`;
     })
     .join('');
-  // Tagesbeschriftung: bei vielen Tagen nur einzelne
+  // Tagesbeschriftung: bei vielen Tagen nur einzelne – immer der letzte, davor keine, die ihn überdecken würde
   const step = Math.max(1, Math.ceil(days.length / (wide ? 12 : 6)));
   const labels = days
-    .map((d, i) => (i % step === 0 || i === days.length - 1 ? `<text x="${PAD.l + i * bw + bw / 2}" y="${z.h - 7}" class="ch-axis" text-anchor="middle">${esc(d.label)}</text>` : ''))
+    .map((d, i) => ((i % step === 0 && days.length - 1 - i >= step) || i === days.length - 1 ? `<text x="${PAD.l + i * bw + bw / 2}" y="${z.h - 7}" class="ch-axis" text-anchor="middle">${esc(d.label)}</text>` : ''))
     .join('');
   return `<figure class="chart ${wide ? 'wide' : ''}" data-chart="${esc(id)}"><figcaption>${esc(title)}${series.length === 1 ? ` <b>${sums[0]}</b> <small class="muted">gesamt</small>` : ''}</figcaption>
-    ${series.length > 1 ? legend(series.map((s, k) => ({ name: s, value: sums[k] }))) : ''}
+    ${series.length > 1 ? legend(series.map((s, k) => ({ name: s, value: sums[k], color: colors[k] }))) : ''}
     <div class="ch-wrap"><svg viewBox="0 0 ${z.w} ${z.h}" role="img" aria-label="${esc(title)}">${grid(max, z)}${labels}${bars}</svg><div class="ch-tip" hidden></div></div>
+    ${foot}
     <details class="ch-table"><summary>Als Tabelle</summary><table><tr><th>Tag</th>${series.map((s) => `<th>${esc(s)}</th>`).join('')}</tr>${days
       .slice()
       .reverse()
       .map((d) => `<tr><td>${esc(d.label)}</td>${d.values.map((v) => `<td>${v}</td>`).join('')}</tr>`)
       .join('')}</table></details>
-    <script type="application/json" class="ch-data">${JSON.stringify({ kind: 'bar', series, days, top: PAD.t })}</script></figure>`;
+    <script type="application/json" class="ch-data">${JSON.stringify({ kind: 'bar', series, colors, days, top: PAD.t })}</script></figure>`;
 }
 
-/** Rangliste als waagrechte Balken (eine Farbe, Wert am Balkenende), Beschriftung als HTML (z.B. Linien-Chips) */
-export function rankChart(title: string, rows: { label: string; n: number }[], note = ''): string {
-  if (!rows.length) return `<figure class="chart ch-rankfig"><figcaption>${esc(title)}</figcaption><p class="muted ch-empty">Noch keine Daten.</p></figure>`;
-  const max = Math.max(...rows.map((r) => r.n));
+/** Rangliste als waagrechte Balken (eine Farbe, Wert am Balkenende), Beschriftung als HTML (z.B. Linien-Chips; `text`: längere Namen) */
+export function rankChart(title: string, rows: { label: string; n: number; tip?: string }[], note = '', empty = 'Noch keine Daten.', text = false): string {
+  if (!rows.length) return `<figure class="chart ch-rankfig"><figcaption>${esc(title)}</figcaption><p class="muted ch-empty">${esc(empty)}</p></figure>`;
+  const max = Math.max(1, ...rows.map((r) => r.n));
   const sum = rows.reduce((a, r) => a + r.n, 0);
-  return `<figure class="chart ch-rankfig"><figcaption>${esc(title)} ${note ? `<small class="muted">${esc(note)}</small>` : ''}</figcaption>
+  return `<figure class="chart ch-rankfig${text ? ' ch-rank-text' : ''}"><figcaption>${esc(title)} ${note ? `<small class="muted">${esc(note)}</small>` : ''}</figcaption>
     <div class="ch-rank">${rows
       .map(
-        (r) => `<div class="ch-rrow" title="${r.n}-mal gewählt · ${Math.round((r.n / sum) * 100)} %"><span class="ch-rlabel">${r.label}</span>
-          <span class="ch-rbar"><i style="width:${Math.max(1, (r.n / max) * 100)}%;background:${SERIES[0]}"></i></span><b>${r.n}</b></div>`,
+        (r) => `<div class="ch-rrow" title="${esc(r.tip ?? `${r.n}-mal gewählt · ${Math.round((r.n / Math.max(1, sum)) * 100)} %`)}"><span class="ch-rlabel">${r.label}</span>
+          <span class="ch-rbar"><i style="width:${r.n ? Math.max(1, (r.n / max) * 100) : 0}%;background:${SERIES[0]}"></i></span><b>${r.n}</b></div>`,
       )
       .join('')}</div></figure>`;
 }
@@ -169,7 +179,7 @@ export function bindCharts(root: HTMLElement) {
     const tip = fig.querySelector<HTMLElement>('.ch-tip');
     if (!data || !svg || !tip) return;
     const vb = svg.viewBox.baseVal;
-    const d = JSON.parse(data.textContent!) as { kind: 'line'; names: string[]; pts: [number, string, [number, number][]][] } | { kind: 'bar'; series: string[]; days: BarDay[]; top: number };
+    const d = JSON.parse(data.textContent!) as { kind: 'line'; names: string[]; pts: [number, string, [number, number][]][] } | { kind: 'bar'; series: string[]; colors: string[]; days: BarDay[]; top: number };
     const place = (px: number, py: number, html: string) => {
       tip.innerHTML = html;
       tip.hidden = false;
@@ -210,7 +220,12 @@ export function bindCharts(root: HTMLElement) {
           const day = d.days[Number(g.dataset.i)];
           const hit = g.querySelector('.ch-hit')!;
           const x = Number(hit.getAttribute('x')) + Number(hit.getAttribute('width')) / 2;
-          place(x, d.top + 40, `<b>${esc(day.label)}</b><br>${d.series.map((s, k) => `<span class="ch-sw" style="background:${SERIES[k]}"></span>${esc(s)}: <b>${day.values[k]}</b>`).join('<br>')}`);
+          const sum = day.values.reduce((a, b) => a + b, 0);
+          place(
+            x,
+            d.top + 40,
+            `<b>${esc(day.label)}</b><br>${d.series.map((s, k) => `<span class="ch-sw" style="background:${d.colors[k]}"></span>${esc(s)}: <b>${day.values[k]}</b>`).join('<br>')}${d.series.length > 1 ? `<br><small>zusammen ${sum}</small>` : ''}`,
+          );
         }),
       );
     }

@@ -5086,6 +5086,16 @@ details.danger-zone p {
   color: var(--muted);
   font-size: 12px;
 }
+.adm-card .adm-card-sub {
+  font-size: 11px;
+}
+.chart .adm-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.adm-people {
+  margin-bottom: 10px;
+}
 .adm-warn {
   background: #fff4e5;
   border: 1px solid #f0a020;
@@ -6111,6 +6121,15 @@ details.adm-deps > summary {
 .ch-rrow b {
   font-variant-numeric: tabular-nums;
   text-align: right;
+}
+.ch-rank-text .ch-rrow {
+  grid-template-columns: minmax(110px, 45%) 1fr 32px;
+}
+.ch-rank-text .ch-rlabel {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ch-rrow:hover .ch-rbar i {
   opacity: 0.85;

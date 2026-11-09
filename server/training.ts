@@ -27,7 +27,7 @@ export class TrainingService {
   private recent: PastPair[] = [];
   private net: Network;
   /** Statistik der Admin-Seite: gewählte Linien */
-  onLines?: (lines: string[]) => void;
+  onLines?: (lines: string[], account: boolean) => void;
 
   constructor(net: Network) {
     this.net = net;
@@ -90,7 +90,7 @@ export class TrainingService {
     return this.rounds.get(String(id))?.routes[0]?.medianMin ?? null;
   }
 
-  async evaluate(id: string, legs: unknown): Promise<TrainingResult> {
+  async evaluate(id: string, legs: unknown, account = false): Promise<TrainingResult> {
     const r = this.rounds.get(String(id));
     if (!r) throw new GameError('Trainingsrunde abgelaufen – bitte neue Strecke starten.', 404);
     let res;
@@ -103,7 +103,7 @@ export class TrainingService {
     if (!res.error && !r.counted) {
       r.counted = true;
       try {
-        this.onLines?.(clean.map((l) => l.line));
+        this.onLines?.(clean.map((l) => l.line), account);
       } catch {
         /* Statistik darf nie stören */
       }

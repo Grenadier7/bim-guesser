@@ -33,7 +33,7 @@ import type {
 } from '../shared/types.ts';
 import { isSpecialLine } from '../shared/rules.ts';
 import { MONOTONE_KEYS, mergeProgress } from '../shared/progress.ts';
-import type { DailyBoardRow } from '../shared/types.ts';
+import type { AdminGuests, DailyBoardRow } from '../shared/types.ts';
 import { CAREER_KEY, COURSE_COUNT, COURSE_IDS, XP, levelOf, medalList, reachedKeys, streakOf, viennaDay, type Career, type MedalStats } from '../shared/career.ts';
 import { GameError, type Lobby } from './lobby.ts';
 import type { Network } from './network.ts';
@@ -988,7 +988,7 @@ export class AccountAdmin {
       lastSeen: u.last_seen,
       online: Date.now() - u.last_seen < ONLINE_MS,
       level: this.acc.level(u.id).level,
-      games: n("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind IN ('route', 'quiz')"),
+      games: n("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind IN ('game', 'quiz')"),
       sessions: n('SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?'),
     };
   }
@@ -1118,9 +1118,19 @@ export class AccountAdmin {
     for (const l of lines) if (/^[\p{L}\d]{1,8}$/u.test(l)) st.run(day, l);
   }
 
-  /** fertig gespieltes Spiel (alle, auch ohne Account) */
-  recordGame(mode: GameMode, players: number, accounts: number) {
+  /**
+   * fertig Gespieltes (alle, auch ohne Account): Lobby-Spiele (route, challenge = Tages-Challenge, quiz) mit Spielerzahl,
+   * Strecke des Tages (daily) und Trainingsstrecken (training) je 1 Spieler
+   */
+  recordGame(mode: PlayKind, players: number, accounts: number) {
     this.db.prepare('INSERT INTO game_log (at, mode, players, accounts) VALUES (?, ?, ?, ?)').run(Date.now(), mode, players, accounts);
+  }
+
+  /** die letzten `days` Kalendertage (Wien), ältester zuerst – 1 = nur heute */
+  private dayKeys(days: number): string[] {
+    // vom heutigen Wiener Datum aus zurückzählen (UTC-Mittag: keine Zeitumstellung dazwischen)
+    const noon = Date.parse(`${dayOf(Date.now())}T12:00:00Z`);
+    return Array.from({ length: days }, (_, i) => new Date(noon - (days - 1 - i) * DAY).toISOString().slice(0, 10));
   }
 
   stats(days: number): AdminStats {
@@ -1128,50 +1138,141 @@ export class AccountAdmin {
     const raw = this.db.prepare('SELECT at, online, lobbies, playing, players, visitors, anon FROM metrics WHERE at >= ? ORDER BY at').all(since) as unknown as AdminStats['samples'];
     // über 2 Tage: je Stunde der höchste Wert, über 30 Tage je 3 Stunden (sonst zu viele Punkte für die Grafik)
     const samples = days <= 2 ? raw : bucketMax(raw, (days > 30 ? 3 : 1) * 3600_000);
-    const empty = (k: string): AdminStats['days'][number] => ({ day: k, route: 0, quiz: 0, players: 0, newUsers: 0, activeUsers: 0, visitors: 0, anonVisitors: 0 });
-    const rows = new Map<string, AdminStats['days'][number]>();
-    for (let t = since; t <= Date.now() + DAY / 2; t += DAY) rows.set(dayOf(t), empty(dayOf(t)));
-    const row = (t: number) => rows.get(dayOf(t)) ?? rows.set(dayOf(t), empty(dayOf(t))).get(dayOf(t))!;
-    for (const g of this.db.prepare('SELECT at, mode, players FROM game_log WHERE at >= ?').all(since) as { at: number; mode: string; players: number }[]) {
-      const r = row(g.at);
-      if (g.mode === 'quiz') r.quiz++;
-      else r.route++;
-      r.players += g.players;
+    // Tageswerte: genau die letzten `days` Kalendertage (24 h = heute)
+    const keys = this.dayKeys(days);
+    const first = keys[0];
+    const from = since - 2 * DAY;
+    const rows = new Map<string, AdminStats['days'][number]>(
+      keys.map((k) => [k, { day: k, route: 0, challenge: 0, quiz: 0, daily: 0, training: 0, players: 0, multi: 0, newUsers: 0, returning: 0, visitors: 0, anonVisitors: 0 }]),
+    );
+    for (const g of this.db.prepare('SELECT at, mode, players FROM game_log WHERE at >= ?').all(from) as { at: number; mode: string; players: number }[]) {
+      const r = rows.get(dayOf(g.at));
+      if (!r) continue;
+      const kind = PLAY_KINDS.find((m) => m === g.mode) ?? 'route';
+      r[kind]++;
+      if (kind === 'route' || kind === 'challenge' || kind === 'quiz') {
+        r.players += g.players;
+        if (g.players >= 2) r.multi++;
+      }
     }
-    for (const u of this.db.prepare('SELECT created FROM users WHERE created >= ?').all(since) as { created: number }[]) row(u.created).newUsers++;
+    const created = new Map<number, string>();
+    for (const u of this.db.prepare('SELECT id, created FROM users WHERE created >= ?').all(from) as { id: number; created: number }[]) {
+      created.set(u.id, dayOf(u.created));
+      const r = rows.get(dayOf(u.created));
+      if (r) r.newUsers++;
+    }
+    // gespielt (irgendein Ergebnis) und nicht an dem Tag angelegt → schon vorher da
     const active = new Map<string, Set<number>>();
-    for (const x of this.db.prepare('SELECT user_id, at FROM results WHERE at >= ?').all(since) as { user_id: number; at: number }[])
-      (active.get(dayOf(x.at)) ?? active.set(dayOf(x.at), new Set()).get(dayOf(x.at))!).add(x.user_id);
-    for (const [k, set] of active) (rows.get(k) ?? rows.set(k, empty(k)).get(k)!).activeUsers = set.size;
-    for (const v of this.db.prepare('SELECT day, COUNT(*) AS n, SUM(account = 0) AS anon FROM visits WHERE day >= ? GROUP BY day').all(dayOf(since)) as { day: string; n: number; anon: number }[]) {
-      const r = rows.get(v.day) ?? rows.set(v.day, empty(v.day)).get(v.day)!;
+    for (const x of this.db.prepare('SELECT user_id, at FROM results WHERE at >= ?').all(from) as { user_id: number; at: number }[]) {
+      const k = dayOf(x.at);
+      if (!rows.has(k) || created.get(x.user_id) === k) continue;
+      (active.get(k) ?? active.set(k, new Set()).get(k)!).add(x.user_id);
+    }
+    for (const [k, set] of active) rows.get(k)!.returning = set.size;
+    for (const v of this.db.prepare('SELECT day, COUNT(*) AS n, SUM(account = 0) AS anon FROM visits WHERE day >= ? GROUP BY day').all(first) as { day: string; n: number; anon: number }[]) {
+      const r = rows.get(v.day);
+      if (!r) continue;
       r.visitors = v.n;
       r.anonVisitors = v.anon;
     }
-    const lines = this.db.prepare('SELECT line, SUM(n) AS n FROM line_usage WHERE day >= ? GROUP BY line ORDER BY n DESC LIMIT 20').all(dayOf(since)) as { line: string; n: number }[];
-    return { samples, days: [...rows.values()].sort((a, b) => a.day.localeCompare(b.day)), lines };
+    const lines = (this.db.prepare('SELECT line, SUM(n) AS n FROM line_usage WHERE day >= ? GROUP BY line ORDER BY n DESC, line LIMIT 20').all(first) as { line: string; n: number }[]).map((x) => ({ ...x }));
+    // Lernpfad aus dem synchronisierten Lernstand aller Accounts
+    const courses = COURSE_IDS.map((id) => ({ id, done: 0, mastered: 0 }));
+    let learners = 0;
+    for (const u of this.db.prepare('SELECT data FROM users WHERE instr(data, ?) > 0').all(COURSES_KEY) as { data: string }[]) {
+      const c = courseState(u.data);
+      let any = false;
+      for (const x of courses) {
+        if (c[x.id]?.done) {
+          x.done++;
+          any = true;
+        }
+        if (c[x.id]?.mastered) x.mastered++;
+      }
+      if (any) learners++;
+    }
+    return { samples, days: [...rows.values()], lines, courses, learners };
   }
 
-  /** Spiele eines Accounts je Tag */
+  /** ein Account: Gespieltes je Tag, Ø Routenpunkte, Lieblingslinien, Lernpfad */
   userStats(name: string, days: number): AdminUserStats {
     const u = this.target(name);
-    const since = Date.now() - days * DAY;
-    const rows = new Map<string, AdminUserStats['days'][number]>();
-    for (let t = since; t <= Date.now() + DAY / 2; t += DAY) rows.set(dayOf(t), { day: dayOf(t), route: 0, quiz: 0, training: 0, points: 0 });
-    const list = this.db.prepare("SELECT kind, at, points FROM results WHERE user_id = ? AND at >= ? AND kind IN ('game', 'quiz', 'training')").all(u.id, since) as {
-      kind: string;
-      at: number;
-      points: number;
-    }[];
+    const keys = this.dayKeys(days);
+    const rows = new Map<string, AdminUserStats['days'][number]>(keys.map((k) => [k, { day: k, route: 0, quiz: 0, daily: 0, training: 0, rounds: 0, avgRoute: null }]));
+    const sum = new Map<string, number>();
+    const list = this.db
+      .prepare("SELECT kind, at, route FROM results WHERE user_id = ? AND at >= ? AND kind IN ('game', 'quiz', 'daily', 'training', 'round')")
+      .all(u.id, Date.now() - (days + 2) * DAY) as { kind: string; at: number; route: number | null }[];
     for (const r of list) {
-      const x = rows.get(dayOf(r.at));
+      const k = dayOf(r.at);
+      const x = rows.get(k);
       if (!x) continue;
       if (r.kind === 'game') x.route++;
       else if (r.kind === 'quiz') x.quiz++;
-      else x.training++;
-      x.points += r.points;
+      else if (r.kind === 'daily') x.daily++;
+      else if (r.kind === 'training') x.training++;
+      else {
+        x.rounds++;
+        sum.set(k, (sum.get(k) ?? 0) + (r.route ?? 0));
+      }
     }
-    return { days: [...rows.values()].sort((a, b) => a.day.localeCompare(b.day)) };
+    for (const x of rows.values()) if (x.rounds) x.avgRoute = Math.round(sum.get(x.day)! / x.rounds);
+    const lines = (
+      this.db.prepare("SELECT key AS line, SUM(count) AS n FROM usage WHERE user_id = ? AND kind LIKE 'line:%' GROUP BY key ORDER BY n DESC, key LIMIT 10").all(u.id) as { line: string; n: number }[]
+    ).map((x) => ({ ...x }));
+    const n = (sql: string) => (this.db.prepare(sql).get(u.id) as { n: number }).n;
+    const c = courseState(u.data);
+    return {
+      days: [...rows.values()],
+      lines,
+      daily: n("SELECT COUNT(*) AS n FROM results WHERE user_id = ? AND kind = 'daily'"),
+      challenges: n('SELECT COUNT(*) AS n FROM challenge_days WHERE user_id = ?'),
+      courses: COURSE_IDS.map((id) => ({ id, done: !!c[id]?.done, mastered: !!c[id]?.mastered })),
+    };
+  }
+
+  /** Besucher ohne Account (letzte 90 Tage) – `online`: Kennungen, die gerade ohne Account da sind */
+  guests(online: Set<string>): Omit<AdminGuests, 'online' | 'inLobbies'> {
+    const all = (
+      this.db.prepare('SELECT id, MIN(day) AS first, MAX(day) AS last, COUNT(*) AS days, MAX(account) AS acc, MIN(account) AS anon FROM visits GROUP BY id').all() as {
+        id: string;
+        first: string;
+        last: string;
+        days: number;
+        acc: number;
+        anon: number;
+      }[]
+    ).map((g) => ({ ...g }));
+    const guests = all.filter((g) => !g.acc);
+    return {
+      browsers: guests.length,
+      returning: guests.filter((g) => g.days >= 2).length,
+      // an einem Tag ohne, an einem anderen mit Account
+      converted: all.filter((g) => g.acc && !g.anon).length,
+      list: guests
+        .sort((a, b) => Number(online.has(b.id)) - Number(online.has(a.id)) || b.last.localeCompare(a.last) || b.days - a.days)
+        .slice(0, 100)
+        .map((g) => ({ id: g.id.slice(0, 8), first: g.first, last: g.last, days: g.days, online: online.has(g.id) })),
+    };
+  }
+
+  /** heute gezählte Besucher (Browser) */
+  visitorsToday(): number {
+    return (this.db.prepare('SELECT COUNT(*) AS n FROM visits WHERE day = ?').get(dayOf(Date.now())) as { n: number }).n;
+  }
+}
+
+/** was im Log der Admin-Statistik als gespielt zählt */
+export const PLAY_KINDS = ['route', 'challenge', 'quiz', 'daily', 'training'] as const;
+export type PlayKind = (typeof PLAY_KINDS)[number];
+
+/** Lernstand (oeffi-courses-v1) aus den gespeicherten Daten eines Accounts */
+function courseState(data: string): Record<string, { done?: boolean; mastered?: boolean } | undefined> {
+  try {
+    const c = (JSON.parse(data) as Record<string, unknown>)[COURSES_KEY];
+    return c && typeof c === 'object' && !Array.isArray(c) ? (c as Record<string, { done?: boolean; mastered?: boolean }>) : {};
+  } catch {
+    return {};
   }
 }
 

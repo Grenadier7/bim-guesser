@@ -9,7 +9,7 @@
 import type { Express, NextFunction, Request, Response } from 'express';
 import type { GameConfigSection } from '../../shared/config.ts';
 import { defaultGameConfig } from '../../shared/config.ts';
-import type { AdminOverview, CurrentNetInfo, DayType, LineEdit, NetworkPlan, RoutingAdminState, RoutingParams, SlotId } from '../../shared/types.ts';
+import type { AdminGuests, AdminOverview, CurrentNetInfo, DayType, LineEdit, NetworkPlan, RoutingAdminState, RoutingParams, SlotId } from '../../shared/types.ts';
 import { slotOr } from '../../shared/rules.ts';
 import type { AccountAdmin, AccountUser, Accounts } from '../accounts.ts';
 import type { GameConfigStore } from '../gameconfig.ts';
@@ -37,6 +37,8 @@ export interface AdminDeps {
   plans: PlanStore;
   runtime: PlanRuntime;
   config: GameConfigStore;
+  /** Besucher gerade online (Kennungen, mit Account ja/nein) */
+  visitors: () => Map<string, boolean>;
 }
 
 const PARAM_NAMES: Record<keyof RoutingParams, string> = {
@@ -173,6 +175,7 @@ export function adminRoutes(app: Express, d: AdminDeps) {
         uptimeSec: Math.round((Date.now() - d.started) / 1000),
         memoryMb: Math.round(process.memoryUsage().rss / 1e6),
         users: d.admin.counts(),
+        visitors: ((v) => ({ online: v.size, anon: [...v.values()].filter((a) => !a).length, today: d.admin.visitorsToday() }))(d.visitors()),
         lobbies: d.games
           .list()
           .map((g) => g.adminInfo())
@@ -251,6 +254,22 @@ export function adminRoutes(app: Express, d: AdminDeps) {
   app.post('/api/admin/users/:name/reset-stats', h((req) => (d.admin.resetStats(admin(req).name, name(req)), { ok: true })));
   app.put('/api/admin/users/:name/name', h((req) => ({ name: d.admin.rename(admin(req).name, name(req), req.body?.name) })));
   app.put('/api/admin/users/:name/email', h((req) => (d.admin.setEmail(admin(req).name, name(req), req.body?.email), { ok: true })));
+
+  // Besucher ohne Account: nur Browser-Kennungen und (solange in einer Lobby) Spielernamen
+  app.get(
+    '/api/admin/guests',
+    h((req): AdminGuests => {
+      admin(req);
+      const v = d.visitors();
+      const anon = new Set([...v].filter(([, acc]) => !acc).map(([id]) => id));
+      const inLobbies = d.games
+        .list()
+        .map((g) => g.adminInfo())
+        .flatMap((l) => l.players.filter((p) => !p.account).map((p) => ({ name: p.name, lobby: l.code, mode: l.mode, phase: l.phase, connected: p.connected })))
+        .sort((a, b) => Number(b.connected) - Number(a.connected) || a.lobby.localeCompare(b.lobby));
+      return { online: anon.size, inLobbies, ...d.admin.guests(anon) };
+    }),
+  );
 
   app.get('/api/admin/log', h((req) => (admin(req), d.admin.logEntries())));
 

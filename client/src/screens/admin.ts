@@ -1,11 +1,12 @@
 // Admin-Seite (nur für Accounts mit Admin-Recht – vergeben über die Kommandozeile; je Sitzung mit dem Passwort
 // entsperrt): Übersicht mit Statistik und Lobbys, Accounts, Netzpläne, Einstellungen, Protokoll.
-import type { AdminLobby, AdminLogEntry, AdminOverview, AdminStats, AdminUserDetail, AdminUserRow, AdminUserStats } from '../../../shared/types.ts';
+import type { AdminGuests, AdminLobby, AdminLogEntry, AdminOverview, AdminStats, AdminUserDetail, AdminUserRow, AdminUserStats } from '../../../shared/types.ts';
 import { adm, LockedError, setOnLocked } from '../admin/api.ts';
 import { barChart, bindCharts, lineChart, rankChart } from '../admin/charts.ts';
 import { plansTab, type Tab as SubTab } from '../admin/plans.ts';
 import { settingsTab } from '../admin/settings.ts';
 import { openAccount } from '../accountui.ts';
+import { COURSES } from '../learn/courses/list.ts';
 import { app } from '../store.ts';
 import { ask, esc, lineChip, toast } from '../ui.ts';
 import { infoTip } from '../widgets.ts';
@@ -25,6 +26,8 @@ const date = (t: number) => new Date(t).toLocaleString('de-AT', { dateStyle: 'sh
 const dur = (sec: number) => (sec < 3600 ? `${Math.round(sec / 60)} min` : sec < 86400 ? `${Math.floor(sec / 3600)} h ${Math.round((sec % 3600) / 60)} min` : `${Math.floor(sec / 86400)} Tage`);
 const dayLabel = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' });
 const phaseLabel = (p: string) => ({ lobby: 'wartet', playing: 'läuft', finished: 'fertig' })[p] ?? p;
+/** breite Grafiken nur, wenn Platz ist – am Handy wären Schrift und Linien sonst winzig */
+const wide = () => (document.querySelector('.admin')?.clientWidth ?? innerWidth) >= 700;
 
 export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
   let tab: Tab = 'overview';
@@ -34,6 +37,10 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
   let query = '';
   let detail: string | null = null;
   let statDays = 7;
+  /** Accounts-Reiter: Accounts oder Besucher ohne Account */
+  let people: 'accounts' | 'guests' = 'accounts';
+  /** Zeitraum der Grafiken eines Accounts */
+  let userDays = 90;
   /** geöffnete Lobby (Übersicht) – aktualisiert sich alle paar Sekunden */
   let lobbyCode: string | null = null;
   let gen = 0;
@@ -113,8 +120,12 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
       return overview(o, s);
     }
     if (tab === 'users') {
-      if (!detail) return users(await adm<AdminUserRow[]>('GET', `/api/admin/users?q=${encodeURIComponent(query)}`));
-      const [u, s] = await Promise.all([adm<AdminUserDetail>('GET', `/api/admin/users/${encodeURIComponent(detail)}`), adm<AdminUserStats>('GET', `/api/admin/users/${encodeURIComponent(detail)}/stats?days=90`)]);
+      if (!detail && people === 'guests') return peopleSwitch() + guests(await adm<AdminGuests>('GET', '/api/admin/guests'));
+      if (!detail) return peopleSwitch() + users(await adm<AdminUserRow[]>('GET', `/api/admin/users?q=${encodeURIComponent(query)}`));
+      const [u, s] = await Promise.all([
+        adm<AdminUserDetail>('GET', `/api/admin/users/${encodeURIComponent(detail)}`),
+        adm<AdminUserStats>('GET', `/api/admin/users/${encodeURIComponent(detail)}/stats?days=${userDays}`),
+      ]);
       return userDetail(u, s);
     }
     return logHtml(await adm<AdminLogEntry[]>('GET', '/api/admin/log'));
@@ -137,33 +148,65 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
 
   function overview(o: AdminOverview, s: AdminStats): string {
     const u = o.users;
-    const card = (v: string | number, l: string) => `<div class="adm-card"><b>${v}</b><small>${l}</small></div>`;
+    const v = o.visitors;
+    const card = (val: string | number, l: string, sub = '') => `<div class="adm-card"><b>${val}</b><small>${l}</small>${sub ? `<small class="adm-card-sub">${sub}</small>` : ''}</div>`;
     const fmtT = (t: number) =>
       statDays <= 2 ? new Date(t).toLocaleTimeString('de-AT', { hour: '2-digit', minute: '2-digit' }) : new Date(t).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' });
     // gewählter Zeitraum – die Verlaufs-Grafiken zeigen ihn ganz, auch wenn es erst später Messwerte gibt
     const range: [number, number] = [Date.now() - statDays * 864e5, Date.now()];
     const fmtTip = (t: number) => new Date(t).toLocaleString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-    const pts = (f: 'online' | 'players' | 'visitors' | 'anon') => s.samples.map((x) => ({ t: x.at, v: x[f] }));
+    const pts = (f: 'online' | 'players' | 'visitors' | 'anon' | 'playing' | 'lobbies') => s.samples.map((x) => ({ t: x.at, v: x[f] }));
+    // ab 2 Tagen sind die Verläufe verdichtet (je Stunde bzw. 3 Stunden der Höchstwert)
+    const peak = statDays <= 2 ? '' : statDays > 30 ? ' (Höchstwert je 3 h)' : ' (Höchstwert je Stunde)';
+    const period = statDays === 1 ? 'heute' : `letzte ${statDays} Tage`;
     const lineRow = (line: string) => {
       const l = app.net.lines.get(line);
       return lineChip(l?.mode ?? (/^(R|REX|CJX)\d/.test(line) ? 'S' : 'B'), line, l?.color ?? '#5b6170');
     };
+    const sum = (f: (d: AdminStats['days'][number]) => number) => s.days.reduce((a, d) => a + f(d), 0);
+    const lobbyGames = sum((d) => d.route + d.challenge + d.quiz);
+    const multi = sum((d) => d.multi);
+    const players = sum((d) => d.players);
+    const courseTitle = (id: string) => {
+      const c = COURSES.find((x) => x.id === id);
+      return c ? `${c.icon} ${esc(c.title)}` : esc(id);
+    };
     return `
       ${o.warnings.length ? `<div class="adm-warn">${o.warnings.map((w) => `⚠ ${esc(w)}`).join('<br>')}</div>` : ''}
       <div class="adm-cards">
-        ${card(u.online, 'Accounts online')}${card(o.lobbies.length, 'Lobbys')}${card(o.activeGames, 'Spiele laufen')}${card(u.total, 'Accounts')}${card(u.new7d, 'neu (7 Tage)')}${card(u.withEmail, 'mit E-Mail')}${card(u.admins, 'Admins')}
+        ${card(v.online, 'Besucher online', `${v.anon} ohne Account`)}${card(v.today, 'Besucher heute')}${card(o.activeGames, 'Spiele laufen', `${o.lobbies.length} Lobbys offen`)}
+        ${card(u.total, 'Accounts', `${u.new7d} neu in 7 Tagen`)}${card(u.online, 'Accounts online')}${card(u.withEmail, 'mit E-Mail', u.total ? `${Math.round((u.withEmail / u.total) * 100)} %` : '')}
       </div>
       <div class="adm-range">Zeitraum ${[1, 7, 30, 90].map((d) => `<button class="${d === statDays ? 'on' : ''}" data-days="${d}">${d === 1 ? '24 h' : `${d} Tage`}</button>`).join('')}</div>
       <div class="adm-charts">
-        ${lineChart('visitors', 'Besucher online', [{ name: 'alle', points: pts('visitors') }, { name: 'ohne Account', points: pts('anon') }], fmtT, true, fmtTip, range)}
+        ${lineChart('visitors', `Besucher online${peak}`, [{ name: 'alle', points: pts('visitors') }, { name: 'ohne Account', points: pts('anon') }], fmtT, wide(), fmtTip, range)}
         ${barChart('visits', 'Besucher je Tag', ['mit Account', 'ohne Account'], s.days.map((d) => ({ label: dayLabel(d.day), values: [d.visitors - d.anonVisitors, d.anonVisitors] })))}
-        ${barChart('games', 'Fertige Spiele je Tag', ['Routenjagd', 'Quiz'], s.days.map((d) => ({ label: dayLabel(d.day), values: [d.route, d.quiz] })))}
-        ${rankChart('Meistgewählte Linien', s.lines.slice(0, 15).map((l) => ({ label: lineRow(l.line), n: l.n })), statDays === 1 ? 'heute' : `letzte ${statDays} Tage`)}
-        ${lineChart('players', 'Spieler in Lobbys', [{ name: 'Spieler', points: pts('players') }], fmtT, false, fmtTip, range)}
-        ${barChart('users', 'Accounts je Tag', ['aktiv', 'neu'], s.days.map((d) => ({ label: dayLabel(d.day), values: [d.activeUsers, d.newUsers] })))}
+        ${barChart('users', 'Accounts je Tag', ['gespielt, schon länger dabei', 'neu angelegt'], s.days.map((d) => ({ label: dayLabel(d.day), values: [d.returning, d.newUsers] })))}
+        ${barChart(
+          'games',
+          'Gespielt je Tag',
+          ['Routenjagd', 'Tages-Challenge', 'Quiz', 'Strecke des Tages', 'Training'],
+          s.days.map((d) => ({ label: dayLabel(d.day), values: [d.route, d.challenge, d.quiz, d.daily, d.training] })),
+          wide(),
+          `<p class="muted adm-note">${
+          lobbyGames
+            ? `Lobby-Spiele (${period}): ${lobbyGames}, davon ${multi} mit mehreren Spielern (${Math.round((multi / lobbyGames) * 100)} %) · Ø ${(players / lobbyGames).toLocaleString('de-AT', { maximumFractionDigits: 1 })} Spieler je Spiel`
+            : `Keine fertigen Lobby-Spiele (${period}).`
+          }</p>`,
+        )}
+        ${lineChart('lobbies', `Lobbys und Spieler${peak}`, [{ name: 'Spieler verbunden', points: pts('players') }, { name: 'Spiele laufen', points: pts('playing') }], fmtT, wide(), fmtTip, range)}
+        ${rankChart('Meistgewählte Linien', s.lines.slice(0, 15).map((l) => ({ label: lineRow(l.line), n: l.n })), period)}
+        ${rankChart(
+          'Lernpfad: Kurs abgeschlossen',
+          s.courses.map((c) => ({ label: courseTitle(c.id), n: c.done, tip: `${c.done} Accounts abgeschlossen, ${c.mastered} gemeistert` })),
+          `${s.learners} von ${u.total} Accounts mit mind. einem Kurs`,
+          'Noch keine Daten.',
+          true,
+        )}
       </div>
       <dl class="adm-facts">
         <dt>Version</dt><dd>${esc(o.version)} · läuft seit ${dur(o.uptimeSec)} · ${o.memoryMb} MB RAM</dd>
+        <dt>Admins</dt><dd>${u.admins}</dd>
         <dt>E-Mail</dt><dd>${o.mail ? '✔ eingerichtet („Passwort vergessen“ geht)' : '✖ aus – SMTP_URL fehlt (Links zum Zurücksetzen unter Accounts erzeugen)'}</dd>
         <dt>Fahrplan</dt><dd>${o.timetable.loaded ? `✔ eigener Referenzfahrplan, gültig bis ${esc(o.timetable.validUntil ?? '?')}` : '✖ aus – es wird die Online-Auskunft gefragt'}</dd>
       </dl>
@@ -226,6 +269,17 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
 
   // -------------------------------------------------------------- Accounts
 
+  function peopleSwitch(): string {
+    return `<div class="adm-range adm-people">${(
+      [
+        ['accounts', '👤 Accounts'],
+        ['guests', '👻 Ohne Account'],
+      ] as const
+    )
+      .map(([k, l]) => `<button class="${people === k ? 'on' : ''}" data-people="${k}">${l}</button>`)
+      .join('')}</div>`;
+  }
+
   function users(list: AdminUserRow[]): string {
     return `<input class="line-input" id="adm-q" placeholder="Name oder E-Mail suchen …" value="${esc(query)}" autocomplete="off" spellcheck="false">
       <ul class="adm-list adm-users">${
@@ -233,29 +287,98 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
           .map(
             (u) => `<li data-user="${esc(u.name)}" tabindex="0"><div><span class="online-dot ${u.online ? 'on' : ''}"></span><b>${esc(u.name)}</b>${u.admin ? ' <span class="adm-badge">Admin</span>' : ''}
               <small class="muted">${u.email ? esc(u.email) : 'keine E-Mail'}</small></div>
-              <small>Lv ${u.level} · ${u.games} Spiele · ${u.online ? 'online' : `zuletzt ${ago(u.lastSeen)}`}</small></li>`,
+              <small>Lv ${u.level} · ${u.games} ${u.games === 1 ? 'Spiel' : 'Spiele'} · ${u.online ? 'online' : `zuletzt ${ago(u.lastSeen)}`}</small></li>`,
           )
           .join('') || '<li class="muted">Niemand gefunden.</li>'
       }</ul>`;
   }
 
+  function guests(g: AdminGuests): string {
+    const card = (val: string | number, l: string) => `<div class="adm-card"><b>${val}</b><small>${l}</small></div>`;
+    const day = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    const pct = (n: number) => (g.browsers ? ` (${Math.round((n / g.browsers) * 100)} %)` : '');
+    return `<p class="muted">Ohne Account kennt der Server nur eine zufällige Kennung je Browser und die Tage, an denen sie da war – keinen Namen. Spielernamen gibt es nur, solange jemand in einer Lobby ist.</p>
+      <div class="adm-cards">${card(g.online, 'gerade online')}${card(g.browsers, 'Browser in 90 Tagen')}${card(`${g.returning}${pct(g.returning)}`, 'an mehreren Tagen da')}${card(g.converted, 'haben inzwischen einen Account')}</div>
+      <h3>Gerade in einer Lobby</h3>
+      ${
+        g.inLobbies.length
+          ? `<table class="adm-table"><thead><tr><th>Spielername</th><th>Lobby</th><th></th></tr></thead><tbody>${g.inLobbies
+              .map(
+                (p) => `<tr><td><span class="online-dot ${p.connected ? 'on' : ''}"></span>${esc(p.name)}</td><td><button class="link mono" data-globby="${esc(p.lobby)}">${esc(p.lobby)}</button></td>
+                  <td><small class="muted">${p.mode === 'quiz' ? '🧠 Quiz' : '🏁 Routenjagd'} · ${esc(phaseLabel(p.phase))}</small></td></tr>`,
+              )
+              .join('')}</tbody></table>`
+          : '<p class="muted">Gerade niemand ohne Account in einer Lobby.</p>'
+      }
+      <h3>Browser ohne Account <small class="muted">(zuletzt da zuerst, höchstens 100)</small></h3>
+      ${
+        g.list.length
+          ? `<table class="adm-table"><thead><tr><th>Kennung</th><th>zuletzt</th><th>erstmals</th><th>Tage da</th></tr></thead><tbody>${g.list
+              .map((x) => `<tr><td><span class="online-dot ${x.online ? 'on' : ''}"></span><span class="mono">${esc(x.id)}</span></td><td>${x.online ? 'jetzt' : day(x.last)}</td><td>${day(x.first)}</td><td>${x.days}</td></tr>`)
+              .join('')}</tbody></table>`
+          : '<p class="muted">Noch keine Besuche ohne Account.</p>'
+      }`;
+  }
+
   function userDetail(u: AdminUserDetail, us: AdminUserStats): string {
     const s = u.stats;
-    const dataKeys = Object.entries(u.data);
+    const dataKb = Object.values(u.data).reduce((a, b) => a + b, 0) / 1024;
+    const done = us.courses.filter((c) => c.done);
+    const course = (id: string) => COURSES.find((c) => c.id === id);
+    const lineRow = (line: string) => {
+      const l = app.net.lines.get(line);
+      return lineChip(l?.mode ?? (/^(R|REX|CJX)\d/.test(line) ? 'S' : 'B'), line, l?.color ?? '#5b6170');
+    };
+    const fmtD = (t: number) => new Date(t).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' });
+    const roundPts = us.days.filter((d) => d.avgRoute != null).map((d) => ({ t: Date.parse(`${d.day}T12:00:00Z`), v: d.avgRoute! }));
+    const range: [number, number] = [Date.parse(`${us.days[0].day}T00:00:00Z`), Date.parse(`${us.days[us.days.length - 1].day}T23:59:00Z`)];
+    const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
     return `<button class="link" id="adm-list">← alle Accounts</button>
       <div class="profile-head"><h3><span class="online-dot ${u.online ? 'on' : ''}"></span>${esc(u.name)}${u.admin ? ' <span class="adm-badge">Admin</span>' : ''}</h3></div>
       <dl class="adm-facts">
         <dt>E-Mail</dt><dd>${u.email ? esc(u.email) : '<span class="muted">keine</span>'}</dd>
         <dt>Dabei seit</dt><dd>${date(u.created)}</dd>
         <dt>Zuletzt da</dt><dd>${u.online ? 'gerade online' : `${ago(u.lastSeen)} (${date(u.lastSeen)})`}</dd>
-        <dt>Angemeldet auf</dt><dd>${u.sessions} Gerät(en)</dd>
-        <dt>Level</dt><dd>${u.level} · ${u.xp} XP</dd>
-        <dt>Spiele</dt><dd>${s.games} Routenjagd (${s.wins} Siege, ${s.rounds} Runden, Ø ${s.avgRoute} Punkte) · ${s.quizGames} Quiz · ${s.trainings} Training</dd>
+        <dt>Angemeldet auf</dt><dd>${plural(u.sessions, 'Gerät', 'Geräten')}</dd>
+        <dt>Level</dt><dd>${u.level} · ${u.xp.toLocaleString('de-AT')} XP</dd>
+        <dt>Gespielt</dt><dd>${plural(s.games, 'Routenjagd', 'Routenjagden')} (${plural(s.wins, 'Sieg', 'Siege')}) · ${s.quizGames} Quiz (${plural(s.quizWins, 'Sieg', 'Siege')}) · ${us.daily}× Strecke des Tages · ${plural(us.challenges, 'Tages-Challenge', 'Tages-Challenges')} · ${s.trainings} Training</dd>
+        <dt>Routen</dt><dd>${s.rounds ? `${plural(s.rounds, 'Runde', 'Runden')} · Ø ${s.avgRoute} Punkte · bestes Ergebnis ${s.bestRound} · ${s.perfectRounds} perfekt` : '<span class="muted">noch keine Runde</span>'}</dd>
+        <dt>In Öffis unterwegs</dt><dd>${s.minutes ? (s.minutes < 60 ? `${s.minutes} min` : `${Math.floor(s.minutes / 60).toLocaleString('de-AT')} h ${s.minutes % 60} min`) : '–'} <small class="muted">(eigene Routen)</small></dd>
+        <dt>Lernpfad</dt><dd>${done.length} von ${us.courses.length} Kursen${s.coursesMastered ? ` (${s.coursesMastered} gemeistert)` : ''}${
+          done.length ? `<br><small>${done.map((c) => `${course(c.id)?.icon ?? ''} ${esc(course(c.id)?.title ?? c.id)}${c.mastered ? ' ★' : ''}`).join(' · ')}</small>` : ''
+        }</dd>
         <dt>Medaillen</dt><dd>${u.medals.filter((m) => m.tier).map((m) => `<span title="${esc(m.title)}${m.tiers > 1 ? ` · Stufe ${m.tier}` : ''}">${m.icon}</span>`).join(' ') || '–'}</dd>
         <dt>Freunde</dt><dd>${u.friends.map(esc).join(', ') || '–'}${u.incoming.length ? ` · Anfragen von ${u.incoming.map(esc).join(', ')}` : ''}${u.outgoing.length ? ` · angefragt: ${u.outgoing.map(esc).join(', ')}` : ''}</dd>
-        <dt>Spielstand</dt><dd>${dataKeys.length ? dataKeys.map(([k, n]) => `${esc(k.replace(/^oeffi-/, ''))} <small>(${n} B)</small>`).join(', ') : '–'}</dd>
+        <dt>Gespeicherter Spielstand</dt><dd>${dataKb ? `${dataKb.toLocaleString('de-AT', { maximumFractionDigits: 1 })} KB` : '–'}</dd>
       </dl>
-      <div class="adm-charts">${barChart('user', 'Gespielt je Tag (90 Tage)', ['Routenjagd', 'Quiz', 'Training'], us.days.map((d) => ({ label: dayLabel(d.day), values: [d.route, d.quiz, d.training] })))}</div>
+      <div class="adm-range">Zeitraum ${[30, 90, 365].map((d) => `<button class="${d === userDays ? 'on' : ''}" data-udays="${d}">${d === 365 ? '1 Jahr' : `${d} Tage`}</button>`).join('')}</div>
+      <div class="adm-charts">
+        ${barChart(
+          'user',
+          'Gespielt je Tag',
+          ['Routenjagd', 'Quiz', 'Strecke des Tages', 'Training'],
+          us.days.map((d) => ({ label: dayLabel(d.day), values: [d.route, d.quiz, d.daily, d.training] })),
+          wide(),
+          '',
+          // dieselben Farben wie in der Übersicht (dort Tages-Challenge an 2. Stelle)
+          [0, 2, 3, 4],
+        )}
+        ${
+          roundPts.length
+            ? lineChart('user-route', 'Ø Routenpunkte je Tag', [{ name: 'Ø Punkte', points: roundPts }], fmtD, false, (t) => new Date(t).toLocaleDateString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit' }), range, {
+                last: 'zuletzt',
+                late: false,
+                max: 1300,
+              })
+            : `<figure class="chart"><figcaption>Ø Routenpunkte je Tag</figcaption><p class="muted ch-empty">Keine Routenjagd-Runde in diesem Zeitraum.</p></figure>`
+        }
+        ${rankChart(
+          'Meistgenutzte Linien',
+          us.lines.map((l) => ({ label: lineRow(l.line), n: l.n, tip: `${l.n}-mal gefahren` })),
+          'alle Spiele',
+          'Noch keine Linien gefahren.',
+        )}
+      </div>
       ${
         u.admin
           ? '<p class="muted">Admin-Accounts lassen sich hier nicht ändern – nur über die Kommandozeile am Server (Rechte nehmen mit „revoke“).</p>'
@@ -374,6 +497,16 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
       li.addEventListener('keydown', (e) => e.key === 'Enter' && open());
     });
     root.querySelector('#adm-list')?.addEventListener('click', () => ((detail = null), rerender()));
+    root.querySelectorAll<HTMLButtonElement>('[data-people]').forEach((b) => b.addEventListener('click', () => ((people = b.dataset.people as typeof people), rerender())));
+    root.querySelectorAll<HTMLButtonElement>('[data-globby]').forEach((b) =>
+      b.addEventListener('click', () => {
+        tab = 'overview';
+        lobbyCode = b.dataset.globby!;
+        panel.scrollTop = 0;
+        rerender();
+      }),
+    );
+    root.querySelectorAll<HTMLButtonElement>('[data-udays]').forEach((b) => b.addEventListener('click', () => ((userDays = Number(b.dataset.udays)), rerender())));
     if (detail) bindUser(root, detail);
   }
 

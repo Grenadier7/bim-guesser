@@ -78,6 +78,8 @@ export class DailyService {
   private file: string;
   private net: Network;
   private accounts: Accounts | null;
+  /** Statistik der Admin-Seite: Strecke des Tages gespielt (mit oder ohne Account) */
+  onPlayed?: (account: boolean) => void;
 
   constructor(net: Network, accounts: Accounts | null, opts: { file?: string; now?: () => number } = {}) {
     this.net = net;
@@ -259,6 +261,12 @@ export class DailyService {
     const points = res.durationMin != null && !res.error ? scoreRoute(res.durationMin, best) : 0;
     const minutes = res.durationMin == null ? null : Math.round(res.durationMin);
     if (userId != null) this.accounts?.recordDaily(userId, t.day, points, minutes, { route: res.route, matchedRank: res.matchedRank, error: res.error }, legs, !res.error);
+    if (!res.error)
+      try {
+        this.onPlayed?.(userId != null);
+      } catch {
+        /* Statistik darf nie stören */
+      }
     return {
       day: t.day,
       number: dayNumber(t.day),

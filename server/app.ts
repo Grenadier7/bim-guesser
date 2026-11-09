@@ -71,7 +71,7 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
     g.on('finished', () => {
       try {
         const info = g.adminInfo();
-        adminAcc.recordGame(g.mode, info.players.length, info.players.filter((p) => p.account).length);
+        adminAcc.recordGame(g.mode === 'quiz' ? 'quiz' : (g.state() as { settings?: { challenge?: unknown } }).settings?.challenge ? 'challenge' : 'route', info.players.length, info.players.filter((p) => p.account).length);
       } catch (e) {
         console.warn('Statistik:', (e as Error).message);
       }
@@ -101,8 +101,12 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
   }, 5 * 60_000).unref();
   setInterval(() => accounts.cleanup(), 3600_000).unref();
   const training = new TrainingService(net);
-  training.onLines = (lines) => adminAcc.countLines(lines);
+  training.onLines = (lines, account) => {
+    adminAcc.countLines(lines);
+    adminAcc.recordGame('training', 1, account ? 1 : 0);
+  };
   const daily = new DailyService(net, accounts, { file: dailyFile });
+  daily.onPlayed = (account) => adminAcc.recordGame('daily', 1, account ? 1 : 0);
 
   const app = express();
   app.disable('x-powered-by');
@@ -167,7 +171,10 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
 
   const { optionalUser } = accountRoutes(app, accounts, (code) => games.has(code));
   gameRoutes(app, games, { accounts, optionalUser });
-  adminRoutes(app, { accounts, admin: adminAcc, games, net, version, started, plans, runtime, config: cfg });
+  adminRoutes(app, { accounts, admin: adminAcc, games, net, version, started, plans, runtime, config: cfg, visitors: () => {
+      visitorsNow();
+      return new Map([...visitors].map(([id, v]) => [id, v.account]));
+    } });
   trainingRoutes(app, training, { accounts, optionalUser });
   dailyRoutes(app, daily, optionalUser);
 

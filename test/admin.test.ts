@@ -375,7 +375,26 @@ describe('Sicherheit', () => {
   test('Statistik: Zeitreihen und Tage', async () => {
     const st = (await boss.b.call('GET', '/api/admin/stats?days=7')).body;
     assert.ok(Array.isArray(st.samples) && Array.isArray(st.days) && st.days.length >= 7);
-    assert.ok(st.days.every((x: Record<string, unknown>) => 'route' in x && 'quiz' in x && 'newUsers' in x));
+    assert.equal(st.days.length, 7, 'genau 7 Kalendertage, heute zuletzt');
+    assert.equal(st.days.at(-1).day, new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Vienna' }));
+    assert.ok(st.days.every((x: Record<string, unknown>) => ['route', 'challenge', 'quiz', 'daily', 'training', 'multi', 'newUsers', 'returning'].every((k) => k in x)));
+    assert.equal((await boss.b.call('GET', '/api/admin/stats?days=1')).body.days.length, 1, '24 h = heute');
+    assert.ok(Array.isArray(st.courses) && st.courses.length === 8);
+  });
+
+  test('Übersicht: Besucher online und heute; Gäste-Ansicht', async () => {
+    const guest = browser();
+    const id = uniq('gastbrowser').toLowerCase();
+    assert.equal((await guest.call('POST', '/api/ping', { v: id })).status, 200);
+    const o = (await boss.b.call('GET', '/api/admin/overview')).body;
+    assert.ok(o.visitors.online >= 1 && o.visitors.anon >= 1 && o.visitors.today >= 1, JSON.stringify(o.visitors));
+    const g = (await boss.b.call('GET', '/api/admin/guests')).body;
+    assert.ok(g.online >= 1 && g.browsers >= 1 && Array.isArray(g.inLobbies));
+    const row = g.list.find((x: { id: string }) => x.id === id.slice(0, 8));
+    assert.ok(row && row.online && row.days === 1, 'Gast mit Kurzkennung, gerade online');
+    assert.ok(!g.list.some((x: { id: string }) => x.id.length > 8), 'nur Kurzkennungen');
+    // ohne Admin: kein Zugriff
+    assert.equal((await guest.call('GET', '/api/admin/guests')).status, 401);
   });
 });
 
@@ -454,6 +473,96 @@ describe('Besucher und Linien-Statistik', () => {
     const now = (await boss.b.call('GET', '/api/admin/stats?days=1')).body.days.at(-1);
     assert.equal(now.visitors - (before?.visitors ?? 0), 2, 'zweimal derselbe Browser zählt einmal');
     assert.equal(now.anonVisitors - (before?.anonVisitors ?? 0), 1, 'einer davon ohne Account');
+  });
+
+  test('Statistik je Tag: Gespieltes nach Art, Mehrspieler, neue und wiederkehrende Accounts, Lernpfad', async () => {
+    const { Accounts, AccountAdmin } = await import('../server/accounts.ts');
+    const acc = new Accounts(net, { file: ':memory:', mail: async () => {} });
+    const a = new AccountAdmin(acc);
+    const db = (acc as unknown as { db: { prepare(s: string): { run(...a: unknown[]): unknown } } }).db;
+    const DAY = 86400_000;
+    a.recordGame('route', 1, 1);
+    a.recordGame('route', 3, 1);
+    a.recordGame('challenge', 1, 0);
+    a.recordGame('quiz', 2, 2);
+    a.recordGame('daily', 1, 0);
+    a.recordGame('training', 1, 1);
+    a.recordGame('training', 1, 0);
+    const old = (await acc.register('altgast', 'passwort123', '')).user;
+    const fresh = (await acc.register('neuling', 'passwort123', '')).user;
+    db.prepare('UPDATE users SET created = ? WHERE id = ?').run(Date.now() - 10 * DAY, old.id);
+    for (const u of [old, fresh, old]) db.prepare("INSERT INTO results (user_id, kind, at, points) VALUES (?, 'game', ?, 0)").run(u.id, Date.now());
+    // Spiel von vorgestern: nicht in „heute“
+    db.prepare("INSERT INTO game_log (at, mode, players, accounts) VALUES (?, 'route', 1, 0)").run(Date.now() - 2 * DAY);
+    acc.saveData(old.id, { 'oeffi-courses-v1': { ubahn: { done: true, mastered: true }, sbahn: { done: true }, tangential: { done: true } } });
+    acc.saveData(fresh.id, { 'oeffi-courses-v1': { ubahn: { done: true } } });
+    const st = a.stats(1);
+    assert.equal(st.days.length, 1);
+    const d = st.days[0];
+    assert.deepEqual([d.route, d.challenge, d.quiz, d.daily, d.training], [2, 1, 1, 1, 2]);
+    assert.equal(d.multi, 2, 'Routenjagd mit 3 und Quiz mit 2 Spielern');
+    assert.equal(d.players, 1 + 3 + 1 + 2, 'nur Lobby-Spiele');
+    assert.equal(d.newUsers, 1, 'nur der heute angelegte');
+    assert.equal(d.returning, 1, 'neuer Account zählt nicht zusätzlich als wiederkehrend; doppelt gespielt zählt einmal');
+    assert.deepEqual({ ...st.courses.find((c) => c.id === 'ubahn') }, { id: 'ubahn', done: 2, mastered: 1 });
+    assert.equal(st.courses.find((c) => c.id === 'sbahn')!.done, 1);
+    assert.ok(!st.courses.some((c) => c.id === 'tangential'), 'entfernter Kurs zählt nicht');
+    assert.equal(st.learners, 2);
+    assert.equal(a.stats(7).days.reduce((n, x) => n + x.route, 0), 3, 'vorgestern im 7-Tage-Zeitraum');
+  });
+
+  test('Account: Spielzahl in der Liste, Gespieltes und Ø Routenpunkte je Tag, Lieblingslinien, Gäste', async () => {
+    const { Accounts, AccountAdmin } = await import('../server/accounts.ts');
+    const acc = new Accounts(net, { file: ':memory:', mail: async () => {} });
+    const a = new AccountAdmin(acc);
+    const db = (acc as unknown as { db: { prepare(s: string): { run(...a: unknown[]): unknown } } }).db;
+    const u = (await acc.register('spielerin', 'passwort123', '')).user;
+    const res = (kind: string, route: number | null = null) => db.prepare('INSERT INTO results (user_id, kind, at, points, route) VALUES (?, ?, ?, 0, ?)').run(u.id, kind, Date.now(), route);
+    res('game');
+    res('game');
+    res('quiz');
+    res('daily');
+    res('training');
+    res('round', 800);
+    res('round', 1000);
+    db.prepare("INSERT INTO usage (user_id, kind, key, weight, count) VALUES (?, 'line:U', 'U4', 5, 4), (?, 'line:T', '43', 9, 2)").run(u.id, u.id);
+    db.prepare("INSERT INTO challenge_days (user_id, day, challenge, run) VALUES (?, '2026-11-01', 'x', 'r')").run(u.id);
+    assert.equal(a.users('spielerin')[0].games, 3, 'Routenjagd und Quiz');
+    const us = a.userStats('spielerin', 30);
+    assert.equal(us.days.length, 30);
+    const today = us.days.at(-1)!;
+    assert.deepEqual([today.route, today.quiz, today.daily, today.training, today.rounds, today.avgRoute], [2, 1, 1, 1, 2, 900]);
+    assert.equal(us.days[0].avgRoute, null);
+    assert.deepEqual(
+      us.lines.map((x) => ({ ...x })),
+      [
+        { line: 'U4', n: 4 },
+        { line: '43', n: 2 },
+      ],
+    );
+    assert.equal(us.daily, 1);
+    assert.equal(us.challenges, 1);
+    assert.equal(us.courses.length, 8);
+    // Gäste: nur Browser ohne Account; zuerst ohne, später mit Account → „inzwischen Account“
+    const dayAgo = (k: number) => new Date(Date.now() - k * 86400_000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Vienna' });
+    const visit = (k: number, id: string, account: number) => db.prepare('INSERT INTO visits (day, id, account) VALUES (?, ?, ?)').run(dayAgo(k), id, account);
+    visit(0, 'gast1aaaaaaaaaaa', 0);
+    visit(3, 'gast1aaaaaaaaaaa', 0);
+    visit(1, 'gast2bbbbbbbbbbb', 0);
+    visit(5, 'wechsel11111111', 0);
+    visit(0, 'wechsel11111111', 1);
+    visit(0, 'nuraccount11111', 1);
+    const g = a.guests(new Set(['gast2bbbbbbbbbbb']));
+    assert.equal(g.browsers, 2);
+    assert.equal(g.returning, 1);
+    assert.equal(g.converted, 1);
+    assert.deepEqual(
+      g.list.map((x) => [x.id, x.online, x.days]),
+      [
+        ['gast2bbb', true, 1],
+        ['gast1aaa', false, 2],
+      ],
+    );
   });
 
   test('gewählte Linien werden gezählt und als Rangliste geliefert', async () => {

@@ -16,9 +16,9 @@ export function trainingRoutes(app: Express, training: TrainingService, account?
     limitTrainingEval,
     h(async (req) => {
       const id = param(req, 'id');
-      const res = await training.evaluate(id, req.body?.legs);
       // angemeldet: Strecke zählt für Statistik und Lieblingslinien
-      const u = account?.optionalUser(req);
+      const u = account?.optionalUser(req) ?? null;
+      const res = await training.evaluate(id, req.body?.legs, !!u);
       if (u) account!.accounts.recordTraining(u.id, id, cleanLegs(req.body?.legs), res, training.bestMin(id));
       return res;
     }),

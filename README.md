@@ -272,13 +272,18 @@ eigenen Passwort **entsperrt** werden (mind. 10 Zeichen) und sperrt sich nach 30
 Admins können andere Admins nicht ändern; Namen wie „admin“ oder „spielleitung“ sind für Spieler gesperrt; nach
 5 falschen Passwörtern ist ein Name 15 min gesperrt.
 
-- **Übersicht**: Kennzahlen, Grafiken (Besucher online mit/ohne Account, Besucher je Tag, fertige Spiele, meistgewählte
-  Linien, Spieler in Lobbys, Accounts je Tag; Zeitraum 1/7/30/90 Tage, Tooltips, Tabellenansicht) und alle Lobbys –
-  verwalten wie vom Host: starten, pausieren/fortsetzen, Runde abbrechen, weiter, beenden, Spieler entfernen,
+- **Übersicht**: Kennzahlen (Besucher online/heute, laufende Spiele, Accounts, mit E-Mail), Grafiken (Besucher online
+  mit/ohne Account, Besucher je Tag, Accounts je Tag – neu angelegt bzw. schon länger dabei und gespielt –, Gespielt je
+  Tag nach Routenjagd/Tages-Challenge/Quiz/Strecke des Tages/Training mit Mehrspieler-Anteil, Lobbys und Spieler,
+  meistgewählte Linien, Lernpfad je Kurs; Zeitraum 24 h/7/30/90 Kalendertage, Tooltips, Tabellenansicht) und alle
+  Lobbys – verwalten wie vom Host: starten, pausieren/fortsetzen, Runde abbrechen, weiter, beenden, Spieler entfernen,
   Host-Rechte vergeben, als „Spielleitung“ in den Chat schreiben. Besucher werden über eine zufällige Kennung je
   Browser gezählt (`/api/ping`, kein Bezug zur Person).
-- **Accounts**: suchen, alles sehen (inkl. Verlauf als Grafik), Passwort setzen, **Link zum Zurücksetzen** (1 h),
-  auf allen Geräten abmelden, Statistik zurücksetzen, umbenennen, E-Mail ändern, löschen.
+- **Accounts**: suchen, alles sehen (Gespieltes, Routen, Lernpfad, Medaillen; Grafiken: Gespielt je Tag, Ø Routenpunkte,
+  meistgenutzte Linien – 30/90/365 Tage), Passwort setzen, **Link zum Zurücksetzen** (1 h), auf allen Geräten abmelden,
+  Statistik zurücksetzen, umbenennen, E-Mail ändern, löschen. **Ohne Account**: Besucher ohne Account – gerade online,
+  wer gerade in einer Lobby ist (Spielername), Browser der letzten 90 Tage (Kurzkennung, erster/letzter Besuch, Tage
+  da), wie viele wiederkommen und wie viele inzwischen einen Account haben.
 - **Netzpläne**: „Standard“ (gilt für Spiele, Training, Quiz und Lernen) plus beliebig viele eigene Pläne, die in der
   Lobby unter „Netz“ wählbar sein können (mit eigener Karte). Dazu die Kachel **LIVE Aktuell**: welche echten Tage
   gespielt werden, je Linie wie sie anders fährt (Endstellen, ausgelassene/zusätzliche Halte – aus den Fahrplandaten)
