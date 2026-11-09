@@ -62,7 +62,7 @@ export const app = {
   /** Lernen gleich mit etwas starten: Fehlerliste (Quiz) oder ein Kurs (Kurs-Tipp nach der Routenjagd) */
   learnStart: null as null | 'mistakes' | { course: string },
   /** Bildschirm außerhalb einer Lobby */
-  view: 'home' as 'home' | 'learn' | 'training' | 'tutorial' | 'admin' | 'daily' | 'me',
+  view: 'home' as 'home' | 'learn' | 'training' | 'tutorial' | 'admin' | 'daily' | 'me' | 'gm',
   prefs: loadMerged<Prefs>(PREFS_KEY, { name: '', settings: {}, quiz: {} }),
   onChange: () => {},
   /** Chat-Nachrichten und Verlauf (vom Chat-Fenster gesetzt) */

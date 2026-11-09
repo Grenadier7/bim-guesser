@@ -7600,3 +7600,116 @@ path.blocked-area {
   font-weight: 800;
   box-shadow: 0 0 0 3px #fff;
 }
+
+/* ---------------------------------------------------------------- Spielleitung (#spielleitung, nur Admins) */
+.gm-form fieldset {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 14px 12px;
+  margin: 0 0 12px;
+  background: var(--panel);
+}
+.gm-form legend {
+  font-weight: 700;
+  padding: 0 6px;
+}
+.gm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px 12px;
+}
+.gm-grid .field select,
+.gm-grid .field input {
+  width: 100%;
+}
+.gm-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 10px;
+}
+.gm-sub {
+  margin-top: 10px;
+}
+.gm-sub summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.gm-districts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+  gap: 4px;
+  margin-top: 6px;
+}
+.gm-note {
+  font-size: 12px;
+  margin: 8px 0 0;
+}
+.gm-events {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.gm-event {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.gm-event small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.gm-ev-icon {
+  font-size: 22px;
+}
+.gm-actions {
+  margin: 4px 0 24px;
+}
+.gm-open {
+  width: 100%;
+  margin: 10px 0 4px;
+}
+.gm-dlg {
+  width: min(900px, calc(100vw - 24px));
+  max-height: calc(100vh - 32px);
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.25);
+}
+.gm-dlg::backdrop {
+  background: rgb(0 0 0 / 0.4);
+}
+.gm-dlg-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.gm-dlg-head h3 {
+  margin: 0;
+}
+.adm-gm-link {
+  font-size: 13px;
+  font-weight: 500;
+  margin-left: 10px;
+}
+.gm-more {
+  margin: -4px 0 16px;
+}
+.gm-more .gm-events {
+  margin-top: 8px;
+}

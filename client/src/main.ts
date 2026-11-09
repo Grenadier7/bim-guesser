@@ -27,6 +27,7 @@ import { roundScreen } from './screens/round.ts';
 import { loadingHtml, type Screen } from './screens/screen.ts';
 import { trainingScreen } from './screens/training.ts';
 import { adminScreen } from './screens/admin.ts';
+import { gamemasterScreen } from './screens/gamemaster.ts';
 import { tutorialScreen } from './screens/tutorial.ts';
 import { dailyScreen } from './screens/daily.ts';
 import { meScreen } from './screens/me.ts';
@@ -205,7 +206,7 @@ const introSeen = new Set<string>();
 
 function mount(key: string): Screen {
   // Startseite: großer Auswahlbildschirm ohne Karte
-  document.body.classList.toggle('panel-full', key === 'home' || key === 'admin');
+  document.body.classList.toggle('panel-full', key === 'home' || key === 'admin' || key === 'gm');
   // Handy: Karte nur, wo sie gebraucht wird – Bildschirme können das selbst ändern
   setMobileMap(!['home', 'lobby', 'final', 'qlobby', 'qfinal'].includes(key));
   setTimeout(() => app.map.invalidate(), 50);
@@ -220,6 +221,7 @@ function mount(key: string): Screen {
   if (key === 'daily') return dailyScreen(panel, back);
   if (key === 'me') return meScreen(panel, back);
   if (key === 'admin') return adminScreen(panel, back);
+  if (key === 'gm') return gamemasterScreen(panel, back);
   if (key === 'lobby') return lobbyScreen(panel);
   if (key === 'final') return finalScreen(panel);
   if (key === 'qlobby') return quizLobbyScreen(panel);
@@ -373,7 +375,8 @@ async function init() {
   // geteilter Einstellungs-Link → Startseite (legt die Lobby an) statt in die alte Lobby zurück
   // geteilter Link zur Strecke des Tages (/#daily) – auch bei schon offener Seite
   const fromHash = () => {
-    const views: Record<string, typeof app.view> = { '#daily': 'daily' };
+    // #spielleitung: geheime Seite der Admins (Routenjagd mit allen Einstellungen, jedes Event)
+    const views: Record<string, typeof app.view> = { '#daily': 'daily', '#spielleitung': 'gm' };
     if (!views[location.hash]) return false;
     app.view = views[location.hash];
     history.replaceState(null, '', location.pathname + location.search);

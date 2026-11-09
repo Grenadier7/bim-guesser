@@ -44,6 +44,7 @@ import { bindKick, kickButton } from './host.ts';
 import type { Screen } from './screen.ts';
 import { challengeSettings, districtCenter, findChallenge, todaysChallenges } from '../challenges.ts';
 import { openSettingsDialog } from '../settingsShare.ts';
+import { isGameMaster, openGamemaster } from './gamemaster.ts';
 
 /**
  * Haltestellen je Verkehrsmittel: Kästchen an/aus (an = alle, aus = keine) und darunter ein
@@ -332,6 +333,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
           const bar = challengeBanner(st, host);
           return bar ? `<h3 class="events-head">Daily Events</h3>${bar}` : '';
         })()}
+        ${host && isGameMaster() ? '<button class="btn btn-dark gm-open" id="gm-open">🛠 Spielleitung – alle Einstellungen und Events</button>' : ''}
 
         <h3 class="settings-head">Einstellungen ${!host ? '<small>– nur der Host kann sie ändern</small>' : ''}</h3>
         <div class="setting"><span>Schwierigkeit</span>
@@ -464,6 +466,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
       sendFocus({ lat, lon });
     });
     bindChallenge();
+    panel.querySelector('#gm-open')?.addEventListener('click', () => openGamemaster(routeState().settings));
     panel.querySelector('#shareSettings')?.addEventListener('click', () =>
       openSettingsDialog(
         'route',

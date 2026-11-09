@@ -221,7 +221,7 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
         <dt>E-Mail</dt><dd>${o.mail ? '✔ eingerichtet („Passwort vergessen“ geht)' : '✖ aus – SMTP_URL fehlt (Links zum Zurücksetzen unter Accounts erzeugen)'}</dd>
         <dt>Fahrplan</dt><dd>${o.timetable.loaded ? `✔ eigener Referenzfahrplan, gültig bis ${esc(o.timetable.validUntil ?? '?')}` : '✖ aus – es wird die Online-Auskunft gefragt'}</dd>
       </dl>
-      <h3>Lobbys</h3>
+      <h3>Lobbys <a class="link adm-gm-link" href="#spielleitung">🛠 Spielleitungs-Lobby erstellen</a></h3>
       ${
         o.lobbies.length
           ? `<ul class="adm-list">${o.lobbies

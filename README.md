@@ -306,6 +306,11 @@ Admins können andere Admins nicht ändern; Namen wie „admin“ oder „spiell
   „wichtig“/„alle“ sind – per Klick), Adressen (alle auf der Karte: anklicken = ausnehmen/aufnehmen, leere Stelle =
   neue Adresse), Chat-Moderation (Wortliste in Deutsch, Englisch, Türkisch, Serbisch/Kroatisch/Bosnisch).
 - **Protokoll**: jede Admin-Aktion mit Zeit, Admin und Ziel.
+- **Spielleitung** (`/#spielleitung`, nur für Admins – alle anderen sehen „Diese Seite gibt es nicht“; Link auch unter
+  Übersicht → Lobbys): Routenjagd mit **allen** Einstellungen anlegen, auch denen, die es sonst nur in Tages-Challenges
+  gibt (Variante, Aufgabe, fester Start, Bezirke, Fokus, E-Scooter, Nacht-Uhrzeit …), und **jedes Event** starten,
+  nicht nur die heutigen. Die Lobby ist ganz normal – jeder tritt mit dem Code bei. In der eigenen Lobby öffnet
+  „🛠 Spielleitung“ dasselbe als Fenster (Einstellungen und Events jederzeit ändern).
 
 Netzpläne und Einstellungen liegen in `STATE_DIR/config/` (jede Änderung als Version in `config/history/`).
 **Sicherung**: `deploy/backup.sh` läuft auf dem Host und legt Kopien in einem Ordner ab, den der Container nie sieht –

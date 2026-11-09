@@ -555,3 +555,14 @@
 [data-theme='dark'] .me-legend .ml-dot {
   background: var(--panel);
 }
+
+[data-theme='dark'] .challenge-rule {
+  background: hsl(47 45% 20%);
+  color: hsl(43 75% 89%);
+}
+
+[data-theme='dark'] .area-label.visit.done {
+  background: var(--panel);
+  color: hsl(150 74% 83%);
+  border: 2px solid hsl(150 74% 60%);
+}
