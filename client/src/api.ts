@@ -3,6 +3,8 @@ import type { PublicConfig } from '../../shared/config.ts';
 import type { BarrierJson } from '../../shared/barrier.ts';
 import type { ChatMessage, DailyBoard, DailyResult, DailyRound, GameMode, GameSettings, Guesses, JoinResponse, LatLon, LobbyState, NetworkPublic, RoundReveal, SubmitResponse, TipKind, TipResult, TrainingResult, TrainingRound, UserLeg } from '../../shared/types.ts';
 
+import { visitorId } from './visitor.ts';
+
 export class ApiError extends Error {
   status: number;
   /** Grund vom Server, z.B. 'not-member' (Lobby weg oder entfernt) */
@@ -26,7 +28,8 @@ export interface Auth {
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
     method,
-    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    // Kennung des Browsers: ohne Account zählen Spiele, Training und Strecke des Tages für die Statistik
+    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), 'X-Visitor': visitorId() },
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));

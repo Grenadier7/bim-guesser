@@ -572,6 +572,73 @@ describe('Besucher und Linien-Statistik', () => {
     );
   });
 
+  test('Gäste: Runden, Spiele, Training und Strecke des Tages zählen für die Browser-Kennung; Detail und Löschen', async () => {
+    const { EventEmitter } = await import('node:events');
+    const { Accounts, AccountAdmin } = await import('../server/accounts.ts');
+    const acc = new Accounts(net, { file: ':memory:', mail: async () => {} });
+    const a = new AccountAdmin(acc);
+    const V = 'gastzaehlt000000';
+    a.visit(V, false, 'Gasti');
+    // Lobby mit einem Gast (mit Kennung) und einem ohne: nur der mit Kennung zählt
+    const lobby = Object.assign(new EventEmitter(), {
+      mode: 'route',
+      settings: { challenge: 'insider' },
+      accounts: () => [],
+      guests: () => [{ playerId: 'p1', visitor: V, score: 2500 }],
+      ranking: () => [
+        { playerId: 'p1', score: 2500 },
+        { playerId: 'p2', score: 100 },
+      ],
+    });
+    acc.watch(lobby as never);
+    const ev = (playerId: string, route: number) => ({ playerId, elapsedSec: 30, durationMin: 22, error: null, legs: [{ line: 'U4', from: 'x', to: 'y' }], score: { total: route + 50, route } });
+    lobby.emit('roundResult', { cancelled: false, evaluations: [ev('p1', 800), ev('p2', 300)] });
+    lobby.emit('roundResult', { cancelled: false, evaluations: [ev('p1', 1000)] });
+    lobby.emit('finished');
+    acc.recordGuestTraining(V, 't1', [{ line: 'U4', from: 'x', to: 'y' }], { route: null, durationMin: 30, matchedRank: null, error: null } as never, 28);
+    acc.recordGuestTraining(V, 't1', [{ line: 'U4', from: 'x', to: 'y' }], { route: null, durationMin: 30, matchedRank: null, error: null } as never, 28);
+    acc.recordGuestDaily(V, '2026-11-09', 700, 25, [{ line: '13A', from: 'x', to: 'y' }], true);
+    acc.recordGuestDaily(V, '2026-11-09', 900, 25, [], true);
+    const g = a.guest(V.slice(0, 8), 30, new Set([V]));
+    assert.equal(g.name, 'Gasti');
+    assert.ok(g.online);
+    assert.deepEqual({ ...g.games }, { route: 0, challenge: 1, quiz: 0, daily: 1, training: 1, wins: 1, quizWins: 0 }, 'Tages-Challenge, je Strecke/Tag einmal');
+    assert.deepEqual({ ...g.rounds }, { n: 2, avg: 900, best: 1000, perfect: 1 });
+    assert.deepEqual(
+      g.lines.map((x) => [x.line, x.n]),
+      [
+        ['U4', 3],
+        ['13A', 1],
+      ],
+    );
+    const today = g.days.at(-1)!;
+    assert.deepEqual([today.route, today.challenge, today.daily, today.training, today.rounds, today.avgRoute, today.visited], [0, 1, 1, 1, 2, 900, true]);
+    const list = a.guests(new Set(), 'gast');
+    assert.equal(list.list[0].games, 3, 'Spiel, Training, Strecke des Tages (Runden zählen nicht extra)');
+    assert.equal(list.played, 1);
+    assert.equal(a.guests(new Set(), 'niemand').list.length, 0, 'Suche nach Namen');
+    assert.throws(() => a.guest('zzzzzzzz', 30, new Set()), /gibt es nicht/);
+    a.removeGuest('Chef', V.slice(0, 8));
+    assert.throws(() => a.guest(V.slice(0, 8), 30, new Set()), /gibt es nicht/);
+    assert.equal(a.guests(new Set()).browsers, 0);
+  });
+
+  test('Gast in einer Lobby: Kennung kommt an, aber nie zu den Mitspielern', async () => {
+    const vid = uniq('lobbygast').toLowerCase().padEnd(16, '0');
+    const res = await realFetch(`${base}/api/games`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Visitor': vid },
+      body: JSON.stringify({ playerName: 'Gasti', mode: 'route' }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200, JSON.stringify(body));
+    assert.ok(!JSON.stringify(body).includes(vid), 'Kennung nicht im Lobby-Zustand');
+    const g = (await boss.b.call('GET', '/api/admin/guests')).body;
+    assert.ok(g.inLobbies.some((p: { name: string }) => p.name === 'Gasti'));
+    assert.ok(!JSON.stringify(g.inLobbies).includes(vid));
+    await realFetch(`${base}/api/games/${body.state.code}/leave`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: body.token }) });
+  });
+
   test('gewählte Linien werden gezählt und als Rangliste geliefert', async () => {
     const { Accounts, AccountAdmin } = await import('../server/accounts.ts');
     const a = new AccountAdmin(new Accounts(net, { file: ':memory:', mail: async () => {} }));

@@ -863,8 +863,31 @@ export interface AdminGuests {
   returning: number;
   /** Browser, die erst ohne und dann mit Account da waren */
   converted: number;
-  /** zuletzt gesehene Gäste-Browser (Kurzkennung), neueste zuerst */
-  list: { id: string; name: string | null; first: string; last: string; days: number; online: boolean }[];
+  /** Gäste, die mindestens einmal etwas gespielt haben */
+  played: number;
+  /** zuletzt gesehene Gäste-Browser (Kurzkennung), neueste zuerst; `games` = Spiele aller Arten */
+  list: { id: string; name: string | null; first: string; last: string; days: number; games: number; online: boolean }[];
+}
+
+/** ein Besucher ohne Account (Admin → Accounts → Ohne Account) */
+export interface AdminGuestDetail {
+  /** Kurzkennung */
+  id: string;
+  name: string | null;
+  online: boolean;
+  first: string;
+  last: string;
+  /** an so vielen Tagen da */
+  visitDays: number;
+  /** derselbe Browser war auch schon mit Account da */
+  hasAccount: boolean;
+  games: { route: number; challenge: number; quiz: number; daily: number; training: number; wins: number; quizWins: number };
+  /** Routenjagd-Runden (null = keine) */
+  rounds: { n: number; avg: number; best: number; perfect: number } | null;
+  /** Minuten in Öffis (eigene Routen) */
+  minutes: number;
+  days: { day: string; route: number; challenge: number; quiz: number; daily: number; training: number; rounds: number; avgRoute: number | null; visited: boolean }[];
+  lines: { line: string; n: number }[];
 }
 
 export interface AdminOverview {

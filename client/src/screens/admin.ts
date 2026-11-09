@@ -1,6 +1,6 @@
 // Admin-Seite (nur für Accounts mit Admin-Recht – vergeben über die Kommandozeile; je Sitzung mit dem Passwort
 // entsperrt): Übersicht mit Statistik und Lobbys, Accounts, Netzpläne, Einstellungen, Protokoll.
-import type { AdminGuests, AdminLobby, AdminLogEntry, AdminOverview, AdminStats, AdminUserDetail, AdminUserRow, AdminUserStats } from '../../../shared/types.ts';
+import type { AdminGuestDetail, AdminGuests, AdminLobby, AdminLogEntry, AdminOverview, AdminStats, AdminUserDetail, AdminUserRow, AdminUserStats } from '../../../shared/types.ts';
 import { adm, LockedError, setOnLocked } from '../admin/api.ts';
 import { barChart, bindCharts, lineChart, rankChart } from '../admin/charts.ts';
 import { plansTab, type Tab as SubTab } from '../admin/plans.ts';
@@ -25,6 +25,12 @@ const ago = (t: number) => {
 const date = (t: number) => new Date(t).toLocaleString('de-AT', { dateStyle: 'short', timeStyle: 'short' });
 const dur = (sec: number) => (sec < 3600 ? `${Math.round(sec / 60)} min` : sec < 86400 ? `${Math.floor(sec / 3600)} h ${Math.round((sec % 3600) / 60)} min` : `${Math.floor(sec / 86400)} Tage`);
 const dayLabel = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' });
+/** Tag (YYYY-MM-DD) als „heute“, „gestern“ oder Datum */
+const shortDay = (d: string) => {
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Vienna' });
+  const yesterday = new Date(Date.now() - 864e5).toLocaleDateString('sv-SE', { timeZone: 'Europe/Vienna' });
+  return d === today ? 'heute' : d === yesterday ? 'gestern' : new Date(`${d}T12:00:00Z`).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: '2-digit' });
+};
 const phaseLabel = (p: string) => ({ lobby: 'wartet', playing: 'läuft', finished: 'fertig' })[p] ?? p;
 /** breite Grafiken nur, wenn Platz ist – am Handy wären Schrift und Linien sonst winzig */
 const wide = () => (document.querySelector('.admin')?.clientWidth ?? innerWidth) >= 700;
@@ -35,6 +41,9 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
   /** Passwort zu kurz für den Admin-Bereich → Hinweis mit Knopf zum Ändern */
   let weakPw = '';
   let query = '';
+  let guestQuery = '';
+  /** geöffneter Besucher ohne Account (Kurzkennung) */
+  let guest: string | null = null;
   let detail: string | null = null;
   let statDays = 7;
   /** Accounts-Reiter: Accounts oder Besucher ohne Account */
@@ -96,6 +105,7 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
       b.addEventListener('click', () => {
         tab = b.dataset.tab as Tab;
         detail = null;
+        guest = null;
         lobbyCode = null;
         panel.scrollTop = 0;
         rerender();
@@ -120,7 +130,8 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
       return overview(o, s);
     }
     if (tab === 'users') {
-      if (!detail && people === 'guests') return peopleSwitch() + guests(await adm<AdminGuests>('GET', '/api/admin/guests'));
+      if (!detail && people === 'guests' && guest) return guestDetail(await adm<AdminGuestDetail>('GET', `/api/admin/guests/${encodeURIComponent(guest)}?days=${Math.min(90, userDays)}`));
+      if (!detail && people === 'guests') return peopleSwitch() + guests(await adm<AdminGuests>('GET', `/api/admin/guests?q=${encodeURIComponent(guestQuery)}`));
       if (!detail) return peopleSwitch() + users(await adm<AdminUserRow[]>('GET', `/api/admin/users?q=${encodeURIComponent(query)}`));
       const [u, s] = await Promise.all([
         adm<AdminUserDetail>('GET', `/api/admin/users/${encodeURIComponent(detail)}`),
@@ -295,32 +306,80 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
 
   function guests(g: AdminGuests): string {
     const card = (val: string | number, l: string, sub = '') => `<div class="adm-card"><b>${val}</b><small>${l}</small>${sub ? `<small class="adm-card-sub">${sub}</small>` : ''}</div>`;
-    const day = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: '2-digit' });
     const pct = (n: number) => (g.browsers ? `${Math.round((n / g.browsers) * 100)} %` : '');
-    return `<p class="muted">Ohne Account kennt der Server nur eine zufällige Kennung je Browser, die Tage, an denen sie da war, und den zuletzt verwendeten Spielernamen.</p>
-      <div class="adm-cards">${card(g.online, 'gerade online')}${card(g.browsers, 'Browser in 90 Tagen')}${card(g.returning, 'an mehreren Tagen da', pct(g.returning))}${card(g.converted, 'haben inzwischen einen Account')}</div>
-      <h3>Gerade in einer Lobby</h3>
+    return `<div class="adm-cards">${card(g.online, 'gerade online')}${card(g.browsers, 'Browser in 90 Tagen')}${card(g.played, 'haben gespielt', pct(g.played))}${card(g.returning, 'an mehreren Tagen da', pct(g.returning))}${card(g.converted, 'haben inzwischen einen Account')}</div>
       ${
         g.inLobbies.length
-          ? `<table class="adm-table"><thead><tr><th>Spielername</th><th>Lobby</th><th></th></tr></thead><tbody>${g.inLobbies
+          ? `<h3>Gerade in einer Lobby</h3><ul class="adm-list">${g.inLobbies
               .map(
-                (p) => `<tr><td><span class="online-dot ${p.connected ? 'on' : ''}"></span>${esc(p.name)}</td><td><button class="link mono" data-globby="${esc(p.lobby)}">${esc(p.lobby)}</button></td>
-                  <td><small class="muted">${p.mode === 'quiz' ? '🧠 Quiz' : '🏁 Routenjagd'} · ${esc(phaseLabel(p.phase))}</small></td></tr>`,
+                (p) => `<li><div><span class="online-dot ${p.connected ? 'on' : ''}"></span><b>${esc(p.name)}</b> <small class="muted">${p.mode === 'quiz' ? '🧠 Quiz' : '🏁 Routenjagd'} · ${esc(phaseLabel(p.phase))}</small></div>
+                  <button class="link mono" data-globby="${esc(p.lobby)}">${esc(p.lobby)}</button></li>`,
               )
-              .join('')}</tbody></table>`
-          : '<p class="muted">Gerade niemand ohne Account in einer Lobby.</p>'
+              .join('')}</ul>`
+          : ''
       }
-      <h3>Browser ohne Account <small class="muted">(zuletzt da zuerst, höchstens 100)</small></h3>
-      ${
-        g.list.length
-          ? `<table class="adm-table"><thead><tr><th>Name (zuletzt)</th><th>zuletzt da</th><th>erstmals</th><th>Tage da</th></tr></thead><tbody>${g.list
-              .map(
-                (x) =>
-                  `<tr><td><span class="online-dot ${x.online ? 'on' : ''}"></span>${x.name ? esc(x.name) : '<span class="muted">ohne Namen</span>'} <small class="muted mono">${esc(x.id)}</small></td><td>${x.online ? 'jetzt' : day(x.last)}</td><td>${day(x.first)}</td><td>${x.days}</td></tr>`,
-              )
-              .join('')}</tbody></table>`
-          : '<p class="muted">Noch keine Besuche ohne Account.</p>'
-      }`;
+      <input class="line-input" id="adm-q" placeholder="Name suchen …" value="${esc(guestQuery)}" autocomplete="off" spellcheck="false">
+      <ul class="adm-list adm-users">${
+        g.list
+          .map(
+            (x) => `<li data-guest="${esc(x.id)}" tabindex="0"><div><span class="online-dot ${x.online ? 'on' : ''}"></span>${x.name ? `<b>${esc(x.name)}</b>` : '<b class="muted">ohne Namen</b>'}
+              <small class="muted mono">${esc(x.id)}</small></div>
+              <small>${x.games} ${x.games === 1 ? 'Spiel' : 'Spiele'} · an ${x.days} ${x.days === 1 ? 'Tag' : 'Tagen'} da · ${x.online ? 'online' : `zuletzt ${shortDay(x.last)}`}</small></li>`,
+          )
+          .join('') || `<li class="muted">${guestQuery ? 'Niemand gefunden.' : 'Noch keine Besuche ohne Account.'}</li>`
+      }</ul>
+      <p class="muted adm-note">Ohne Account kennt der Server nur eine zufällige Kennung je Browser, die Tage, an denen sie da war, den zuletzt verwendeten Spielernamen und was damit gespielt wurde (90 Tage). Höchstens 100, zuletzt da zuerst.</p>`;
+  }
+
+  function guestDetail(x: AdminGuestDetail): string {
+    const g = x.games;
+    const total = g.route + g.challenge + g.quiz + g.daily + g.training;
+    const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+    const fmtD = (t: number) => new Date(t).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit' });
+    const roundPts = x.days.filter((d) => d.avgRoute != null).map((d) => ({ t: Date.parse(`${d.day}T12:00:00Z`), v: d.avgRoute! }));
+    const range: [number, number] = [Date.parse(`${x.days[0].day}T00:00:00Z`), Date.parse(`${x.days[x.days.length - 1].day}T23:59:00Z`)];
+    const lineRow = (line: string) => {
+      const l = app.net.lines.get(line);
+      return lineChip(l?.mode ?? (/^(R|REX|CJX)\d/.test(line) ? 'S' : 'B'), line, l?.color ?? '#5b6170');
+    };
+    const visitedOnly = x.days.filter((d) => d.visited && !(d.route + d.challenge + d.quiz + d.daily + d.training)).length;
+    return `<button class="link" id="adm-glist">← alle ohne Account</button>
+      <div class="profile-head"><h3><span class="online-dot ${x.online ? 'on' : ''}"></span>${x.name ? esc(x.name) : '<span class="muted">ohne Namen</span>'} <small class="muted mono">${esc(x.id)}</small></h3></div>
+      <dl class="adm-facts">
+        <dt>Name</dt><dd>${x.name ? `${esc(x.name)} <small class="muted">(zuletzt verwendet)</small>` : '<span class="muted">nie einen Namen eingegeben</span>'}</dd>
+        <dt>Erstmals da</dt><dd>${shortDay(x.first)}</dd>
+        <dt>Zuletzt da</dt><dd>${x.online ? 'gerade online' : shortDay(x.last)}</dd>
+        <dt>Besuche</dt><dd>an ${plural(x.visitDays, 'Tag', 'Tagen')}${visitedOnly ? ` <small class="muted">(davon ${visitedOnly} nur geschaut, im Zeitraum)</small>` : ''}</dd>
+        ${x.hasAccount ? '<dt>Account</dt><dd>derselbe Browser war auch schon mit Account da</dd>' : ''}
+        <dt>Gespielt</dt><dd>${
+          total
+            ? `${plural(g.route, 'Routenjagd', 'Routenjagden')} (${plural(g.wins, 'Sieg', 'Siege')}) · ${plural(g.challenge, 'Tages-Challenge', 'Tages-Challenges')} · ${g.quiz} Quiz (${plural(g.quizWins, 'Sieg', 'Siege')}) · ${g.daily}× Strecke des Tages · ${g.training} Training`
+            : '<span class="muted">noch nichts</span>'
+        }</dd>
+        <dt>Routen</dt><dd>${x.rounds ? `${plural(x.rounds.n, 'Runde', 'Runden')} · Ø ${x.rounds.avg} Punkte · bestes Ergebnis ${x.rounds.best} · ${x.rounds.perfect} perfekt` : '<span class="muted">noch keine Runde</span>'}</dd>
+        <dt>In Öffis unterwegs</dt><dd>${x.minutes ? (x.minutes < 60 ? `${x.minutes} min` : `${Math.floor(x.minutes / 60).toLocaleString('de-AT')} h ${x.minutes % 60} min`) : '–'} <small class="muted">(eigene Routen)</small></dd>
+      </dl>
+      <div class="adm-range">Zeitraum ${[30, 90].map((d) => `<button class="${d === Math.min(90, userDays) ? 'on' : ''}" data-udays="${d}">${d} Tage</button>`).join('')}</div>
+      <div class="adm-charts">
+        ${barChart(
+          'guest',
+          'Gespielt je Tag',
+          ['Routenjagd', 'Tages-Challenge', 'Quiz', 'Strecke des Tages', 'Training'],
+          x.days.map((d) => ({ label: dayLabel(d.day), values: [d.route, d.challenge, d.quiz, d.daily, d.training] })),
+          wide(),
+        )}
+        ${
+          roundPts.length
+            ? lineChart('guest-route', 'Ø Routenpunkte je Tag', [{ name: 'Ø Punkte', points: roundPts }], fmtD, false, (t) => new Date(t).toLocaleDateString('de-AT', { weekday: 'short', day: '2-digit', month: '2-digit' }), range, {
+                last: 'zuletzt',
+                late: false,
+                max: 1300,
+              })
+            : `<figure class="chart"><figcaption>Ø Routenpunkte je Tag</figcaption><p class="muted ch-empty">Keine Routenjagd-Runde in diesem Zeitraum.</p></figure>`
+        }
+        ${rankChart('Meistgenutzte Linien', x.lines.map((l) => ({ label: lineRow(l.line), n: l.n, tip: `${l.n}-mal gefahren` })), 'alle Spiele', 'Noch keine Linien gefahren.')}
+      </div>
+      <div class="adm-actions"><div class="adm-row"><button class="btn btn-danger" id="adm-gdel">Daten dieses Browsers löschen</button> ${infoTip('Löscht Besuche, Namen und Spielergebnisse dieses Browsers. Kommt er wieder, beginnt alles neu.')}</div></div>`;
   }
 
   function userDetail(u: AdminUserDetail, us: AdminUserStats): string {
@@ -483,7 +542,8 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
     q?.addEventListener('input', () => {
       clearTimeout(t);
       t = setTimeout(() => {
-        query = q.value;
+        if (people === 'guests') guestQuery = q.value;
+        else query = q.value;
         void render().then(() => {
           const n = panel.querySelector<HTMLInputElement>('#adm-q');
           n?.focus();
@@ -500,7 +560,25 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
       li.addEventListener('keydown', (e) => e.key === 'Enter' && open());
     });
     root.querySelector('#adm-list')?.addEventListener('click', () => ((detail = null), rerender()));
-    root.querySelectorAll<HTMLButtonElement>('[data-people]').forEach((b) => b.addEventListener('click', () => ((people = b.dataset.people as typeof people), rerender())));
+    root.querySelectorAll<HTMLElement>('[data-guest]').forEach((li) => {
+      const open = () => {
+        guest = li.dataset.guest!;
+        panel.scrollTop = 0;
+        rerender();
+      };
+      li.addEventListener('click', open);
+      li.addEventListener('keydown', (e) => e.key === 'Enter' && open());
+    });
+    root.querySelector('#adm-glist')?.addEventListener('click', () => ((guest = null), rerender()));
+    root.querySelector('#adm-gdel')?.addEventListener('click', async () => {
+      if (!guest || !(await ask('Alle Daten dieses Browsers (Besuche, Name, Spielergebnisse) löschen?', { ok: 'Löschen', danger: true }))) return;
+      const id = guest;
+      void run(async () => {
+        await adm('DELETE', `/api/admin/guests/${encodeURIComponent(id)}`);
+        guest = null;
+      }, 'Gelöscht');
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-people]').forEach((b) => b.addEventListener('click', () => ((people = b.dataset.people as typeof people), (guest = null), rerender())));
     root.querySelectorAll<HTMLButtonElement>('[data-globby]').forEach((b) =>
       b.addEventListener('click', () => {
         tab = 'overview';

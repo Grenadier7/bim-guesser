@@ -281,9 +281,12 @@ Admins können andere Admins nicht ändern; Namen wie „admin“ oder „spiell
   Browser gezählt (`/api/ping`, keine IP; ohne Account mit dem zuletzt verwendeten Spielernamen).
 - **Accounts**: suchen, alles sehen (Gespieltes, Routen, Lernpfad, Medaillen; Grafiken: Gespielt je Tag, Ø Routenpunkte,
   meistgenutzte Linien – 30/90/365 Tage), Passwort setzen, **Link zum Zurücksetzen** (1 h), auf allen Geräten abmelden,
-  Statistik zurücksetzen, umbenennen, E-Mail ändern, löschen. **Ohne Account**: Besucher ohne Account – gerade online,
-  wer gerade in einer Lobby ist, Browser der letzten 90 Tage (zuletzt verwendeter Name, Kurzkennung, erster/letzter Besuch, Tage
-  da), wie viele wiederkommen und wie viele inzwischen einen Account haben.
+  Statistik zurücksetzen, umbenennen, E-Mail ändern, löschen. **Ohne Account**: aufgebaut wie die Accounts – Kennzahlen
+  (online, Browser in 90 Tagen, haben gespielt, kommen wieder, inzwischen mit Account), wer gerade in einer Lobby ist,
+  Liste mit Suche nach Namen (zuletzt verwendeter Name, Kurzkennung, Spiele, Tage da) und je Browser eine Detailseite:
+  Besuche, Gespieltes (Routenjagd, Tages-Challenge, Quiz, Strecke des Tages, Training), Routenpunkte, Zeit in Öffis,
+  Grafiken wie bei Accounts und „Daten dieses Browsers löschen“. Dafür schickt der Browser seine zufällige Kennung als
+  `X-Visitor` mit; ohne Account werden Lobby-Spiele, Training und Strecke des Tages ihr zugeordnet (90 Tage).
 - **Netzpläne**: „Standard“ (gilt für Spiele, Training, Quiz und Lernen) plus beliebig viele eigene Pläne, die in der
   Lobby unter „Netz“ wählbar sein können (mit eigener Karte). Dazu die Kachel **LIVE Aktuell**: welche echten Tage
   gespielt werden, je Linie wie sie anders fährt (Endstellen, ausgelassene/zusätzliche Halte – aus den Fahrplandaten)

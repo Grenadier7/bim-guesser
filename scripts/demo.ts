@@ -142,13 +142,13 @@ async function seed() {
     }
 
     // ------------------------------------------------ Gäste: Browser ohne Account (mit zuletzt verwendetem Namen)
-    type Guest = { id: string; name: string | null; first: number; last: number; p: number };
+    type Guest = { id: string; name: string | null; first: number; last: number; p: number; skill: number; daily: Set<number>; lines: Map<string, number> };
     const guests: Guest[] = [];
     for (let i = 0; i < 260; i++) {
       const first = Math.floor(Math.sqrt(rnd()) * DAYS);
       // viele kommen nur einmal
       const last = chance(0.55) ? first : Math.min(DAYS - 1, first + int(40));
-      guests.push({ id: hex(32), name: chance(0.85) ? `${pick(GUEST_NAMES)}${chance(0.3) ? int(99) : ''}` : null, first, last, p: 0.15 + rnd() * 0.5 });
+      guests.push({ id: hex(32), name: chance(0.85) ? `${pick(GUEST_NAMES)}${chance(0.3) ? int(99) : ''}` : null, first, last, p: 0.15 + rnd() * 0.5, skill: 350 + int(500), daily: new Set(), lines: new Map() });
     }
 
     // ------------------------------------------------ Tag für Tag
@@ -160,11 +160,44 @@ async function seed() {
       for (const g of guests) {
         if (d < g.first || d > g.last || !(d === g.first || d === g.last || chance(g.p * b))) continue;
         visit(d, g.id, false);
-        // manche spielen als Gast: Lobby-Spiel, Strecke des Tages oder Training
-        if (chance(0.45)) gameLog.push([at(d, playHour()), pick(['route', 'route', 'quiz', 'challenge']), 1 + int(3), 0]);
-        if (chance(0.25)) gameLog.push([at(d, playHour()), 'daily', 1, 0]);
-        if (chance(0.3)) for (let k = 1 + int(3); k > 0; k--) gameLog.push([at(d, playHour()), 'training', 1, 0]), useLines(d, 2);
-        useLines(d, int(8));
+        // manche spielen als Gast: Lobby-Spiel, Strecke des Tages oder Training – Ergebnisse unter der Browser-Kennung
+        const skill = Math.min(1100, g.skill + (d - g.first) * 4);
+        const route = () => Math.max(0, Math.min(1300, Math.round(skill + (rnd() - 0.5) * 550)));
+        const res = (kind: string, t: number, points: number, extra: { route?: number; rank?: number; players?: number; minutes?: number; extra?: string | null } = {}) =>
+          run(
+            'INSERT INTO guest_results (visitor, kind, at, points, route, rank, players, minutes, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            g.id, kind, t, points, extra.route ?? null, extra.rank ?? null, extra.players ?? null, extra.minutes ?? null, extra.extra ?? null,
+          );
+        if (chance(0.45)) {
+          const t = at(d, playHour());
+          const mode = pick(['route', 'route', 'quiz', 'challenge']);
+          const n = mode === 'challenge' ? 1 : 1 + int(3);
+          let total = 0;
+          if (mode !== 'quiz')
+            for (let r = 0; r < 5; r++) {
+              const pts = route();
+              total += pts;
+              res('round', t, pts, { route: pts, minutes: 15 + int(40) });
+              useLines(d, 2, g.lines);
+            }
+          else total = 300 + int(700);
+          res(mode === 'quiz' ? 'quiz' : 'game', t, total, { rank: 1 + int(n), players: n, extra: mode === 'challenge' ? pick(CHALLENGES).id : null });
+          gameLog.push([t, mode, n, 0]);
+        }
+        if (chance(0.25) && !g.daily.has(d)) {
+          const t = at(d, playHour());
+          g.daily.add(d);
+          res('daily', t, route(), { minutes: 18 + int(35), extra: dayKey(d) });
+          useLines(d, 2, g.lines);
+          gameLog.push([t, 'daily', 1, 0]);
+        }
+        if (chance(0.3))
+          for (let k = 1 + int(3); k > 0; k--) {
+            const t = at(d, playHour());
+            res('training', t, chance(0.5) ? 1 : 0, { minutes: 15 + int(35) });
+            useLines(d, 2, g.lines);
+            gameLog.push([t, 'training', 1, 0]);
+          }
       }
       // Accounts
       for (const p of players) {
@@ -256,6 +289,7 @@ async function seed() {
     }
     for (const [day, m] of visits) for (const [id, a] of m) run('INSERT INTO visits (day, id, account) VALUES (?, ?, ?)', day, id, a);
     for (const g of guests) if (g.name) run('INSERT INTO visitor_names (id, name, at) VALUES (?, ?, ?)', g.id, g.name, at(g.last, 20));
+    for (const g of guests) for (const [l, n] of g.lines) run('INSERT INTO guest_lines (visitor, line, n, at) VALUES (?, ?, ?, ?)', g.id, l, n, at(g.last, 20));
     // Momentaufnahmen alle 5 min – aus der Besucherzahl des Tages und der Tageszeit; an einem Tag war der Server 6 h aus
     const perDay = new Map([...visits].map(([day, m]) => [day, { all: m.size, anon: [...m.values()].filter((a) => !a).length }]));
     const off = [Date.parse(`${dayKey(40)}T08:00:00Z`), Date.parse(`${dayKey(40)}T14:00:00Z`)];

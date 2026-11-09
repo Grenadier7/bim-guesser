@@ -243,7 +243,7 @@ export class DailyService {
   }
 
   /** Route abgeben – mit Account nur einmal am Tag (danach kommt das gespeicherte Ergebnis) */
-  async submit(rawLegs: unknown, userId: number | null): Promise<DailyResult> {
+  async submit(rawLegs: unknown, userId: number | null, visitor: string | null = null): Promise<DailyResult> {
     const t = await this.today();
     if (userId != null) {
       const done = this.stored(t, userId);
@@ -261,6 +261,7 @@ export class DailyService {
     const points = res.durationMin != null && !res.error ? scoreRoute(res.durationMin, best) : 0;
     const minutes = res.durationMin == null ? null : Math.round(res.durationMin);
     if (userId != null) this.accounts?.recordDaily(userId, t.day, points, minutes, { route: res.route, matchedRank: res.matchedRank, error: res.error }, legs, !res.error);
+    else if (visitor) this.accounts?.recordGuestDaily(visitor, t.day, points, minutes, legs, !res.error);
     if (!res.error)
       try {
         this.onPlayed?.(userId != null);

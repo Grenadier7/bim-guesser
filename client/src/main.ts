@@ -8,6 +8,7 @@ import { ask } from './ui.ts';
 import { icon } from './icons.ts';
 import { endSession } from './store.ts';
 import { account, startPolling } from './account.ts';
+import { visitorId } from './visitor.ts';
 import { accountButton, announceMedals, openAccount, renderInvites, takeResetLink } from './accountui.ts';
 import { isMine, setMine } from './learn/model.ts';
 import { GameMap } from './map.ts';
@@ -72,13 +73,7 @@ function renderNotice() {
 
 /** Besucherzahl: zufällige Kennung dieses Browsers (ohne Account mit dem zuletzt verwendeten Namen), jede Minute, solange die Seite sichtbar ist */
 function startVisitorPing() {
-  let id = '';
-  try {
-    id = localStorage.getItem('oeffi-visitor') ?? '';
-    if (!/^[a-z0-9]{12,40}$/.test(id)) localStorage.setItem('oeffi-visitor', (id = crypto.randomUUID().replace(/-/g, '')));
-  } catch {
-    id = crypto.randomUUID().replace(/-/g, '');
-  }
+  const id = visitorId();
   const ping = () => {
     if (document.visibilityState !== 'visible') return;
     // ohne Account: zuletzt verwendeter Spielername (für die Besucherliste der Spielleitung)

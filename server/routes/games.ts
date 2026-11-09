@@ -3,7 +3,7 @@ import type { Express, Request } from 'express';
 import type { AccountUser, Accounts } from '../accounts.ts';
 import type { CreateGameRequest, GameEvent, JoinResponse, SubmitRequest, SubmitResponse, TipKind } from '../../shared/types.ts';
 import { Game } from '../game.ts';
-import { h, MIN, param, token } from '../http.ts';
+import { h, MIN, param, token, visitorOf } from '../http.ts';
 import { GameError, notMember } from '../lobby.ts';
 import type { GameManager } from '../manager.ts';
 import { QuizGame } from '../quiz.ts';
@@ -48,7 +48,7 @@ export function gameRoutes(app: Express, games: GameManager, account?: { account
     h((req): JoinResponse => {
       const body = req.body as CreateGameRequest;
       const g = games.create(body?.mode === 'quiz' ? 'quiz' : 'route', body?.settings, req.ip ?? '');
-      const p = g.addPlayer(body?.playerName, account?.optionalUser(req));
+      const p = g.addPlayer(body?.playerName, account?.optionalUser(req), visitorOf(req));
       return { playerId: p.id, token: p.token, state: g.state() };
     }),
   );
@@ -74,7 +74,7 @@ export function gameRoutes(app: Express, games: GameManager, account?: { account
     limitJoin,
     h((req): JoinResponse => {
       const g = games.get(param(req, 'code'));
-      const p = g.addPlayer(req.body?.playerName, account?.optionalUser(req));
+      const p = g.addPlayer(req.body?.playerName, account?.optionalUser(req), visitorOf(req));
       return { playerId: p.id, token: p.token, state: g.state() };
     }),
   );

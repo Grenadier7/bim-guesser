@@ -267,9 +267,12 @@ export function adminRoutes(app: Express, d: AdminDeps) {
         .map((g) => g.adminInfo())
         .flatMap((l) => l.players.filter((p) => !p.account).map((p) => ({ name: p.name, lobby: l.code, mode: l.mode, phase: l.phase, connected: p.connected })))
         .sort((a, b) => Number(b.connected) - Number(a.connected) || a.lobby.localeCompare(b.lobby));
-      return { online: anon.size, inLobbies, ...d.admin.guests(anon) };
+      return { online: anon.size, inLobbies, ...d.admin.guests(anon, req.query.q) };
     }),
   );
+  const anonNow = () => new Set([...d.visitors()].filter(([, acc]) => !acc).map(([id]) => id));
+  app.get('/api/admin/guests/:id', h((req) => (admin(req), d.admin.guest(param(req, 'id'), Math.min(365, Math.max(7, Number(req.query.days) || 90)), anonNow()))));
+  app.delete('/api/admin/guests/:id', h((req) => (d.admin.removeGuest(admin(req).name, param(req, 'id')), { ok: true })));
 
   app.get('/api/admin/log', h((req) => (admin(req), d.admin.logEntries())));
 

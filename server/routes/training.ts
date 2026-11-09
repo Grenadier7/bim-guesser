@@ -1,7 +1,7 @@
 // Trainingsmodus (ohne Lobby): Strecke holen, eigene Route auswerten
 import type { Express, Request } from 'express';
 import type { AccountUser, Accounts } from '../accounts.ts';
-import { h, MIN, param } from '../http.ts';
+import { h, MIN, param, visitorOf } from '../http.ts';
 import { cleanLegs } from '../settings.ts';
 import { rateLimit } from '../security.ts';
 import type { TrainingService } from '../training.ts';
@@ -20,6 +20,7 @@ export function trainingRoutes(app: Express, training: TrainingService, account?
       const u = account?.optionalUser(req) ?? null;
       const res = await training.evaluate(id, req.body?.legs, !!u);
       if (u) account!.accounts.recordTraining(u.id, id, cleanLegs(req.body?.legs), res, training.bestMin(id));
+      else if (account && visitorOf(req)) account.accounts.recordGuestTraining(visitorOf(req)!, id, cleanLegs(req.body?.legs), res, training.bestMin(id));
       return res;
     }),
   );
