@@ -131,6 +131,13 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
     if (!json) return void res.status(404).json({ error: 'Diesen Netzplan gibt es nicht.' });
     res.type('json').set('Cache-Control', 'no-cache').send(json);
   });
+  // nur der Stand des Netzes (Browser prüft vor jeder Runde, ob er neu laden muss)
+  app.get('/api/network/version', (req, res) => {
+    const plan = req.query.plan === undefined ? 'regular' : String(req.query.plan);
+    const version = /^[a-z0-9-]{1,24}$/.test(plan) ? runtime.version(plan) : null;
+    if (!version) return void res.status(404).json({ error: 'Diesen Netzplan gibt es nicht.' });
+    res.set('Cache-Control', 'no-store').json({ version });
+  });
   // Donau als Hindernis für Fußwege (Baukasten rechnet wie die Auswertung)
   app.get('/api/barrier', (_req, res) => {
     res.set('Cache-Control', 'public, max-age=86400').json(barrierData() ?? { lines: [], bridges: [] });

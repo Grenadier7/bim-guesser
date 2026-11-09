@@ -88,6 +88,8 @@ function startVisitorPing() {
 
 /** Lobby mit eigenem Netzplan: dessen Netz laden (Karte, Routen-Baukasten), sonst das Standard-Netz */
 let netLoading: string | null = null;
+/** Stand des geladenen Netzes (vom Server) */
+let netVersion = '';
 function ensurePlanNet() {
   const s = app.state;
   const want = app.session && s?.mode === 'route' && s.settings.network.startsWith('plan:') ? s.settings.network.slice(5) : 'regular';
@@ -99,6 +101,7 @@ function ensurePlanNet() {
       if (netLoading !== want) return;
       app.net = new NetIndex(data);
       app.netPlan = want;
+      netVersion = data.version ?? '';
       resetNetLayer();
       // Bildschirm mit dem neuen Netz neu aufbauen
       screen?.destroy?.();
@@ -237,6 +240,24 @@ function mount(key: string): Screen {
   return {};
 }
 
+/**
+ * Hat sich das Netz am Server geändert (Netzplan bearbeitet, Server mit neuem Plan gestartet)? Dann neu laden – sonst
+ * baut man Routen mit Stationen, die das Spiel nicht mehr kennt. Nur in der Lobby und vor einer Runde (nie mitten
+ * im Bauen einer Route).
+ */
+function checkNetVersion() {
+  const plan = app.netPlan;
+  if (!netVersion || netLoading) return;
+  void api
+    .networkVersion(plan)
+    .then(({ version }) => {
+      if (version === netVersion || app.netPlan !== plan || netLoading) return;
+      app.netPlan = '';
+      ensurePlanNet();
+    })
+    .catch(() => {});
+}
+
 /** Chat-Fenster an die Sitzung anpassen (gesetzt in init) */
 let chatSync = () => {};
 
@@ -245,6 +266,7 @@ function render() {
   chatSync();
   renderInvites(inviteHost);
   const key = keyFor();
+  if (key !== screenKey && (key === 'lobby' || key.startsWith('prep:'))) checkNetVersion();
   if (key !== screenKey) {
     // Spielstart mit Tages-Challenge (aus der Lobby, nicht beim Neuladen mitten im Spiel): Fenster mit Name und Text
     const st = app.state;
@@ -365,6 +387,7 @@ async function init() {
     applyGameConfig(config);
     renderNotice();
     app.net = new NetIndex(network);
+    netVersion = network.version ?? '';
     brandHome();
     // Plan der Tages-Challenges vom Server (fehlt er, rechnet der Browser denselben)
     await loadSchedule();

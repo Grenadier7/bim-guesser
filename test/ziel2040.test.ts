@@ -48,3 +48,23 @@ test('neue Strecken in Netz und Fahrplan', () => {
   assert.equal(view(ZIEL2040.id, '26A').patterns.length, 0, '26A fährt nicht mehr – GE übernimmt die Strecke');
   assert.ok(view(ZIEL2040.id, 'GE').patterns[0].stops.length >= 20);
 });
+
+test('Stand des Netzes: gleich in Netz und Abfrage, neu sobald sich der Plan ändert (Browser lädt dann neu)', async () => {
+  const { PlanStore } = await import('../server/plans.ts');
+  const { PlanRuntime } = await import('../server/planruntime.ts');
+  const store = new PlanStore();
+  const rt = new PlanRuntime(Network.load(), store, () => ({ removed: [], added: [] }));
+  const v1 = rt.version(ZIEL2040.id)!;
+  assert.match(v1, /^[0-9a-f]{12}$/);
+  assert.equal(JSON.parse(rt.networkJson(ZIEL2040.id)!).version, v1);
+  assert.equal(rt.version('gibtsnicht'), null);
+  // Plan ändern (eine Station mehr) → neuer Stand
+  const plan = store.get(ZIEL2040.id)!;
+  store.save(
+    [...store.list().filter((p) => p.id !== plan.id), { ...plan, edits: [...plan.edits, { kind: 'addStation', station: 'z40-test', name: 'Teststation', lat: 48.2, lon: 16.4, district: 1 }] }],
+    'test',
+    'Test',
+  );
+  rt.apply(ZIEL2040.id);
+  assert.notEqual(rt.version(ZIEL2040.id), v1);
+});

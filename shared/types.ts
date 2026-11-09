@@ -67,6 +67,8 @@ export interface NetworkPublic {
   headways?: Record<string, Record<string, number | null>>;
   /** so viele Adressen kennt der Server als Start/Ziel (0 = keine Adressdaten) */
   addressCount?: number;
+  /** Stand dieses Netzes – ändert sich mit jeder Änderung des Netzplans (Browser lädt dann neu) */
+  version?: string;
 }
 
 /** data/headways.json (scripts/build-headways.ts) */

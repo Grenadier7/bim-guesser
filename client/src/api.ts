@@ -45,6 +45,8 @@ const q = (a: Auth) => `token=${encodeURIComponent(a.token)}`;
 
 export const api = {
   network: (plan?: string) => call<NetworkPublic>('GET', plan && plan !== 'regular' ? `/api/network?plan=${encodeURIComponent(plan)}` : '/api/network'),
+  /** Stand des Netzes am Server (ändert sich, wenn der Netzplan geändert wurde) */
+  networkVersion: (plan: string) => call<{ version: string }>('GET', `/api/network/version?plan=${encodeURIComponent(plan)}`),
   config: () => call<PublicConfig>('GET', '/api/config'),
   /** Donau als Hindernis für Fußwege */
   barrier: () => call<BarrierJson>('GET', '/api/barrier'),
