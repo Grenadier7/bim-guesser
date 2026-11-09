@@ -322,7 +322,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     panel.innerHTML = `
       <div class="lobby ${st.challenge ? 'challenge-on' : ''}">
         <div class="lobby-code">
-          <div><small>🏁 Routenjagd · Lobby-Code</small><div class="code">${code}</div></div>
+          <div><small>🏁 Routenjagd · Lobby-Code${host && isGameMaster() ? ' <button class="gm-mini" id="gm-open" title="Spielleitung: alle Einstellungen und Events" aria-label="Spielleitung öffnen">🛠</button>' : ''}</small><div class="code">${code}</div></div>
           <div class="code-actions"><button class="btn btn-ghost btn-icon" id="copy">${icon('link')}<span>Link kopieren</span></button>${inviteButton()}</div>
         </div>
         <h3>Spieler <small>(${s.players.length})</small></h3>
@@ -333,7 +333,6 @@ export function lobbyScreen(panel: HTMLElement): Screen {
           const bar = challengeBanner(st, host);
           return bar ? `<h3 class="events-head">Daily Events</h3>${bar}` : '';
         })()}
-        ${host && isGameMaster() ? '<button class="btn btn-dark gm-open" id="gm-open">🛠 Spielleitung – alle Einstellungen und Events</button>' : ''}
 
         <h3 class="settings-head">Einstellungen ${!host ? '<small>– nur der Host kann sie ändern</small>' : ''}</h3>
         <div class="setting"><span>Schwierigkeit</span>

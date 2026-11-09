@@ -7677,9 +7677,25 @@ path.blocked-area {
 .gm-actions {
   margin: 4px 0 24px;
 }
-.gm-open {
-  width: 100%;
-  margin: 10px 0 4px;
+/* Spielleitung: unauffällig neben „Lobby-Code“ (nur Admins sehen es) */
+.lobby-code small:has(.gm-mini) {
+  white-space: nowrap;
+}
+.gm-mini {
+  border: 0;
+  background: none;
+  padding: 0 2px;
+  margin-left: 4px;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+.gm-mini:hover,
+.gm-mini:focus-visible {
+  opacity: 1;
+  filter: none;
 }
 .gm-dlg {
   width: min(900px, calc(100vw - 24px));
