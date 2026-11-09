@@ -192,9 +192,20 @@ export class Network {
       }
       if (e.kind === 'insertStop') {
         if (!this.stations.has(e.station)) continue;
+        // ist einer der beiden Halte außerhalb des Netzes (Fahrplan-ID), kommt der neue Halt ans entsprechende Ende
+        const outside = (id: string) => !this.stations.has(id);
         line.patterns = line.patterns.map((p) => {
           for (let j = 1; j < p.length; j++)
             if ((p[j - 1] === e.a && p[j] === e.b) || (p[j - 1] === e.b && p[j] === e.a)) return [...p.slice(0, j), e.station, ...p.slice(j)];
+          if (p.includes(e.station)) return p;
+          for (const [inside, other] of [
+            [e.a, e.b],
+            [e.b, e.a],
+          ])
+            if (outside(other) && !outside(inside)) {
+              if (p[p.length - 1] === inside) return [...p, e.station];
+              if (p[0] === inside) return [e.station, ...p];
+            }
           return p;
         });
         continue;

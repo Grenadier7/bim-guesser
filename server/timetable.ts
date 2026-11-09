@@ -363,6 +363,40 @@ function applyEdits(raw: Raw, edits: LineEdit[], c: StationContext): string[] {
     if (p[1].length < 2) dropTrips((t) => t[0] !== pi);
   };
   const name = (id: string) => c.station(id)?.name ?? raw.nodes.find((n) => efaIdOf(n[0]) === id)?.[1] ?? id;
+  /**
+   * Hauptfahrt je Richtung einer Linie (für „Takt der Linie“): die Haltefolge mit den meisten Fahrten – enthält eine
+   * längere sie ganz und fährt regelmäßig (≥ 20 % davon), dann die längere (wie die Route der Linie); Gegenrichtung =
+   * die Haltefolge, deren Halte umgekehrt liegen. `count`: Fahrten je Haltefolge an dem Tag.
+   */
+  const lineMains = (count: Map<number, number>): number[] => {
+    const seq = (pi: number) => raw.patterns[pi][1].map(endKey);
+    const n = (pi: number) => count.get(pi) ?? 0;
+    const pick = (cands: number[]): number | null => {
+      if (!cands.length) return null;
+      let best = cands.reduce((x, y) => (n(y) > n(x) || (n(y) === n(x) && seq(y).length > seq(x).length) ? y : x));
+      for (;;) {
+        const longer = cands.filter((pi) => seq(pi).length > seq(best).length && isSubRoute(seq(best), seq(pi)) && n(pi) >= 0.2 * n(best));
+        if (!longer.length) return best;
+        best = longer.reduce((x, y) => (seq(y).length > seq(x).length ? y : x));
+      }
+    };
+    const all = [...count.keys()];
+    const main = pick(all);
+    if (main == null) return [];
+    const m = seq(main);
+    // Gegenrichtung: Halte umgekehrt – und möglichst viel gemeinsam mit der Hauptfahrt (S2 Seyring → Brunn, nicht
+    // Seyring → Flughafen, auch wenn die mehr Fahrten hat)
+    const shared = new Map<number, number>();
+    for (const pi of all) {
+      const pos = seq(pi)
+        .map((s) => m.indexOf(s))
+        .filter((x) => x >= 0);
+      if (pos.length >= 2 && pos[0] > pos[pos.length - 1]) shared.set(pi, pos.length);
+    }
+    const most = Math.max(0, ...shared.values());
+    const rev = pick([...shared].filter(([, k]) => k >= most * 0.8).map(([pi]) => pi));
+    return rev == null ? [main] : [main, rev];
+  };
   const out: string[] = [];
   for (const e of edits) {
     let pats = 0;
@@ -464,9 +498,10 @@ function applyEdits(raw: Raw, edits: LineEdit[], c: StationContext): string[] {
                 pats++;
               }
           } else if (e.kind === 'insertStop') {
+            // Halte außerhalb des Spielnetzes über ihre Fahrplan-ID (S60 Grillgasse → Kledering)
             for (let j = 1; j < p[1].length; j++) {
-              const a = stationAt(p[1][j - 1]);
-              const b = stationAt(p[1][j]);
+              const a = endKey(p[1][j - 1]);
+              const b = endKey(p[1][j]);
               const fwd = a === e.a && b === e.b;
               if (!fwd && !(a === e.b && b === e.a)) continue;
               p[1].splice(j, 0, node);
@@ -517,27 +552,46 @@ function applyEdits(raw: Raw, edits: LineEdit[], c: StationContext): string[] {
         const to = toMin(e.to);
         let removed = 0;
         const list = raw.trips[e.day] ?? [];
-        raw.patterns.forEach((p, pi) => {
-          if (p[0] !== li) return;
-          const s0 = endKey(p[1][0]);
-          const s1 = endKey(p[1][p[1].length - 1]);
-          if (e.pattern && !((s0 === a && s1 === b) || (s0 === b && s1 === a))) return;
+        const count = new Map<number, number>();
+        for (const t of list) if (raw.patterns[t[0]]?.[0] === li) count.set(t[0], (count.get(t[0]) ?? 0) + 1);
+        // übliche Fahrzeiten einer Haltefolge (Median über alle Fahrten des Tages)
+        const medOf = (pi: number) => {
           const mine = list.filter((t) => t[0] === pi);
-          if (!mine.length) return;
-          const len = p[1].length;
-          const med = Array.from({ length: len - 1 }, (_, j) => {
+          return Array.from({ length: raw.patterns[pi][1].length - 1 }, (_, j) => {
             const xs = mine.map((t) => t[2 + j]).sort((x, y) => x - y);
             return xs[Math.floor(xs.length / 2)];
           });
-          const keep = list.filter((t) => t[0] !== pi || t[1] < from || t[1] > to);
-          removed += list.length - keep.length;
-          list.length = 0;
-          list.push(...keep);
-          for (let t = from; t <= to; t += e.every) (list.push([pi, t, ...med]), trips++);
+        };
+        let targets: number[];
+        if (e.pattern) {
+          // eine Haltefolge (beide Richtungen): nur deren Fahrten werden ersetzt
+          targets = [...count.keys()].filter((pi) => {
+            const p = raw.patterns[pi][1];
+            const s0 = endKey(p[0]);
+            const s1 = endKey(p[p.length - 1]);
+            return (s0 === a && s1 === b) || (s0 === b && s1 === a);
+          });
+        } else {
+          // Takt der ganzen Linie: die Hauptfahrt je Richtung fährt im Takt, alle anderen Fahrten der Linie im
+          // Zeitraum (Kurzführungen, Einzelfahrten) entfallen – sonst führe jede Variante den vollen Takt
+          targets = lineMains(count);
+        }
+        const meds = new Map(targets.map((pi) => [pi, medOf(pi)]));
+        const replaced = new Set(e.pattern ? targets : count.keys());
+        const keep = list.filter((t) => !replaced.has(t[0]) || t[1] < from || t[1] > to);
+        removed = list.length - keep.length;
+        list.length = 0;
+        list.push(...keep);
+        for (const pi of targets) {
+          for (let t = from; t <= to; t += e.every) (list.push([pi, t, ...meds.get(pi)!]), trips++);
           pats++;
-        });
+        }
         raw.trips[e.day] = list;
-        out.push(pats ? `✔ ${e.line} ${e.day === 'wd' ? 'Mo–Fr' : e.day === 'sa' ? 'Sa' : 'So'} ${e.from}–${e.to} alle ${e.every} min: ${pats} Haltefolge(n), ${removed} → ${trips} Fahrten` : `✖ ${e.line}: keine passende Haltefolge`);
+        out.push(
+          pats
+            ? `✔ ${e.line} ${e.day === 'wd' ? 'Mo–Fr' : e.day === 'sa' ? 'Sa' : 'So'} ${e.from}–${e.to} alle ${e.every} min: ${e.pattern ? `${pats} Haltefolge(n)` : `${targets.map((pi) => `${name(endKey(raw.patterns[pi][1][0]))} → ${name(endKey(raw.patterns[pi][1].at(-1)!))}`).join(' / ')}`}, ${removed} → ${trips} Fahrten`
+            : `✖ ${e.line}: keine passende Haltefolge`,
+        );
         continue;
       }
       if (e.kind === 'removeLine') {
