@@ -70,7 +70,7 @@ function renderNotice() {
   });
 }
 
-/** Besucherzahl: zufällige Kennung dieses Browsers (kein Bezug zur Person), jede Minute, solange die Seite sichtbar ist */
+/** Besucherzahl: zufällige Kennung dieses Browsers (ohne Account mit dem zuletzt verwendeten Namen), jede Minute, solange die Seite sichtbar ist */
 function startVisitorPing() {
   let id = '';
   try {
@@ -81,7 +81,9 @@ function startVisitorPing() {
   }
   const ping = () => {
     if (document.visibilityState !== 'visible') return;
-    void fetch('/api/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: id }), credentials: 'same-origin' }).catch(() => {});
+    // ohne Account: zuletzt verwendeter Spielername (für die Besucherliste der Spielleitung)
+    const n = account.me ? undefined : app.prefs.name || undefined;
+    void fetch('/api/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: id, n }), credentials: 'same-origin' }).catch(() => {});
   };
   ping();
   setInterval(ping, 60_000);

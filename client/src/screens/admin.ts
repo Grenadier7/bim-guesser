@@ -294,11 +294,11 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
   }
 
   function guests(g: AdminGuests): string {
-    const card = (val: string | number, l: string) => `<div class="adm-card"><b>${val}</b><small>${l}</small></div>`;
+    const card = (val: string | number, l: string, sub = '') => `<div class="adm-card"><b>${val}</b><small>${l}</small>${sub ? `<small class="adm-card-sub">${sub}</small>` : ''}</div>`;
     const day = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('de-AT', { day: '2-digit', month: '2-digit', year: '2-digit' });
-    const pct = (n: number) => (g.browsers ? ` (${Math.round((n / g.browsers) * 100)} %)` : '');
-    return `<p class="muted">Ohne Account kennt der Server nur eine zufällige Kennung je Browser und die Tage, an denen sie da war – keinen Namen. Spielernamen gibt es nur, solange jemand in einer Lobby ist.</p>
-      <div class="adm-cards">${card(g.online, 'gerade online')}${card(g.browsers, 'Browser in 90 Tagen')}${card(`${g.returning}${pct(g.returning)}`, 'an mehreren Tagen da')}${card(g.converted, 'haben inzwischen einen Account')}</div>
+    const pct = (n: number) => (g.browsers ? `${Math.round((n / g.browsers) * 100)} %` : '');
+    return `<p class="muted">Ohne Account kennt der Server nur eine zufällige Kennung je Browser, die Tage, an denen sie da war, und den zuletzt verwendeten Spielernamen.</p>
+      <div class="adm-cards">${card(g.online, 'gerade online')}${card(g.browsers, 'Browser in 90 Tagen')}${card(g.returning, 'an mehreren Tagen da', pct(g.returning))}${card(g.converted, 'haben inzwischen einen Account')}</div>
       <h3>Gerade in einer Lobby</h3>
       ${
         g.inLobbies.length
@@ -313,8 +313,11 @@ export function adminScreen(panel: HTMLElement, onBack: () => void): Screen {
       <h3>Browser ohne Account <small class="muted">(zuletzt da zuerst, höchstens 100)</small></h3>
       ${
         g.list.length
-          ? `<table class="adm-table"><thead><tr><th>Kennung</th><th>zuletzt</th><th>erstmals</th><th>Tage da</th></tr></thead><tbody>${g.list
-              .map((x) => `<tr><td><span class="online-dot ${x.online ? 'on' : ''}"></span><span class="mono">${esc(x.id)}</span></td><td>${x.online ? 'jetzt' : day(x.last)}</td><td>${day(x.first)}</td><td>${x.days}</td></tr>`)
+          ? `<table class="adm-table"><thead><tr><th>Name (zuletzt)</th><th>zuletzt da</th><th>erstmals</th><th>Tage da</th></tr></thead><tbody>${g.list
+              .map(
+                (x) =>
+                  `<tr><td><span class="online-dot ${x.online ? 'on' : ''}"></span>${x.name ? esc(x.name) : '<span class="muted">ohne Namen</span>'} <small class="muted mono">${esc(x.id)}</small></td><td>${x.online ? 'jetzt' : day(x.last)}</td><td>${day(x.first)}</td><td>${x.days}</td></tr>`,
+              )
               .join('')}</tbody></table>`
           : '<p class="muted">Noch keine Besuche ohne Account.</p>'
       }`;

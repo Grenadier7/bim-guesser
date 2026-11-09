@@ -146,6 +146,7 @@ CREATE TABLE IF NOT EXISTS metrics (at INTEGER PRIMARY KEY, online INTEGER NOT N
 CREATE TABLE IF NOT EXISTS game_log (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, mode TEXT NOT NULL, players INTEGER NOT NULL, accounts INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS game_log_at ON game_log(at);
 CREATE TABLE IF NOT EXISTS visits (day TEXT NOT NULL, id TEXT NOT NULL, account INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, id));
+CREATE TABLE IF NOT EXISTS visitor_names (id TEXT PRIMARY KEY, name TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS line_usage (day TEXT NOT NULL, line TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, line));
 CREATE TABLE IF NOT EXISTS challenge_days (user_id INTEGER NOT NULL, day TEXT NOT NULL, challenge TEXT NOT NULL, run TEXT NOT NULL, PRIMARY KEY (user_id, day, challenge));
 `;
@@ -1102,13 +1103,17 @@ export class AccountAdmin {
       .run(now, online, lobbies, playing, players, visitors, anon);
     this.db.prepare('DELETE FROM metrics WHERE at < ?').run(now - 90 * DAY);
     this.db.prepare('DELETE FROM visits WHERE day < ?').run(dayOf(now - 90 * DAY));
+    this.db.prepare('DELETE FROM visitor_names WHERE at < ?').run(now - 90 * DAY);
   }
 
   /** Besuch (zufällige Kennung des Browsers, ohne Bezug zur Person) – je Tag einmal gezählt */
-  visit(id: string, account: boolean) {
+  visit(id: string, account: boolean, name = '') {
     this.db
       .prepare('INSERT INTO visits (day, id, account) VALUES (?, ?, ?) ON CONFLICT(day, id) DO UPDATE SET account = MAX(account, excluded.account)')
       .run(dayOf(Date.now()), id, account ? 1 : 0);
+    // ohne Account: zuletzt verwendeter Spielername (nur der letzte, 90 Tage nach dem letzten Besuch gelöscht)
+    if (!account && name)
+      this.db.prepare('INSERT INTO visitor_names (id, name, at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, at = excluded.at').run(id, name, Date.now());
   }
 
   /** gewählte Linien (Routen in Spielen und Training) */
@@ -1234,13 +1239,18 @@ export class AccountAdmin {
   /** Besucher ohne Account (letzte 90 Tage) – `online`: Kennungen, die gerade ohne Account da sind */
   guests(online: Set<string>): Omit<AdminGuests, 'online' | 'inLobbies'> {
     const all = (
-      this.db.prepare('SELECT id, MIN(day) AS first, MAX(day) AS last, COUNT(*) AS days, MAX(account) AS acc, MIN(account) AS anon FROM visits GROUP BY id').all() as {
+      this.db
+        .prepare(
+          'SELECT v.id, MIN(v.day) AS first, MAX(v.day) AS last, COUNT(*) AS days, MAX(v.account) AS acc, MIN(v.account) AS anon, n.name FROM visits v LEFT JOIN visitor_names n ON n.id = v.id GROUP BY v.id',
+        )
+        .all() as {
         id: string;
         first: string;
         last: string;
         days: number;
         acc: number;
         anon: number;
+        name: string | null;
       }[]
     ).map((g) => ({ ...g }));
     const guests = all.filter((g) => !g.acc);
@@ -1252,7 +1262,7 @@ export class AccountAdmin {
       list: guests
         .sort((a, b) => Number(online.has(b.id)) - Number(online.has(a.id)) || b.last.localeCompare(a.last) || b.days - a.days)
         .slice(0, 100)
-        .map((g) => ({ id: g.id.slice(0, 8), first: g.first, last: g.last, days: g.days, online: online.has(g.id) })),
+        .map((g) => ({ id: g.id.slice(0, 8), name: g.name, first: g.first, last: g.last, days: g.days, online: online.has(g.id) })),
     };
   }
 

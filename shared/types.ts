@@ -852,7 +852,7 @@ export interface AdminUserStats {
   courses: { id: string; done: boolean; mastered: boolean }[];
 }
 
-/** Besucher ohne Account: nur zufällige Kennung je Browser (kein Name, keine IP) – Namen nur, solange sie in einer Lobby sind */
+/** Besucher ohne Account: zufällige Kennung je Browser (keine IP) und der zuletzt verwendete Spielername */
 export interface AdminGuests {
   online: number;
   /** gerade in einer Lobby (Spielername) */
@@ -864,7 +864,7 @@ export interface AdminGuests {
   /** Browser, die erst ohne und dann mit Account da waren */
   converted: number;
   /** zuletzt gesehene Gäste-Browser (Kurzkennung), neueste zuerst */
-  list: { id: string; first: string; last: string; days: number; online: boolean }[];
+  list: { id: string; name: string | null; first: string; last: string; days: number; online: boolean }[];
 }
 
 export interface AdminOverview {

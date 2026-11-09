@@ -385,13 +385,20 @@ describe('Sicherheit', () => {
   test('Übersicht: Besucher online und heute; Gäste-Ansicht', async () => {
     const guest = browser();
     const id = uniq('gastbrowser').toLowerCase();
-    assert.equal((await guest.call('POST', '/api/ping', { v: id })).status, 200);
+    assert.equal((await guest.call('POST', '/api/ping', { v: id, n: 'Erster Name' })).status, 200);
+    // nur der zuletzt verwendete Name bleibt; Steuerzeichen und Markup fliegen raus
+    assert.equal((await guest.call('POST', '/api/ping', { v: id, n: '<b>Zweiter</b>\u0000' })).status, 200);
+    // mit Account wird kein Name gespeichert
+    const withAcc = uniq('accbrowser').toLowerCase();
+    assert.equal((await boss.b.call('POST', '/api/ping', { v: withAcc, n: 'Geheim' })).status, 200);
     const o = (await boss.b.call('GET', '/api/admin/overview')).body;
     assert.ok(o.visitors.online >= 1 && o.visitors.anon >= 1 && o.visitors.today >= 1, JSON.stringify(o.visitors));
     const g = (await boss.b.call('GET', '/api/admin/guests')).body;
     assert.ok(g.online >= 1 && g.browsers >= 1 && Array.isArray(g.inLobbies));
     const row = g.list.find((x: { id: string }) => x.id === id.slice(0, 8));
     assert.ok(row && row.online && row.days === 1, 'Gast mit Kurzkennung, gerade online');
+    assert.equal(row.name, 'bZweiter/b');
+    assert.ok(!g.list.some((x: { id: string }) => x.id === withAcc.slice(0, 8)), 'Browser mit Account ist kein Gast');
     assert.ok(!g.list.some((x: { id: string }) => x.id.length > 8), 'nur Kurzkennungen');
     // ohne Admin: kein Zugriff
     assert.equal((await guest.call('GET', '/api/admin/guests')).status, 401);

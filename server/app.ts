@@ -16,7 +16,7 @@ import { gameRoutes } from './routes/games.ts';
 import { trainingRoutes } from './routes/training.ts';
 import { dailyRoutes } from './routes/daily.ts';
 import { DailyService } from './daily.ts';
-import { rateLimit, securityHeaders } from './security.ts';
+import { cleanName, rateLimit, securityHeaders } from './security.ts';
 import { TrainingService } from './training.ts';
 import { waterData, waterJson } from './water.ts';
 import { challengeSchedule } from './challengeSchedule.ts';
@@ -77,7 +77,7 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
       }
     });
   };
-  // Besucher: zufällige Kennung je Browser (kein Bezug zur Person), Meldung jede Minute, solange die Seite offen ist
+  // Besucher: zufällige Kennung je Browser (ohne Account mit dem zuletzt verwendeten Spielernamen, keine IP), Meldung jede Minute, solange die Seite offen ist
   const visitors = new Map<string, { at: number; account: boolean }>();
   const visitorsNow = () => {
     const cut = Date.now() - 2.5 * 60_000;
@@ -158,7 +158,7 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
     visitors.set(id, { at: Date.now(), account });
     if (visitors.size > 50_000) visitorsNow();
     try {
-      adminAcc.visit(id, account);
+      adminAcc.visit(id, account, cleanName(req.body?.n));
     } catch {
       /* Statistik darf nie stören */
     }
