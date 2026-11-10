@@ -1,6 +1,7 @@
 // Netzpläne zur Laufzeit: je Plan ein eigenes Netz (Stationen, Linien, Haltefolgen) und ein eigener Fahrplan.
 // Der Standard-Netzplan („regular“) verändert das Haupt-Netz direkt – alles, was es kennt (Quiz, Training, Karten,
 // /api/network), sieht die Änderungen sofort. Weitere Netzpläne entstehen erst, wenn sie gebraucht werden.
+import { createHash } from 'node:crypto';
 import type { LineEdit, NetMode } from '../shared/types.ts';
 import { Network } from './network.ts';
 import { planIdOf } from './plancontext.ts';
@@ -15,6 +16,7 @@ export class PlanRuntime {
   private others = new Map<string, Network>();
   private pristine: Network | null = null;
   private json = new Map<string, string>();
+  private versions = new Map<string, string>();
   private addresses: () => AddressCfg;
   /** nach jeder Änderung (z.B. Quiz-Netz neu aufbauen) */
   onChange: () => void = () => {};
@@ -38,6 +40,8 @@ export class PlanRuntime {
       n = Network.load();
       n.planId = id;
       n.applyEdits(plan.edits);
+      // ein Plan baut auf dem regulären Netz auf – „Aktuell“ (Baustellen, Umleitungen) gehört nicht dazu
+      n.onlyRegular();
       // schon jetzt merken: der Fahrplan des Plans (für keepMainRoutes) fragt nach genau diesem Netz
       this.others.set(id, n);
       // Route der Linien nach den Änderungen des Plans (verlängerte Linien)
@@ -63,9 +67,17 @@ export class PlanRuntime {
       const plan = this.plans.get(id);
       const changed = [...new Set((plan?.edits ?? []).filter((e) => ['headway', 'departures', 'addVariant', 'addLine', 'extend', 'cut'].includes(e.kind)).map((e) => ('line' in e ? e.line : '')))].filter(Boolean);
       if (changed.length && data.headways) data.headways = { ...data.headways, ...timetableHeadways(id, changed) };
+      // Stand = Prüfsumme des Inhalts: ändert sich der Plan (auch ohne Admin-Seite, z.B. Zielnetz aus dem Code), merkt es der Browser
+      data.version = createHash('sha1').update(JSON.stringify(data)).digest('hex').slice(0, 12);
       this.json.set(id, (j = JSON.stringify(data)));
+      this.versions.set(id, data.version);
     }
     return j;
+  }
+
+  /** Stand des Netzes eines Plans (wie in /api/network) – null = unbekannter Plan */
+  version(id: string): string | null {
+    return this.networkJson(id) ? (this.versions.get(id) ?? null) : null;
   }
 
   /** was der Fahrplan eines Plans braucht */

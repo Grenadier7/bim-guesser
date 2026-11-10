@@ -44,6 +44,7 @@ import { bindKick, kickButton } from './host.ts';
 import type { Screen } from './screen.ts';
 import { challengeSettings, districtCenter, findChallenge, todaysChallenges } from '../challenges.ts';
 import { openSettingsDialog } from '../settingsShare.ts';
+import { isGameMaster, openGamemaster } from './gamemaster.ts';
 
 /**
  * Haltestellen je Verkehrsmittel: Kästchen an/aus (an = alle, aus = keine) und darunter ein
@@ -106,6 +107,9 @@ function inPool(st: Station, kinds: StationKind[]): boolean {
 const fmtKm = (m: number) => `${(m / 1000).toLocaleString('de-AT')} km`;
 
 
+/** zuletzt gezeigtes Tages-Event (über Lobby-Besuche hinweg) – beim nächsten Mal ein anderes */
+let lastChallengeShown = -1;
+
 export function lobbyScreen(panel: HTMLElement): Screen {
   app.map.clear();
   app.map.overview();
@@ -137,7 +141,14 @@ export function lobbyScreen(panel: HTMLElement): Screen {
 
   // -------------------------------------------------------------- Tages-Challenges
 
-  let challengeIdx = 0;
+  // bei jedem Öffnen der Lobby ein zufälliges Event zeigen (nicht immer das erste) – innerhalb der Lobby bleibt es
+  let challengeIdx = -1;
+  /** Event am Anfang: zufällig, möglichst ein anderes als beim letzten Mal */
+  const firstChallenge = (n: number) => {
+    let i = Math.floor(Math.random() * n);
+    if (n > 1 && i === lastChallengeShown) i = (i + 1 + Math.floor(Math.random() * (n - 1))) % n;
+    return (lastChallengeShown = i);
+  };
 
   /** niedriges Banner: ‹ eine Challenge › mit „Spielen“ – aktiv: Name und „Beenden“ (dann wieder alles Standard) */
   function challengeBanner(st: GameSettings, host: boolean): string {
@@ -147,7 +158,8 @@ export function lobbyScreen(panel: HTMLElement): Screen {
       return `<div class="challenge-bar on" role="status"><span class="cb-icon">${active?.icon ?? '🎯'}</span>
         <span class="cb-text"><b>${esc(active?.title ?? 'Tages-Challenge')}</b><small>Tages-Challenge aktiv · Einstellungen fest</small></span>
         ${host ? '<button class="btn btn-ghost cb-end" id="cb-end">✕ Beenden</button>' : ''}</div>`;
-    if (!host) return '';
+    if (!host || !list.length) return '';
+    if (challengeIdx < 0) challengeIdx = firstChallenge(list.length);
     const c = list[challengeIdx % list.length];
     return `<div class="challenge-bar" role="group" aria-label="Tages-Challenges">
       <button class="cb-nav" data-cb="-1" aria-label="vorige Challenge">‹</button>
@@ -162,12 +174,12 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     panel.querySelectorAll<HTMLButtonElement>('[data-cb]').forEach((b) =>
       b.addEventListener('click', () => {
         const n = todaysChallenges().length;
-        challengeIdx = (challengeIdx + Number(b.dataset.cb) + n) % n;
+        challengeIdx = lastChallengeShown = (challengeIdx + Number(b.dataset.cb) + n) % n;
         render();
       }),
     );
     panel.querySelector('#cb-go')?.addEventListener('click', () => {
-      const c = todaysChallenges()[challengeIdx];
+      const c = todaysChallenges()[Math.max(0, challengeIdx)];
       // erweiterte Einstellungen zu – die sind jetzt ohnehin fest
       advancedOpen = false;
       // von den Standard-Einstellungen aus – so passt nichts aus vorherigen Runden dazwischen
@@ -321,7 +333,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
     panel.innerHTML = `
       <div class="lobby ${st.challenge ? 'challenge-on' : ''}">
         <div class="lobby-code">
-          <div><small>🏁 Routenjagd · Lobby-Code</small><div class="code">${code}</div></div>
+          <div><small>🏁 Routenjagd · Lobby-Code${host && isGameMaster() ? ' <button class="gm-mini" id="gm-open" title="Spielleitung: alle Einstellungen und Events" aria-label="Spielleitung öffnen">🛠</button>' : ''}</small><div class="code">${code}</div></div>
           <div class="code-actions"><button class="btn btn-ghost btn-icon" id="copy">${icon('link')}<span>Link kopieren</span></button>${inviteButton()}</div>
         </div>
         <h3>Spieler <small>(${s.players.length})</small></h3>
@@ -464,6 +476,7 @@ export function lobbyScreen(panel: HTMLElement): Screen {
       sendFocus({ lat, lon });
     });
     bindChallenge();
+    panel.querySelector('#gm-open')?.addEventListener('click', () => openGamemaster(routeState().settings));
     panel.querySelector('#shareSettings')?.addEventListener('click', () =>
       openSettingsDialog(
         'route',

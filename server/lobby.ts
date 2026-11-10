@@ -48,6 +48,8 @@ export interface Player {
   /** angemeldeter Account (für Statistik, Medaillen, Einladungen) */
   userId?: number;
   account?: string;
+  /** ohne Account: Kennung des Browsers (Statistik der Spielleitung) */
+  visitor?: string;
 }
 
 /** Account eines Spielers beim Erstellen/Beitreten */
@@ -227,7 +229,7 @@ export abstract class Lobby extends EventEmitter {
     this.emit('closed');
   }
 
-  addPlayer(name: unknown, account?: PlayerAccount | null): { id: string; token: string } {
+  addPlayer(name: unknown, account?: PlayerAccount | null, visitor?: string | null): { id: string; token: string } {
     if (this.players.size >= MAX_PLAYERS) throw new GameError('Lobby ist voll.', 409);
     let id: string;
     do id = randomBytes(6).toString('base64url');
@@ -237,7 +239,7 @@ export abstract class Lobby extends EventEmitter {
     if (isOffensive(clean)) throw new GameError('Dieser Name ist nicht erlaubt – bitte einen anderen wählen.');
     const taken = new Set([...this.players.values()].map((p) => p.name));
     for (let i = 2; taken.has(clean); i++) clean = `${clean.replace(/ \d+$/, '').slice(0, 17)} ${i}`;
-    const player: Player = { id, token, name: clean, score: 0, connections: 0, lastSeen: Date.now(), userId: account?.id, account: account?.name };
+    const player: Player = { id, token, name: clean, score: 0, connections: 0, lastSeen: Date.now(), userId: account?.id, account: account?.name, visitor: account ? undefined : (visitor ?? undefined) };
     this.players.set(id, player);
     this.byToken.set(token, player);
     if (!this.hosts.size) this.hosts.add(id);
@@ -334,6 +336,11 @@ export abstract class Lobby extends EventEmitter {
   /** Spieler mit Account: Spieler-ID → Account-ID (für die Statistik) */
   accounts(): { playerId: string; userId: number; score: number }[] {
     return [...this.players.values()].filter((p) => p.userId != null).map((p) => ({ playerId: p.id, userId: p.userId!, score: p.score }));
+  }
+
+  /** Spieler ohne Account mit Browser-Kennung: Spieler-ID → Kennung (für die Statistik der Spielleitung) */
+  guests(): { playerId: string; visitor: string; score: number }[] {
+    return [...this.players.values()].filter((p) => p.userId == null && p.visitor).map((p) => ({ playerId: p.id, visitor: p.visitor!, score: p.score }));
   }
 
   /** Endstand: alle Spieler nach Punkten (für Rang und „Sieg“) */

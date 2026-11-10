@@ -67,6 +67,8 @@ export interface NetworkPublic {
   headways?: Record<string, Record<string, number | null>>;
   /** so viele Adressen kennt der Server als Start/Ziel (0 = keine Adressdaten) */
   addressCount?: number;
+  /** Stand dieses Netzes – ändert sich mit jeder Änderung des Netzplans (Browser lädt dann neu) */
+  version?: string;
 }
 
 /** data/headways.json (scripts/build-headways.ts) */
@@ -809,14 +811,85 @@ export interface AdminLobby {
 export interface AdminStats {
   /** Momentaufnahmen (alle 5 min, ab 2 Tagen je Stunde der Höchstwert) */
   samples: { at: number; online: number; lobbies: number; playing: number; players: number; visitors: number; anon: number }[];
-  /** je Tag (Wien): fertige Spiele, Spieler darin, neue und aktive Accounts, Besucher (mit/ohne Account) */
-  days: { day: string; route: number; quiz: number; players: number; newUsers: number; activeUsers: number; visitors: number; anonVisitors: number }[];
+  /**
+   * je Tag (Wien): fertig Gespieltes (Lobby-Routenjagd, Tages-Challenge, Quiz, Strecke des Tages, Training), Spieler in
+   * Lobby-Spielen und wie viele Lobby-Spiele mehrere Spieler hatten, Accounts (neu angelegt / schon vorher da und gespielt),
+   * Besucher (mit/ohne Account)
+   */
+  days: {
+    day: string;
+    route: number;
+    challenge: number;
+    quiz: number;
+    daily: number;
+    training: number;
+    /** Spieler in Lobby-Spielen (Routenjagd, Challenge, Quiz) */
+    players: number;
+    /** Lobby-Spiele mit mindestens 2 Spielern */
+    multi: number;
+    newUsers: number;
+    /** Accounts, die gespielt haben und nicht an diesem Tag angelegt wurden */
+    returning: number;
+    visitors: number;
+    anonVisitors: number;
+  }[];
   /** wie oft welche Linie in Routen gewählt wurde (Zeitraum), häufigste zuerst */
   lines: { line: string; n: number }[];
+  /** Lernpfad: je Kurs, wie viele Accounts ihn abgeschlossen bzw. gemeistert haben (Lernstand wird nur mit Account gespeichert) */
+  courses: { id: string; done: number; mastered: number }[];
+  /** Accounts mit mindestens einem abgeschlossenen Kurs */
+  learners: number;
 }
 
 export interface AdminUserStats {
-  days: { day: string; route: number; quiz: number; training: number; points: number }[];
+  /** je Tag: Gespieltes, Routen-Runden und deren Ø Routenpunkte (null = keine Runde) */
+  days: { day: string; route: number; quiz: number; daily: number; training: number; rounds: number; avgRoute: number | null }[];
+  /** meistgenutzte Linien (alle Spiele), häufigste zuerst */
+  lines: { line: string; n: number }[];
+  /** Strecke des Tages gespielt (gesamt) */
+  daily: number;
+  /** Tages-Challenges gespielt (gesamt) */
+  challenges: number;
+  /** Lernpfad je Kurs */
+  courses: { id: string; done: boolean; mastered: boolean }[];
+}
+
+/** Besucher ohne Account: zufällige Kennung je Browser (keine IP) und der zuletzt verwendete Spielername */
+export interface AdminGuests {
+  online: number;
+  /** gerade in einer Lobby (Spielername) */
+  inLobbies: { name: string; lobby: string; mode: GameMode; phase: string; connected: boolean }[];
+  /** letzte 90 Tage */
+  browsers: number;
+  /** davon an mindestens 2 Tagen da */
+  returning: number;
+  /** Browser, die erst ohne und dann mit Account da waren */
+  converted: number;
+  /** Gäste, die mindestens einmal etwas gespielt haben */
+  played: number;
+  /** zuletzt gesehene Gäste-Browser (Kurzkennung), neueste zuerst; `games` = Spiele aller Arten */
+  list: { id: string; name: string | null; first: string; last: string; days: number; games: number; online: boolean }[];
+}
+
+/** ein Besucher ohne Account (Admin → Accounts → Ohne Account) */
+export interface AdminGuestDetail {
+  /** Kurzkennung */
+  id: string;
+  name: string | null;
+  online: boolean;
+  first: string;
+  last: string;
+  /** an so vielen Tagen da */
+  visitDays: number;
+  /** derselbe Browser war auch schon mit Account da */
+  hasAccount: boolean;
+  games: { route: number; challenge: number; quiz: number; daily: number; training: number; wins: number; quizWins: number };
+  /** Routenjagd-Runden (null = keine) */
+  rounds: { n: number; avg: number; best: number; perfect: number } | null;
+  /** Minuten in Öffis (eigene Routen) */
+  minutes: number;
+  days: { day: string; route: number; challenge: number; quiz: number; daily: number; training: number; rounds: number; avgRoute: number | null; visited: boolean }[];
+  lines: { line: string; n: number }[];
 }
 
 export interface AdminOverview {
@@ -824,6 +897,8 @@ export interface AdminOverview {
   uptimeSec: number;
   memoryMb: number;
   users: { total: number; online: number; new7d: number; admins: number; withEmail: number };
+  /** Besucher (Browser) gerade online, davon ohne Account, und heute insgesamt */
+  visitors: { online: number; anon: number; today: number };
   lobbies: AdminLobby[];
   activeGames: number;
   mail: boolean;

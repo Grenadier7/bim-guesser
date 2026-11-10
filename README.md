@@ -272,13 +272,21 @@ eigenen Passwort **entsperrt** werden (mind. 10 Zeichen) und sperrt sich nach 30
 Admins können andere Admins nicht ändern; Namen wie „admin“ oder „spielleitung“ sind für Spieler gesperrt; nach
 5 falschen Passwörtern ist ein Name 15 min gesperrt.
 
-- **Übersicht**: Kennzahlen, Grafiken (Besucher online mit/ohne Account, Besucher je Tag, fertige Spiele, meistgewählte
-  Linien, Spieler in Lobbys, Accounts je Tag; Zeitraum 1/7/30/90 Tage, Tooltips, Tabellenansicht) und alle Lobbys –
-  verwalten wie vom Host: starten, pausieren/fortsetzen, Runde abbrechen, weiter, beenden, Spieler entfernen,
+- **Übersicht**: Kennzahlen (Besucher online/heute, laufende Spiele, Accounts, mit E-Mail), Grafiken (Besucher online
+  mit/ohne Account, Besucher je Tag, Accounts je Tag – neu angelegt bzw. schon länger dabei und gespielt –, Gespielt je
+  Tag nach Routenjagd/Tages-Challenge/Quiz/Strecke des Tages/Training mit Mehrspieler-Anteil, Lobbys und Spieler,
+  meistgewählte Linien, Lernpfad je Kurs; Zeitraum 24 h/7/30/90 Kalendertage, Tooltips, Tabellenansicht) und alle
+  Lobbys – verwalten wie vom Host: starten, pausieren/fortsetzen, Runde abbrechen, weiter, beenden, Spieler entfernen,
   Host-Rechte vergeben, als „Spielleitung“ in den Chat schreiben. Besucher werden über eine zufällige Kennung je
-  Browser gezählt (`/api/ping`, kein Bezug zur Person).
-- **Accounts**: suchen, alles sehen (inkl. Verlauf als Grafik), Passwort setzen, **Link zum Zurücksetzen** (1 h),
-  auf allen Geräten abmelden, Statistik zurücksetzen, umbenennen, E-Mail ändern, löschen.
+  Browser gezählt (`/api/ping`, keine IP; ohne Account mit dem zuletzt verwendeten Spielernamen).
+- **Accounts**: suchen, alles sehen (Gespieltes, Routen, Lernpfad, Medaillen; Grafiken: Gespielt je Tag, Ø Routenpunkte,
+  meistgenutzte Linien – 30/90/365 Tage), Passwort setzen, **Link zum Zurücksetzen** (1 h), auf allen Geräten abmelden,
+  Statistik zurücksetzen, umbenennen, E-Mail ändern, löschen. **Ohne Account**: aufgebaut wie die Accounts – Kennzahlen
+  (online, Browser in 90 Tagen, haben gespielt, kommen wieder, inzwischen mit Account), wer gerade in einer Lobby ist,
+  Liste mit Suche nach Namen (zuletzt verwendeter Name, Kurzkennung, Spiele, Tage da) und je Browser eine Detailseite:
+  Besuche, Gespieltes (Routenjagd, Tages-Challenge, Quiz, Strecke des Tages, Training), Routenpunkte, Zeit in Öffis,
+  Grafiken wie bei Accounts und „Daten dieses Browsers löschen“. Dafür schickt der Browser seine zufällige Kennung als
+  `X-Visitor` mit; ohne Account werden Lobby-Spiele, Training und Strecke des Tages ihr zugeordnet (90 Tage).
 - **Netzpläne**: „Standard“ (gilt für Spiele, Training, Quiz und Lernen) plus beliebig viele eigene Pläne, die in der
   Lobby unter „Netz“ wählbar sein können (mit eigener Karte). Dazu die Kachel **LIVE Aktuell**: welche echten Tage
   gespielt werden, je Linie wie sie anders fährt (Endstellen, ausgelassene/zusätzliche Halte – aus den Fahrplandaten)
@@ -298,10 +306,22 @@ Admins können andere Admins nicht ändern; Namen wie „admin“ oder „spiell
   „wichtig“/„alle“ sind – per Klick), Adressen (alle auf der Karte: anklicken = ausnehmen/aufnehmen, leere Stelle =
   neue Adresse), Chat-Moderation (Wortliste in Deutsch, Englisch, Türkisch, Serbisch/Kroatisch/Bosnisch).
 - **Protokoll**: jede Admin-Aktion mit Zeit, Admin und Ziel.
+- **Spielleitung** (`/#spielleitung`, nur für Admins – alle anderen sehen „Diese Seite gibt es nicht“; Link auch unter
+  Übersicht → Lobbys): Routenjagd mit **allen** Einstellungen anlegen, auch denen, die es sonst nur in Tages-Challenges
+  gibt (Variante, Aufgabe, fester Start, Bezirke, Fokus, E-Scooter, Nacht-Uhrzeit …), und **jedes Event** starten,
+  nicht nur die heutigen. Die Lobby ist ganz normal – jeder tritt mit dem Code bei. In der eigenen Lobby öffnet
+  „🛠 Spielleitung“ dasselbe als Fenster (Einstellungen und Events jederzeit ändern).
 
 Netzpläne und Einstellungen liegen in `STATE_DIR/config/` (jede Änderung als Version in `config/history/`).
 **Sicherung**: `deploy/backup.sh` läuft auf dem Host und legt Kopien in einem Ordner ab, den der Container nie sieht –
 siehe `BEFEHLE.md`.
+
+**Demo zum Ausprobieren (nur lokal):** `npm run demo` legt in `data/demo/` (nicht im Repo, nicht im Image) eine eigene
+Datenbank mit erfundenen Daten an – 36 Spieler-Accounts, die über 90 Tage nach und nach dazukommen (manche hören
+wieder auf), rund 260 Gäste-Browser mit Namen, Spiele aller Arten, Lernpfad, Freunde, Medaillen und Momentaufnahmen
+alle 5 Minuten (mit einer Server-Pause) – und startet Server und Vite darauf: http://localhost:5173. Die echte
+Datenbank in `data/` bleibt unberührt. Anmelden als Admin mit `demo-admin` / `demo-admin-passwort`, als Spieler z.B.
+`lena` / `demo-passwort`. `npm run demo -- --keep` behält die Demo-Daten, `-- --seed` erzeugt sie nur.
 
 ## Eigener Referenzfahrplan (GTFS)
 

@@ -71,7 +71,7 @@ const STEPHANSPLATZ = { lat: 48.2085, lon: 16.3731 };
 /** Netzplan der Challenge „Zielnetz 2040“ (server/ziel2040.ts) */
 export const FUTURE_NET = 'plan:ziel2040' as const;
 /** neue oder geänderte Linien im Zielnetz 2040 (Karte „Zielnetz einblenden“) */
-export const FUTURE_LINES = ['U5', 'U2', 'S45', 'S80', 'S70', 'S1', 'S2', 'S3', 'S4', '15', '25', '27', '18', '12', '29'];
+export const FUTURE_LINES = ['U5', 'U2', 'S45', 'S80', 'S70', 'S60', 'S1', 'S2', 'S3', 'S4', 'VK', '15', '25', '27', '12', '29', '33', 'GE', '21A', '10', 'O', '60'];
 const fixed = (text: string, settings: Partial<GameSettings>) => ({ text: () => text, settings: () => settings });
 const SPRINT = [2, 3, 5];
 const EASY = [1, 2, 3, 5];

@@ -5,6 +5,7 @@ import { api } from '../api.ts';
 import { RouteBuilder } from '../builder.ts';
 import { distM, fmtDist } from '../net.ts';
 import { netLayer, netView, smoothPath } from '../netmap.ts';
+import { NET_COLOR } from '../netcolors.ts';
 import { app, routeState, currentRound, isHost, serverNow, setMapBig } from '../store.ts';
 import { ask, esc, h, lineChip, modeChip, toast } from '../ui.ts';
 import { hostBar } from './host.ts';
@@ -407,7 +408,15 @@ export function roundScreen(panel: HTMLElement): Screen {
   /** Zielnetz 2040: das Netz wie in den Lernkarten – neue/geänderte Linien hervorgehoben (mit Nummern), neue Stationen markiert */
   function showFuture() {
     if (!futureShown) return void netLayer().clear();
-    netLayer().render(netView({ focus: new Set(FUTURE_LINES.filter((id) => app.net.lines.has(id))), marks: app.net.data.stations.filter((x) => x.id.startsWith('z40-')), allLabels: true }));
+    // Lokalbahnen (VK, GE) im Blau der Badner Bahn statt im Rot der Bim
+    netLayer().render(
+      netView({
+        focus: new Set(FUTURE_LINES.filter((id) => app.net.lines.has(id))),
+        marks: app.net.data.stations.filter((x) => x.id.startsWith('z40-')),
+        allLabels: true,
+        colors: { VK: NET_COLOR.BB, GE: NET_COLOR.BB },
+      }),
+    );
   }
 
   /** Brückenkenner: je Brücke die Abschnitte (Farbe/Icon des Verkehrsmittels) und welche Linien darüber fahren */

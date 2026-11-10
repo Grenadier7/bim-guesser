@@ -8,6 +8,7 @@ import { ask } from './ui.ts';
 import { icon } from './icons.ts';
 import { endSession } from './store.ts';
 import { account, startPolling } from './account.ts';
+import { visitorId } from './visitor.ts';
 import { accountButton, announceMedals, openAccount, renderInvites, takeResetLink } from './accountui.ts';
 import { isMine, setMine } from './learn/model.ts';
 import { GameMap } from './map.ts';
@@ -26,6 +27,7 @@ import { roundScreen } from './screens/round.ts';
 import { loadingHtml, type Screen } from './screens/screen.ts';
 import { trainingScreen } from './screens/training.ts';
 import { adminScreen } from './screens/admin.ts';
+import { gamemasterScreen } from './screens/gamemaster.ts';
 import { tutorialScreen } from './screens/tutorial.ts';
 import { dailyScreen } from './screens/daily.ts';
 import { meScreen } from './screens/me.ts';
@@ -70,18 +72,14 @@ function renderNotice() {
   });
 }
 
-/** Besucherzahl: zufällige Kennung dieses Browsers (kein Bezug zur Person), jede Minute, solange die Seite sichtbar ist */
+/** Besucherzahl: zufällige Kennung dieses Browsers (ohne Account mit dem zuletzt verwendeten Namen), jede Minute, solange die Seite sichtbar ist */
 function startVisitorPing() {
-  let id = '';
-  try {
-    id = localStorage.getItem('oeffi-visitor') ?? '';
-    if (!/^[a-z0-9]{12,40}$/.test(id)) localStorage.setItem('oeffi-visitor', (id = crypto.randomUUID().replace(/-/g, '')));
-  } catch {
-    id = crypto.randomUUID().replace(/-/g, '');
-  }
+  const id = visitorId();
   const ping = () => {
     if (document.visibilityState !== 'visible') return;
-    void fetch('/api/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: id }), credentials: 'same-origin' }).catch(() => {});
+    // ohne Account: zuletzt verwendeter Spielername (für die Besucherliste der Spielleitung)
+    const n = account.me ? undefined : app.prefs.name || undefined;
+    void fetch('/api/ping', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: id, n }), credentials: 'same-origin' }).catch(() => {});
   };
   ping();
   setInterval(ping, 60_000);
@@ -90,6 +88,8 @@ function startVisitorPing() {
 
 /** Lobby mit eigenem Netzplan: dessen Netz laden (Karte, Routen-Baukasten), sonst das Standard-Netz */
 let netLoading: string | null = null;
+/** Stand des geladenen Netzes (vom Server) */
+let netVersion = '';
 function ensurePlanNet() {
   const s = app.state;
   const want = app.session && s?.mode === 'route' && s.settings.network.startsWith('plan:') ? s.settings.network.slice(5) : 'regular';
@@ -101,6 +101,7 @@ function ensurePlanNet() {
       if (netLoading !== want) return;
       app.net = new NetIndex(data);
       app.netPlan = want;
+      netVersion = data.version ?? '';
       resetNetLayer();
       // Bildschirm mit dem neuen Netz neu aufbauen
       screen?.destroy?.();
@@ -208,7 +209,7 @@ const introSeen = new Set<string>();
 
 function mount(key: string): Screen {
   // Startseite: großer Auswahlbildschirm ohne Karte
-  document.body.classList.toggle('panel-full', key === 'home' || key === 'admin');
+  document.body.classList.toggle('panel-full', key === 'home' || key === 'admin' || key === 'gm');
   // Handy: Karte nur, wo sie gebraucht wird – Bildschirme können das selbst ändern
   setMobileMap(!['home', 'lobby', 'final', 'qlobby', 'qfinal'].includes(key));
   setTimeout(() => app.map.invalidate(), 50);
@@ -223,6 +224,7 @@ function mount(key: string): Screen {
   if (key === 'daily') return dailyScreen(panel, back);
   if (key === 'me') return meScreen(panel, back);
   if (key === 'admin') return adminScreen(panel, back);
+  if (key === 'gm') return gamemasterScreen(panel, back);
   if (key === 'lobby') return lobbyScreen(panel);
   if (key === 'final') return finalScreen(panel);
   if (key === 'qlobby') return quizLobbyScreen(panel);
@@ -238,6 +240,24 @@ function mount(key: string): Screen {
   return {};
 }
 
+/**
+ * Hat sich das Netz am Server geändert (Netzplan bearbeitet, Server mit neuem Plan gestartet)? Dann neu laden – sonst
+ * baut man Routen mit Stationen, die das Spiel nicht mehr kennt. Nur in der Lobby und vor einer Runde (nie mitten
+ * im Bauen einer Route).
+ */
+function checkNetVersion() {
+  const plan = app.netPlan;
+  if (!netVersion || netLoading) return;
+  void api
+    .networkVersion(plan)
+    .then(({ version }) => {
+      if (version === netVersion || app.netPlan !== plan || netLoading) return;
+      app.netPlan = '';
+      ensurePlanNet();
+    })
+    .catch(() => {});
+}
+
 /** Chat-Fenster an die Sitzung anpassen (gesetzt in init) */
 let chatSync = () => {};
 
@@ -246,6 +266,7 @@ function render() {
   chatSync();
   renderInvites(inviteHost);
   const key = keyFor();
+  if (key !== screenKey && (key === 'lobby' || key.startsWith('prep:'))) checkNetVersion();
   if (key !== screenKey) {
     // Spielstart mit Tages-Challenge (aus der Lobby, nicht beim Neuladen mitten im Spiel): Fenster mit Name und Text
     const st = app.state;
@@ -366,6 +387,7 @@ async function init() {
     applyGameConfig(config);
     renderNotice();
     app.net = new NetIndex(network);
+    netVersion = network.version ?? '';
     brandHome();
     // Plan der Tages-Challenges vom Server (fehlt er, rechnet der Browser denselben)
     await loadSchedule();
@@ -376,7 +398,8 @@ async function init() {
   // geteilter Einstellungs-Link → Startseite (legt die Lobby an) statt in die alte Lobby zurück
   // geteilter Link zur Strecke des Tages (/#daily) – auch bei schon offener Seite
   const fromHash = () => {
-    const views: Record<string, typeof app.view> = { '#daily': 'daily' };
+    // #spielleitung: geheime Seite der Admins (Routenjagd mit allen Einstellungen, jedes Event)
+    const views: Record<string, typeof app.view> = { '#daily': 'daily', '#spielleitung': 'gm' };
     if (!views[location.hash]) return false;
     app.view = views[location.hash];
     history.replaceState(null, '', location.pathname + location.search);

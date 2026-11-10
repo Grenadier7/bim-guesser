@@ -30,7 +30,7 @@ for (let g = 0; g < 15; g++) {
     const lines = best.legs.filter((l: any) => l.mode !== 'W').map((l: any) => l.line.split('/')[0]).join('›');
     const now = r.today;
     const norm = (id: string) => (/^S[1-4]$/.test(id) ? 'S1-4' : id);
-    const FUT = new Set(['U5', 'U2', 'S45', 'S80', 'S70', 'S1-4', '15', '25', '27', '18', '12', '29']);
+    const FUT = new Set(['U5', 'U2', 'S45', 'S80', 'S70', 'S60', 'S1-4', 'VK', '15', '25', '27', '12', '29', '33', 'GE', '21A', '10', 'O', '60']);
     const before = new Set((now?.lines ?? []).map(norm));
     const diff = !now || best.medianMin <= now.min - 2 || lines.split('›').map(norm).some((id: string) => FUT.has(id) && !before.has(id));
     if (diff) changed++;

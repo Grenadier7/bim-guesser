@@ -192,9 +192,20 @@ export class Network {
       }
       if (e.kind === 'insertStop') {
         if (!this.stations.has(e.station)) continue;
+        // ist einer der beiden Halte außerhalb des Netzes (Fahrplan-ID), kommt der neue Halt ans entsprechende Ende
+        const outside = (id: string) => !this.stations.has(id);
         line.patterns = line.patterns.map((p) => {
           for (let j = 1; j < p.length; j++)
             if ((p[j - 1] === e.a && p[j] === e.b) || (p[j - 1] === e.b && p[j] === e.a)) return [...p.slice(0, j), e.station, ...p.slice(j)];
+          if (p.includes(e.station)) return p;
+          for (const [inside, other] of [
+            [e.a, e.b],
+            [e.b, e.a],
+          ])
+            if (outside(other) && !outside(inside)) {
+              if (p[p.length - 1] === inside) return [...p, e.station];
+              if (p[0] === inside) return [e.station, ...p];
+            }
           return p;
         });
         continue;
@@ -349,6 +360,29 @@ export class Network {
    */
   /** Haltefolgen, die ein Netzplan ausdrücklich anlegt (Zusatzfahrten) */
   private planPatterns = new WeakSet<string[]>();
+
+  /**
+   * Netzplan: nur die reguläre Fahrt. Haltefolgen und Linien, die es nur im Netz „Aktuell“ gibt (Baustellen,
+   * Umleitungen, Ersatzlinien), passen nicht zu einem Plan – sonst führe z.B. im Zielnetz 2040 die U2 neben der neuen
+   * Strecke noch über Volkstheater zum Karlsplatz.
+   */
+  onlyRegular() {
+    for (const l of this.data.lines) {
+      const keep = l.patterns.map((p, i) => [p, l.nets[i]] as const).filter(([, n]) => n.includes('r'));
+      l.patterns = keep.map(([p]) => p);
+      l.nets = keep.map(() => 'r');
+    }
+    this.data.lines = this.data.lines.filter((l) => l.patterns.length);
+    this.index();
+    const serving = new Map<string, Set<string>>();
+    for (const l of this.data.lines) for (const p of l.patterns) for (const s of p) serving.set(s, (serving.get(s) ?? new Set()).add(l.id));
+    for (const s of this.data.stations) {
+      s.lines = s.lines.filter((l) => serving.get(s.id)?.has(l));
+      s.modes = [...new Set(s.lines.map((id) => this.lines.get(id)!.mode).filter((m) => m !== 'W'))];
+    }
+    this.index();
+    this.candidateCache.clear();
+  }
 
   keepMainRoutes(plan: string) {
     const mains = mainRoutes(plan, (efa) => this.stationOfEfa(efa));

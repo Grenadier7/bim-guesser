@@ -14,6 +14,11 @@ export const h = (fn: Handler) => (req: Request, res: Response, next: NextFuncti
 export const param = (req: Request, k: string) => String(req.params[k]);
 /** Geheimer Spieler-Token: im Body, bei GET/SSE als Query-Parameter */
 export const token = (req: Request) => String(req.body?.token ?? req.query.token ?? '').slice(0, 64);
+/** zufällige Kennung des Browsers (Header X-Visitor) – ohne Account werden Ergebnisse ihr zugeordnet */
+export const visitorOf = (req: Request): string | null => {
+  const v = String(req.get('x-visitor') ?? '');
+  return /^[a-z0-9]{12,40}$/.test(v) ? v : null;
+};
 
 /**
  * Schlüssel, die in echtem JSON nie sinnvoll sind, aber String()/Number() zum Absturz bringen

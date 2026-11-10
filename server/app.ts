@@ -16,7 +16,7 @@ import { gameRoutes } from './routes/games.ts';
 import { trainingRoutes } from './routes/training.ts';
 import { dailyRoutes } from './routes/daily.ts';
 import { DailyService } from './daily.ts';
-import { rateLimit, securityHeaders } from './security.ts';
+import { cleanName, rateLimit, securityHeaders } from './security.ts';
 import { TrainingService } from './training.ts';
 import { waterData, waterJson } from './water.ts';
 import { challengeSchedule } from './challengeSchedule.ts';
@@ -71,13 +71,13 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
     g.on('finished', () => {
       try {
         const info = g.adminInfo();
-        adminAcc.recordGame(g.mode, info.players.length, info.players.filter((p) => p.account).length);
+        adminAcc.recordGame(g.mode === 'quiz' ? 'quiz' : (g.state() as { settings?: { challenge?: unknown } }).settings?.challenge ? 'challenge' : 'route', info.players.length, info.players.filter((p) => p.account).length);
       } catch (e) {
         console.warn('Statistik:', (e as Error).message);
       }
     });
   };
-  // Besucher: zufällige Kennung je Browser (kein Bezug zur Person), Meldung jede Minute, solange die Seite offen ist
+  // Besucher: zufällige Kennung je Browser (ohne Account mit dem zuletzt verwendeten Spielernamen, keine IP), Meldung jede Minute, solange die Seite offen ist
   const visitors = new Map<string, { at: number; account: boolean }>();
   const visitorsNow = () => {
     const cut = Date.now() - 2.5 * 60_000;
@@ -101,8 +101,12 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
   }, 5 * 60_000).unref();
   setInterval(() => accounts.cleanup(), 3600_000).unref();
   const training = new TrainingService(net);
-  training.onLines = (lines) => adminAcc.countLines(lines);
+  training.onLines = (lines, account) => {
+    adminAcc.countLines(lines);
+    adminAcc.recordGame('training', 1, account ? 1 : 0);
+  };
   const daily = new DailyService(net, accounts, { file: dailyFile });
+  daily.onPlayed = (account) => adminAcc.recordGame('daily', 1, account ? 1 : 0);
 
   const app = express();
   app.disable('x-powered-by');
@@ -126,6 +130,13 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
     const json = /^[a-z0-9-]{1,24}$/.test(plan) ? runtime.networkJson(plan) : null;
     if (!json) return void res.status(404).json({ error: 'Diesen Netzplan gibt es nicht.' });
     res.type('json').set('Cache-Control', 'no-cache').send(json);
+  });
+  // nur der Stand des Netzes (Browser prüft vor jeder Runde, ob er neu laden muss)
+  app.get('/api/network/version', (req, res) => {
+    const plan = req.query.plan === undefined ? 'regular' : String(req.query.plan);
+    const version = /^[a-z0-9-]{1,24}$/.test(plan) ? runtime.version(plan) : null;
+    if (!version) return void res.status(404).json({ error: 'Diesen Netzplan gibt es nicht.' });
+    res.set('Cache-Control', 'no-store').json({ version });
   });
   // Donau als Hindernis für Fußwege (Baukasten rechnet wie die Auswertung)
   app.get('/api/barrier', (_req, res) => {
@@ -154,7 +165,7 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
     visitors.set(id, { at: Date.now(), account });
     if (visitors.size > 50_000) visitorsNow();
     try {
-      adminAcc.visit(id, account);
+      adminAcc.visit(id, account, cleanName(req.body?.n));
     } catch {
       /* Statistik darf nie stören */
     }
@@ -167,7 +178,10 @@ export function createApp({ net, version = 'dev', accountsDb, mail = smtpMailer(
 
   const { optionalUser } = accountRoutes(app, accounts, (code) => games.has(code));
   gameRoutes(app, games, { accounts, optionalUser });
-  adminRoutes(app, { accounts, admin: adminAcc, games, net, version, started, plans, runtime, config: cfg });
+  adminRoutes(app, { accounts, admin: adminAcc, games, net, version, started, plans, runtime, config: cfg, visitors: () => {
+      visitorsNow();
+      return new Map([...visitors].map(([id, v]) => [id, v.account]));
+    } });
   trainingRoutes(app, training, { accounts, optionalUser });
   dailyRoutes(app, daily, optionalUser);
 

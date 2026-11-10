@@ -662,7 +662,8 @@ export function validateLegs(net: Network, legs: UserLeg[], mode: NetMode, restr
     if (!line) return `Unbekannte Linie ${l.line}.`;
     if (!restrictionAllowsLine(restriction, banned, line))
       return `Einschränkung „${restrictionLabel(restriction!, banned)}“ nicht eingehalten (Linie ${l.line}).`;
-    if (!net.stations.has(l.from) || !net.stations.has(l.to)) return 'Unbekannte Station.';
+    // meist: Netzplan wurde geändert, während der Browser noch das alte Netz hatte
+    if (!net.stations.has(l.from) || !net.stations.has(l.to)) return 'Unbekannte Station – das Netz wurde inzwischen geändert. Bitte die Seite neu laden.';
     if (!net.servesInOrder(l.line, l.from, l.to, mode))
       return `Linie ${l.line} fährt nicht von ${net.station(l.from).name} nach ${net.station(l.to).name}.`;
   }

@@ -13,3 +13,4 @@ test/e2e/.state
 test/e2e/artifacts
 docs
 AGENT_PROGRESS.md
+data/demo

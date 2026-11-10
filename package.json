@@ -11,6 +11,7 @@
     "dev": "concurrently -k -n server,client -c blue,magenta \"npm:dev:server\" \"npm:dev:client\"",
     "dev:server": "node --watch server/index.ts",
     "dev:client": "vite",
+    "demo": "node scripts/demo.ts",
     "start": "node scripts/host.ts",
     "serve": "node server/index.ts",
     "build": "vite build",
