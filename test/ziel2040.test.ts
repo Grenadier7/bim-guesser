@@ -68,3 +68,20 @@ test('Stand des Netzes: gleich in Netz und Abfrage, neu sobald sich der Plan än
   rt.apply(ZIEL2040.id);
   assert.notEqual(rt.version(ZIEL2040.id), v1);
 });
+
+test('Plan-Netz ohne „Aktuell“: U2 nur noch die neue Strecke, Volkstheater ist U5', async () => {
+  const { PlanStore } = await import('../server/plans.ts');
+  const { PlanRuntime } = await import('../server/planruntime.ts');
+  const rt = new PlanRuntime(Network.load(), new PlanStore(), () => ({ removed: [], added: [] }));
+  const n = rt.planNet(ZIEL2040.id)!;
+  const name = (id: string) => n.stations.get(id)!.name;
+  const u2 = n.lines.get('U2')!;
+  assert.ok(u2.nets.every((x) => x === 'r'));
+  for (const p of u2.patterns) {
+    const names = p.map(name);
+    assert.ok(names.includes('Neubaugasse') && names.includes('Pilgramgasse'), names.join(' › '));
+    assert.ok(!names.includes('Volkstheater') && !names.includes('Karlsplatz'), names.join(' › '));
+  }
+  const vt = [...n.stations.values()].find((s) => s.name === 'Volkstheater')!;
+  assert.deepEqual(vt.lines.filter((l) => l.startsWith('U')).sort(), ['U3', 'U5']);
+});

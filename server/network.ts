@@ -361,6 +361,29 @@ export class Network {
   /** Haltefolgen, die ein Netzplan ausdrücklich anlegt (Zusatzfahrten) */
   private planPatterns = new WeakSet<string[]>();
 
+  /**
+   * Netzplan: nur die reguläre Fahrt. Haltefolgen und Linien, die es nur im Netz „Aktuell“ gibt (Baustellen,
+   * Umleitungen, Ersatzlinien), passen nicht zu einem Plan – sonst führe z.B. im Zielnetz 2040 die U2 neben der neuen
+   * Strecke noch über Volkstheater zum Karlsplatz.
+   */
+  onlyRegular() {
+    for (const l of this.data.lines) {
+      const keep = l.patterns.map((p, i) => [p, l.nets[i]] as const).filter(([, n]) => n.includes('r'));
+      l.patterns = keep.map(([p]) => p);
+      l.nets = keep.map(() => 'r');
+    }
+    this.data.lines = this.data.lines.filter((l) => l.patterns.length);
+    this.index();
+    const serving = new Map<string, Set<string>>();
+    for (const l of this.data.lines) for (const p of l.patterns) for (const s of p) serving.set(s, (serving.get(s) ?? new Set()).add(l.id));
+    for (const s of this.data.stations) {
+      s.lines = s.lines.filter((l) => serving.get(s.id)?.has(l));
+      s.modes = [...new Set(s.lines.map((id) => this.lines.get(id)!.mode).filter((m) => m !== 'W'))];
+    }
+    this.index();
+    this.candidateCache.clear();
+  }
+
   keepMainRoutes(plan: string) {
     const mains = mainRoutes(plan, (efa) => this.stationOfEfa(efa));
     if (!mains) return;
