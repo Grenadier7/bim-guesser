@@ -137,7 +137,7 @@ export function roundScreen(panel: HTMLElement): Screen {
     if (targets) return `<div class="od-row"><span class="pin-dot b">🎯</span><span>Eines dieser Ziele: ${targets.map((t, i) => `<b>${i + 1}. ${esc(t.name)}</b>`).join(' · ')}</span></div>`;
     if (waypoints) return `<div class="od-row"><span class="pin-dot b">📍</span><span>Alle befahren, Reihenfolge egal: ${waypoints.map((t, i) => `<b>${i + 1}. ${esc(t.name)}</b>`).join(' · ')}</span></div>`;
     if (round.water === 'bath') return '<div class="od-row"><span class="pin-dot b">🩱</span><span><b>Zum nächsten Bad</b> – Strandbad, Freibad oder Hallenbad (blau auf der Karte). Gewertet wird bis dorthin, auch der Fußweg.</span></div>';
-    if (round.water) return '<div class="od-row"><span class="pin-dot b">🏊</span><span><b>Zum nächsten Wasser</b> – Donau, Donaukanal, Wienfluss, Alte Donau, Liesing oder ein Bad (blau auf der Karte). Gewertet wird bis dorthin, auch der Fußweg.</span></div>';
+    if (round.water) return '<div class="od-row"><span class="pin-dot b">🏊</span><span><b>Zum nächsten Wasser</b> – Donau, Alte Donau, Wienfluss, Seen und Teiche wie Mühlwasser oder Asperner See, Bäche oder ein Bad (blau auf der Karte). Gewertet wird bis dorthin, auch der Fußweg.</span></div>';
     return `<div class="od-row"><span class="pin-dot b">B</span><b>${showNames ? esc(to.name) : 'Ziel <small>(nur auf der Karte)</small>'}</b></div>`;
   }
 

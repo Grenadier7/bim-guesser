@@ -1,4 +1,4 @@
-// „Ab ins Wasser“: Gewässer (Donau, Donaukanal, Wienfluss, Alte Donau …) und Bäder aus OpenStreetMap
+// „Ab ins Wasser“: Gewässer (Donau, Donaukanal, Wienfluss, Alte Donau, Mühlwasser, Asperner See, Prater-Wässer, Bäche …) und Bäder aus OpenStreetMap
 // (scripts/build-water.ts → data/water.json). Nächstes Wasser zu einem Punkt – Server und Browser rechnen gleich.
 
 export interface WaterData {

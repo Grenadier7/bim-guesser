@@ -1,10 +1,32 @@
 // Gewässer und Bäder in Wien für „Ab ins Wasser“: einmalig aus OpenStreetMap (Overpass, ODbL) holen und vereinfacht
 // nach data/water.json schreiben – Punkte etwa alle 40 m entlang der Ufer/Flussläufe, dazu die Bäder als Punkte.
+// Neben Donau, Donaukanal, Wienfluss, Alter Donau und Liesing auch kleinere, bekannte Gewässer: Mühlwasser,
+// Asperner See (Seestadt), Schillerwasser, die Prater-Wässer, Wienerbergteich, Badeteich Hirschstetten, Steinsee,
+// Lobau-Altarme, Marchfeldkanal und die größeren Wienerwald-Bäche.
 // npm run build:water
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const OUT = path.resolve(import.meta.dirname, '../data/water.json');
+/** kleinere Seen, Teiche und Altarme (Namen wie in OpenStreetMap) */
+const LAKES = [
+  'Mühlwasser',
+  'Oberes Mühlwasser',
+  'Unteres Mühlwasser',
+  'Asperner See',
+  'Schillerwasser',
+  'Oberes Heustadelwasser',
+  'Unteres Heustadelwasser',
+  'Lusthauswasser',
+  'Mauthnerwasser',
+  'Wienerbergteich',
+  'Badeteich Hirschstetten',
+  'Steinsee',
+  'Kühwörter Wasser',
+  'Eberschüttwasser',
+];
+/** Bäche, die offen fließen und bekannt sind */
+const STREAMS = ['Mauerbach', 'Halterbach', 'Schreiberbach'];
 const QUERY = `[out:json][timeout:90];
 area["name"="Wien"]["admin_level"="4"]->.w;
 (
@@ -12,6 +34,9 @@ area["name"="Wien"]["admin_level"="4"]->.w;
   way["natural"="water"]["name"~"^(Alte Donau|Neue Donau|Kaiserwasser|Donau)$"](area.w);
   relation["natural"="water"]["name"~"^(Alte Donau|Obere Alte Donau|Untere Alte Donau|Neue Donau|Kaiserwasser)$"](area.w);
   way["waterway"="stream"]["name"="Liesing"]["tunnel"!="yes"]["location"!="underground"](area.w);
+  nwr["natural"="water"]["name"~"^(${LAKES.join('|')})$"](area.w);
+  way["waterway"="canal"]["name"="Marchfeldkanal"](area.w);
+  way["waterway"="stream"]["name"~"^(${STREAMS.join('|')})$"]["tunnel"!~"."]["location"!="underground"](area.w);
   nwr["leisure"~"^(swimming_area|water_park)$"]["name"](area.w);
   nwr["amenity"="public_bath"]["name"](area.w);
   nwr["leisure"="sports_centre"]["sport"="swimming"]["name"~"[Bb]ad"](area.w);
@@ -36,7 +61,18 @@ function sample(line: LL[], step = 40): LL[] {
   return out;
 }
 
-const NAME: Record<string, string> = { Wien: 'Wienfluss', Wienfluss: 'Wienfluss', 'Obere Alte Donau': 'Alte Donau', 'Untere Alte Donau': 'Alte Donau', Liesing: 'Liesing (Fluss)' };
+const NAME: Record<string, string> = {
+  Wien: 'Wienfluss',
+  Wienfluss: 'Wienfluss',
+  'Obere Alte Donau': 'Alte Donau',
+  'Untere Alte Donau': 'Alte Donau',
+  Liesing: 'Liesing (Fluss)',
+  'Oberes Mühlwasser': 'Mühlwasser',
+  'Unteres Mühlwasser': 'Mühlwasser',
+  'Oberes Heustadelwasser': 'Heustadelwasser',
+  'Unteres Heustadelwasser': 'Heustadelwasser',
+  'Asperner See': 'Asperner See (Seestadt)',
+};
 
 interface El {
   type: string;
@@ -73,6 +109,7 @@ for (const e of els) {
   }
   const name = NAME[t.name] ?? t.name;
   const lines = e.type === 'relation' ? (e.members ?? []).map((m) => m.geometry ?? []) : [e.geometry ?? []];
+  // Bäche zählen wie Flüsse (Linie), Kanäle auch – Seen, Teiche und Altarme als Ufer
   const w = waters.get(name) ?? { kind: t.waterway ? 'river' : 'lake', lines: [] };
   for (const l of lines) if (l.length > 1) w.lines.push(l.map((p) => [p.lat, p.lon] as LL));
   waters.set(name, w);

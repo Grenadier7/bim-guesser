@@ -197,7 +197,10 @@ Erfüllt nach 60 Versuchen keine Strecke alles, gilt die nächstbeste. Die Strec
     (Wienerberg-Tangente) und 29 neu, 12/18/25/27 verlängert. Nicht genau, sondern spielbar. Die Challenge nimmt nur
     Strecken, deren beste Verbindung wegen des neuen Netzes anders oder ≥ 2 min schneller ist (`npm run check:future`:
     30 von 30); „Zielnetz einblenden“ zeigt die Linien, die Auflösung den Vergleich mit heute.
-  - **Ab ins Wasser:** Gewässer und Bäder aus OpenStreetMap (`npm run build:water` → `data/water.json`, ODbL); Start
+  - **Ab ins Wasser:** Gewässer und Bäder aus OpenStreetMap (`npm run build:water` → `data/water.json`, ODbL) – neben
+    Donau, Donaukanal, Wienfluss, Alter Donau und Liesing auch Mühlwasser, Asperner See, Schillerwasser, Heustadel-,
+    Lusthaus- und Mauthnerwasser, Wienerbergteich, Badeteich Hirschstetten, Steinsee, Kühwörter und Eberschüttwasser,
+    Marchfeldkanal, Mauerbach, Halterbach und Schreiberbach; Start
     ≥ 1,2 km vom Wasser und mit den Öffis klar schneller als zu Fuß; gewertet bis ans Wasser inkl. Fußweg.
   - **Medaillen:** 🎪 Challenge-Sammler (verschiedene gespielt) und 🏅 Challenge-Meister (geschafft – meist eine Runde
     mit vollen Routenpunkten, bei schweren ab 900), je Bronze/Silber/Gold.
