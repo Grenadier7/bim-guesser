@@ -250,7 +250,7 @@ export const CHALLENGES: ChallengeDef[] = [
     icon: '🏊',
     title: 'Ab ins Wasser',
     kind: 'special',
-    ...fixed('Zum nächsten Wasser – Donau, Donaukanal, Wienfluss, Alte Donau, Liesing oder ein Bad. Wo steigst du aus?', { minTransfers: 0, task: 'water', tips: 'off' }),
+    ...fixed('Zum nächsten Wasser – Donau, Alte Donau, Wienfluss, Seen und Teiche wie Mühlwasser oder Asperner See, Bäche oder ein Bad. Wo steigst du aus?', { minTransfers: 0, task: 'water', tips: 'off' }),
     rounds: 2,
     roundOptions: EASY,
     avoid: ['bath'],
